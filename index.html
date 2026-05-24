@@ -23,21 +23,21 @@
                     },
                     colors: {
                         brand: {
-                            50: '#f0fdf4',
-                            100: '#dcfce7',
-                            200: '#bbf7d0',
-                            500: '#10b981', // Emerald - typical high wealth growth green
-                            600: '#059669',
-                            700: '#047857',
-                            900: '#064e3b',
+                            50: '#fef9c3', // Pale Yellow/Gold
+                            100: '#fef08a', // Light Gold
+                            200: '#fde047', // Bright Gold
+                            500: '#fbbf24', // GoldPrimary (#FBBF24)
+                            600: '#f59e0b', // GoldSecondary (#F59E0B)
+                            700: '#d97706', // GoldTertiary (#D97706)
+                            900: '#78350f', // Deep Earth Gold
                         },
-                        darkBg: '#090D16',
-                        darkCard: '#131926',
-                        darkBorder: '#1E293B',
+                        darkBg: '#0f1115', // Exact DarkBackground from Color.kt
+                        darkCard: '#191d24', // Exact DarkSurface from Color.kt
+                        darkBorder: '#2d3748', // Exact BorderColor from Color.kt
                     },
                     boxShadow: {
-                        glow: '0 0 20px rgba(16, 185, 129, 0.15)',
-                        glowGold: '0 0 20px rgba(234, 179, 8, 0.15)',
+                        glow: '0 0 20px rgba(251, 191, 36, 0.15)', // Gold glow
+                        glowGold: '0 0 20px rgba(251, 191, 36, 0.3)', // Rich gold glow
                     }
                 }
             }
@@ -45,11 +45,11 @@
     </script>
     <style>
         body {
-            background-color: #090D16;
-            color: #F8FAFC;
+            background-color: #0f1115;
+            color: #f3f4f6;
         }
         .text-gradient {
-            background: linear-gradient(135deg, #F8FAFC 30%, #34D399 100%);
+            background: linear-gradient(135deg, #f3f4f6 30%, #fbbf24 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
@@ -57,8 +57,20 @@
             animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
         }
         @keyframes pulse {
-            0%, 100% { opacity: 1; filter: drop-shadow(0 0 10px rgba(16,185,129,0.2)); }
-            50% { opacity: .8; filter: drop-shadow(0 0 25px rgba(16,185,129,0.4)); }
+            0%, 100% { opacity: 1; filter: drop-shadow(0 0 10px rgba(251,191,36,0.3)); }
+            50% { opacity: .8; filter: drop-shadow(0 0 25px rgba(251,191,36,0.5)); }
+        }
+        @keyframes marquee {
+            0% { transform: translateX(0%); }
+            100% { transform: translateX(-50%); }
+        }
+        .animate-marquee {
+            display: inline-flex;
+            white-space: nowrap;
+            animation: marquee 25s linear infinite;
+        }
+        .animate-marquee:hover {
+            animation-play-state: paused;
         }
     </style>
 </head>
@@ -68,7 +80,7 @@
     <header class="fixed top-0 left-0 w-full Jack z-50 bg-darkBg/90 backdrop-blur-md border-b border-darkBorder/60 select-none">
         <div class="max-w-7xl mx-auto px-6 h-18 flex items-center justify-between py-4">
             <a href="#" onclick="toggleWorkspace(false)" class="flex items-center gap-3 group">
-                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-emerald-400 flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform duration-300">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-brand-200 flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform duration-300">
                     <i class="fa-solid fa-chart-line text-white text-lg"></i>
                 </div>
                 <div class="flex flex-col">
@@ -82,7 +94,7 @@
                 <button id="nav-btn-landing" onclick="toggleWorkspace(false)" class="text-xs font-bold text-brand-500 px-4 py-2 rounded-xl transition-all hover:bg-slate-800">
                     <i class="fa-solid fa-house mr-1"></i> Setup & Infra
                 </button>
-                <button id="nav-btn-workspace" onclick="toggleWorkspace(true)" class="bg-gradient-to-r from-brand-600 to-emerald-400 text-darkBg text-xs font-black px-5 py-2.5 rounded-xl transition-all shadow-glow hover:shadow-brand-500/25 flex items-center gap-1.5 active:scale-95">
+                <button id="nav-btn-workspace" onclick="toggleWorkspace(true)" class="bg-gradient-to-r from-brand-600 to-brand-100 text-darkBg text-xs font-black px-5 py-2.5 rounded-xl transition-all shadow-glow hover:shadow-brand-500/25 flex items-center gap-1.5 active:scale-95">
                     <i class="fa-solid fa-laptop-code"></i> Acessar Web App 💻
                 </button>
             </div>
@@ -125,7 +137,7 @@
                         <div class="absolute -top-10 -right-10 w-40 h-40 bg-brand-500/5 rounded-full blur-2xl"></div>
                         <div class="flex items-center justify-between">
                             <span class="text-xs text-brand-500 font-bold uppercase tracking-wider"><i class="fa-solid fa-shield-halved"></i> Privado e Seguro</span>
-                            <span class="text-[10px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full">Sincronizado</span>
+                            <span class="text-[10px] bg-brand-500/10 text-brand-500 px-2 py-0.5 rounded-full">Sincronizado</span>
                         </div>
                         <div class="p-4 bg-slate-900 border border-slate-800 rounded-2xl">
                             <p class="text-[10px] text-slate-400">Patrimônio Consolidado</p>
@@ -213,7 +225,7 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
                         <p class="text-xs text-slate-400 leading-relaxed mb-3">No menu de <strong>Secrets</strong> do painel lateral do AI Studio, crie a chave do ambiente para integrar o APK:</p>
                         <div class="bg-darkBg border border-darkBorder p-4 rounded-xl font-mono text-xs">
                             <p><span class="text-yellow-500">Chave:</span> VERCEL_BACKEND_URL</p>
-                            <p class="mt-1"><span class="text-emerald-500">Valor:</span> https://seu-projeto-valorae.vercel.app</p>
+                            <p class="mt-1"><span class="text-brand-500">Valor:</span> https://seu-projeto-valorae.vercel.app</p>
                         </div>
                         <p class="text-xs text-slate-400 mt-2">Dica: Limpe quaisquer variáveis SUPABASE_URL ou SUPABASE_ANON_KEY do AI Studio, para que o aplicativo force o tráfego exclusivamente através da ponte segura da Vercel.</p>
                     </div>
@@ -290,6 +302,18 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
             <!-- MAIN WORKSPACE CONTENT WINDOW -->
             <div class="flex-grow p-4 lg:p-8 flex flex-col gap-6 overflow-y-auto">
 
+                <!-- REAL-TIME B3 MARKET TICKER -->
+                <div class="bg-darkCard/40 border border-darkBorder/40 rounded-2xl overflow-hidden h-9 flex items-center select-none relative shrink-0">
+                    <div class="bg-brand-500/10 border-r border-darkBorder/30 text-brand-500 text-[10px] uppercase font-black px-3 py-2.5 flex items-center gap-1.5 shrink-0 z-10 select-none shadow-md">
+                        <i class="fa-solid fa-chart-line text-xs animate-pulse"></i> Ticker B3
+                    </div>
+                    <div class="flex-grow overflow-hidden relative flex items-center">
+                        <div id="web-market-ticker" class="animate-marquee items-center text-[10.5px]">
+                            <!-- B3 variables populated dynamically by script -->
+                        </div>
+                    </div>
+                </div>
+
                 <!-- --------------------------------- -->
                 <!-- WORKSPACE SUBVIEW 1: DASHBOARD -->
                 <!-- --------------------------------- -->
@@ -304,7 +328,7 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
                         <div class="bg-darkCard border border-darkBorder rounded-2xl p-5 flex flex-col justify-between relative overflow-hidden">
                             <div class="absolute -top-10 -right-10 w-24 h-24 bg-brand-500/5 rounded-full blur-xl"></div>
                             <span class="text-xs text-slate-400">Patrimônio Atual Estimado</span>
-                            <h3 class="text-2xl font-black text-emerald-400 mt-1" id="dash-total-current">R$ 0,00</h3>
+                            <h3 class="text-2xl font-black text-brand-500 mt-1" id="dash-total-current">R$ 0,00</h3>
                             <span class="text-[10px] font-bold text-brand-500 block mt-2" id="dash-total-gain">+R$ 0,00 (+0.0%)</span>
                         </div>
                         <div class="bg-darkCard border border-darkBorder rounded-2xl p-5 flex flex-col justify-between">
@@ -317,11 +341,11 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
                     <!-- Composition progress segments bar -->
                     <div class="bg-darkCard border border-darkBorder rounded-2xl p-4 mb-6">
                         <div class="flex justify-between items-center text-xs mb-2 font-bold">
-                            <span class="text-[#10b981]">Ações (<span id="comp-stocks-pct">0%</span>)</span>
+                            <span class="text-brand-500">Ações (<span id="comp-stocks-pct">0%</span>)</span>
                             <span class="text-[#ea9b0b]">FIIs (<span id="comp-fiis-pct">0%</span>)</span>
                         </div>
                         <div class="w-full h-3 bg-slate-900 rounded-full overflow-hidden flex">
-                            <div id="bar-stocks-fill" class="bg-[#10b981] h-full transition-all duration-500" style="width: 50%;"></div>
+                            <div id="bar-stocks-fill" class="bg-brand-500 h-full transition-all duration-500" style="width: 50%;"></div>
                             <div id="bar-fiis-fill" class="bg-[#ea9b0b] h-full transition-all duration-500" style="width: 50%;"></div>
                         </div>
                     </div>
@@ -567,7 +591,7 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
                             </div>
                             <div class="bg-slate-900 border border-darkBorder rounded-xl p-3.5 flex flex-col justify-between">
                                 <span class="text-[9px] uppercase font-black text-slate-500 tracking-wider">Dividend Yield</span>
-                                <span class="text-emerald-500 font-black text-base font-mono mt-1" id="analysis-metric-dy">0,00%</span>
+                                <span class="text-brand-500 font-black text-base font-mono mt-1" id="analysis-metric-dy">0,00%</span>
                             </div>
                             <div class="bg-slate-900 border border-darkBorder rounded-xl p-3.5 flex flex-col justify-between">
                                 <span class="text-[9px] uppercase font-black text-slate-500 tracking-wider">P/L (Valor/Lucro)</span>
@@ -718,7 +742,7 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
 
                             <div class="flex items-center justify-between bg-slate-900/50 border border-darkBorder rounded-xl p-4">
                                 <div class="flex gap-3">
-                                    <i class="fa-solid fa-rotate text-emerald-500 text-lg mt-0.5 animate-spin-slow"></i>
+                                    <i class="fa-solid fa-rotate text-brand-500 text-lg mt-0.5 animate-spin-slow"></i>
                                     <div>
                                         <p class="text-xs font-bold text-white">Pull Contínuo em Background</p>
                                         <p class="text-[9px] text-slate-400">Busca atualizações feitas pelo celular periodicamente</p>
@@ -783,7 +807,7 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
     <footer class="bg-darkBg border-t border-darkBorder/40 py-8 px-6 mt-16 select-none">
         <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
             <div class="flex items-center gap-3">
-                <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-brand-600 to-emerald-400 flex items-center justify-center">
+                <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-brand-600 to-brand-200 flex items-center justify-center">
                     <i class="fa-solid fa-chart-line text-white text-xs"></i>
                 </div>
                 <span class="text-base font-bold text-white tracking-wider">VALORAE PORTFOLIO</span>
@@ -1030,7 +1054,71 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
             // Render
             loadWorkspaceData();
             refreshFinancialNews();
+            startMarketTickerSimulation();
         });
+
+        // Live Market Ticker Loop with seamless looping duplicates
+        function startMarketTickerSimulation() {
+            const tickerEl = document.getElementById('web-market-ticker');
+            if (!tickerEl) return;
+            
+            const indices = [
+                { symbol: "IBOV", value: 124810, isPts: true, change: 1.25, step: 45 },
+                { symbol: "IFIX", value: 3394, isPts: true, change: -0.08, step: 1.2 },
+                { symbol: "DÓLAR", value: 5.14, isPts: false, change: 0.32, step: 0.005 },
+                { symbol: "PETR4", value: 38.20, isPts: false, change: 1.85, step: 0.12 },
+                { symbol: "VALE3", value: 62.80, isPts: false, change: -0.45, step: 0.15 },
+                { symbol: "WEGE3", value: 41.50, isPts: false, change: 2.10, step: 0.10 }
+            ];
+            
+            function render() {
+                let html = "";
+                // Loop twice to ensure continuous infinite loop
+                for (let loop = 0; loop < 2; loop++) {
+                    indices.forEach(item => {
+                        const isPos = item.change >= 0;
+                        const formattedVal = item.isPts 
+                            ? item.value.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) + " pts"
+                            : "R$ " + item.value.toFixed(2).replace('.', ',');
+                        const arrow = isPos ? "▲" : "▼";
+                        const colorClass = isPos ? "text-brand-500" : "text-rose-400";
+                        const sign = isPos ? "+" : "";
+                        
+                        html += `
+                            <div class="inline-flex items-center gap-2 mr-12 cursor-pointer hover:font-black transition-all" onclick="quickSelectAnalysisTicker('${item.symbol === 'IBOV' || item.symbol === 'IFIX' || item.symbol === 'DÓLAR' ? 'WEGE3' : item.symbol}')">
+                                <span class="font-extrabold text-slate-400">${item.symbol}</span>
+                                <span class="font-bold text-white font-mono">${formattedVal}</span>
+                                <span class="font-black ${colorClass} font-mono">${arrow} ${sign}${item.change.toFixed(2)}%</span>
+                            </div>
+                        `;
+                    });
+                }
+                tickerEl.innerHTML = html;
+            }
+            
+            render();
+            
+            // Fluctuate quotes slightly every 3 seconds to animate actual live action
+            setInterval(() => {
+                indices.forEach(item => {
+                    const direction = Math.random() > 0.48 ? 1 : -1;
+                    const delta = Math.random() * item.step;
+                    
+                    if (item.isPts) {
+                        item.value += Math.round(direction * delta);
+                    } else {
+                        item.value += direction * delta;
+                    }
+                    
+                    const changeDelta = (Math.random() - 0.5) * 0.15;
+                    item.change += changeDelta;
+                    // Cap changes between reasonable bounds for realism
+                    if (item.change > 6) item.change = 6;
+                    if (item.change < -6) item.change = -6;
+                });
+                render();
+            }, 3000);
+        }
 
         // Toggle Views: False = Landing & Setup, True = Web App Workspace
         function toggleWorkspace(showApp) {
@@ -1185,7 +1273,7 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
             const gainPct = totalInvested > 0 ? ((gain / totalInvested) * 100) : 0;
             const gainEl = document.getElementById('dash-total-gain');
             gainEl.textContent = `${gain >= 0 ? '+' : ''}${formatBRL(gain)} (${gain >= 0 ? '+' : ''}${gainPct.toFixed(2)}%)`;
-            gainEl.className = `text-[10px] font-bold block mt-2 ${gain >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+            gainEl.className = `text-[10px] font-bold block mt-2 ${gain >= 0 ? 'text-brand-500' : 'text-rose-400'}`;
 
             // Allocation Progress bar percentages
             const totalAssetsCurrent = totalStocksCurrent + totalFiisCurrent;
@@ -1223,7 +1311,7 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
                 listAcoes.innerHTML = `<div class="bg-darkCard/40 border border-dashed border-darkBorder rounded-2xl p-6 text-center text-xs text-slate-500">Sem ações registradas.</div>`;
             } else {
                 acoes.forEach(asset => {
-                    listAcoes.innerHTML += generateHoldingCardHTML(asset, '#10b981');
+                    listAcoes.innerHTML += generateHoldingCardHTML(asset, '#fbbf24');
                 });
             }
 
@@ -1250,7 +1338,7 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
                     </div>
                     <div class="text-right">
                         <div class="font-extrabold text-sm text-slate-200">${formatBRL(asset.currentValue)}</div>
-                        <div class="text-[10px] font-bold mt-0.5 ${asset.gainLossRaw >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
+                        <div class="text-[10px] font-bold mt-0.5 ${asset.gainLossRaw >= 0 ? 'text-brand-500' : 'text-rose-400'}">
                             ${asset.gainLossRaw >= 0 ? '+' : ''}${asset.gainLossPct.toFixed(1)}%
                         </div>
                     </div>
@@ -1286,10 +1374,10 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
 
             filtered.forEach(tx => {
                 const dateStr = new Date(tx.date).toLocaleDateString('pt-BR');
-                const badgeColor = tx.type === "ACAO" ? 'text-emerald-400' : 'text-amber-400';
+                const badgeColor = tx.type === "ACAO" ? 'text-brand-500' : 'text-amber-400';
                 const typeLabel = tx.type === "ACAO" ? "Ação" : "FII";
                 const orderLabel = tx.isSell ? "VENDA" : "COMPRA";
-                const orderColor = tx.isSell ? "bg-rose-500/10 text-rose-400" : "bg-emerald-500/10 text-emerald-400";
+                const orderColor = tx.isSell ? "bg-rose-500/10 text-rose-400" : "bg-brand-500/10 text-brand-500";
 
                 tbody.innerHTML += `
                     <tr class="border-b border-darkBorder/40 hover:bg-slate-900/40 transition-colors">
@@ -1306,7 +1394,7 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
                         <td class="px-4 py-3.5 text-right text-slate-400">${tx.broker || 'Comum'}</td>
                         <td class="px-4 py-3.5 text-center">
                             <div class="flex items-center justify-center gap-2">
-                                <button onclick="editTransaction(${tx.id})" class="text-slate-400 hover:text-emerald-400 font-semibold p-1.5 transition-colors" title="Editar"><i class="fa-solid fa-pen-to-square"></i></button>
+                                <button onclick="editTransaction(${tx.id})" class="text-slate-400 hover:text-brand-500 font-semibold p-1.5 transition-colors" title="Editar"><i class="fa-solid fa-pen-to-square"></i></button>
                                 <button onclick="deleteTransaction(${tx.id})" class="text-slate-400 hover:text-rose-500 font-semibold p-1.5 transition-colors" title="Excluir"><i class="fa-solid fa-trash-can"></i></button>
                             </div>
                         </td>
@@ -1843,17 +1931,17 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
                 <svg width="100%" height="100%" viewBox="0 0 500 150" preserveAspectRatio="none">
                     <defs>
                         <linearGradient id="chartGlowWeb" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stop-color="#10b981" stop-opacity="0.25"/>
-                            <stop offset="100%" stop-color="#10b981" stop-opacity="0.0"/>
+                            <stop offset="0%" stop-color="#fbbf24" stop-opacity="0.25"/>
+                            <stop offset="100%" stop-color="#fbbf24" stop-opacity="0.0"/>
                         </linearGradient>
                     </defs>
-                    <line x1="20" y1="30" x2="480" y2="30" stroke="#1E293B" stroke-width="0.5" stroke-dasharray="3,3"/>
-                    <line x1="20" y1="75" x2="480" y2="75" stroke="#1E293B" stroke-width="0.5" stroke-dasharray="3,3"/>
-                    <line x1="20" y1="120" x2="480" y2="120" stroke="#1E293B" stroke-width="0.5" stroke-dasharray="3,3"/>
+                    <line x1="20" y1="30" x2="480" y2="30" stroke="#2D3748" stroke-width="0.5" stroke-dasharray="3,3"/>
+                    <line x1="20" y1="75" x2="480" y2="75" stroke="#2D3748" stroke-width="0.5" stroke-dasharray="3,3"/>
+                    <line x1="20" y1="120" x2="480" y2="120" stroke="#2D3748" stroke-width="0.5" stroke-dasharray="3,3"/>
                     <path d="${areaD}" fill="url(#chartGlowWeb)" />
-                    <path d="${pathD}" fill="none" stroke="#10b981" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+                    <path d="${pathD}" fill="none" stroke="#fbbf24" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
                     <text x="25" y="145" fill="#64748B" font-size="8" font-weight="bold">Início</text>
-                    <text x="450" y="145" fill="#10b981" font-size="8" font-weight="extrabold">${formatBRL(points[points.length - 1])}</text>
+                    <text x="450" y="145" fill="#fbbf24" font-size="8" font-weight="extrabold">${formatBRL(points[points.length - 1])}</text>
                 </svg>
             `;
         }
@@ -2051,16 +2139,16 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
                 } else if (m.stockProfit <= 0 && m.fiiProfit <= 0) {
                     badgeHtml = `<span class="bg-slate-800 text-slate-400 text-[10px] font-bold px-2.5 py-1 rounded-xl">Sem Lucro</span>`;
                 } else {
-                    badgeHtml = `<span class="bg-emerald-500/10 text-emerald-500 border border-emerald-500/25 text-[10px] font-black px-2.5 py-1 rounded-xl">Isento RFB</span>`;
+                    badgeHtml = `<span class="bg-brand-500/10 text-brand-500 border border-brand-500/25 text-[10px] font-black px-2.5 py-1 rounded-xl">Isento RFB</span>`;
                 }
 
                 container.innerHTML += `
                     <tr class="border-b border-darkBorder hover:bg-slate-900/40 transition-colors">
                         <td class="px-5 py-4 font-bold text-white">${m.monthLabel}</td>
                         <td class="px-5 py-4 text-right font-mono">${formatBRL(m.stockSales)}</td>
-                        <td class="px-5 py-4 text-right font-mono ${m.stockProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${m.stockProfit >= 0 ? '+' : ''}${formatBRL(m.stockProfit)}</td>
+                        <td class="px-5 py-4 text-right font-mono ${m.stockProfit >= 0 ? 'text-brand-500' : 'text-rose-400'}">${m.stockProfit >= 0 ? '+' : ''}${formatBRL(m.stockProfit)}</td>
                         <td class="px-5 py-4 text-right font-mono">${formatBRL(m.fiiSales)}</td>
-                        <td class="px-5 py-4 text-right font-mono ${m.fiiProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${m.fiiProfit >= 0 ? '+' : ''}${formatBRL(m.fiiProfit)}</td>
+                        <td class="px-5 py-4 text-right font-mono ${m.fiiProfit >= 0 ? 'text-brand-500' : 'text-rose-400'}">${m.fiiProfit >= 0 ? '+' : ''}${formatBRL(m.fiiProfit)}</td>
                         <td class="px-5 py-4 text-right font-mono font-bold text-slate-200">${formatBRL(totalTaxToPay)}</td>
                         <td class="px-5 py-4 text-center">${badgeHtml}</td>
                     </tr>
@@ -2140,8 +2228,8 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
             const asset = getCalculatedHoldings().find(h => h.ticker === ticker) || { marketPrice: meta.price || 10.0 };
 
             document.getElementById('detail-badge-type').textContent = ticker;
-            document.getElementById('detail-badge-type').style.background = meta.type === "ACAO" ? "#10b98115" : "#ea9b0b15";
-            document.getElementById('detail-badge-type').style.color = meta.type === "ACAO" ? "#10b981" : "#ea9b0b";
+            document.getElementById('detail-badge-type').style.background = meta.type === "ACAO" ? "#fbbf2415" : "#ea9b0b15";
+            document.getElementById('detail-badge-type').style.color = meta.type === "ACAO" ? "#fbbf24" : "#ea9b0b";
 
             document.getElementById('detail-asset-name').textContent = meta.name;
             document.getElementById('detail-indic-price').textContent = formatBRL(asset.marketPrice);
@@ -2215,7 +2303,7 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
             pieContainer.innerHTML = `
                 <svg width="200" height="200" class="transform -rotate-90">
                     <circle cx="100" cy="100" r="50" fill="transparent" stroke="#ea9b0b" stroke-width="25"></circle>
-                    <circle cx="100" cy="100" r="50" fill="transparent" stroke="#10b981" stroke-width="25" stroke-dasharray="${circ}" stroke-dashoffset="${acOffset}"></circle>
+                    <circle cx="100" cy="100" r="50" fill="transparent" stroke="#fbbf24" stroke-width="25" stroke-dasharray="${circ}" stroke-dashoffset="${acOffset}"></circle>
                     <text x="100" y="-95" transform="rotate(90)" text-anchor="middle" font-weight="extrabold" font-size="11" fill="#fff" font-family="Plus Jakarta Sans">
                         Ações: ${(acPct*100).toFixed(0)}% | FIIs: ${(fiiPct*100).toFixed(0)}%
                     </text>
@@ -2240,7 +2328,7 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
                 
                 barSvgHtml += `
                     <text x="10" y="${y - 4}" fill="#94A3B8" font-size="9" font-weight="bold">${sec.toUpperCase()} (${formatBRL(sectorSums[sec])})</text>
-                    <rect x="10" y="${y}" width="${Math.max(10, barWidth)}" height="8" rx="4" fill="#34d399" opacity="0.85"></rect>
+                    <rect x="10" y="${y}" width="${Math.max(10, barWidth)}" height="8" rx="4" fill="#fbbf24" opacity="0.85"></rect>
                 `;
             });
             barSvgHtml += `</svg>`;
