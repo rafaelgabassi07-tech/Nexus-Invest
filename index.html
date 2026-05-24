@@ -254,12 +254,45 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
         <!-- ============================================== -->
         <!-- VIEW 2: COMPLETE INTERACTIVE WEB APP WORKSPACE -->
         <!-- ============================================== -->
-        <div id="workspace-container" class="hidden min-h-screen flex flex-col lg:flex-row border-t border-darkBorder/30">
+        <div id="workspace-container" class="hidden min-h-screen flex flex-col lg:flex-row border-t border-darkBorder/30 relative">
+            
+            <!-- MOBILE TOP NAVIGATION BAR (lg:hidden) -->
+            <div class="lg:hidden sticky top-0 left-0 w-full bg-darkBg/95 backdrop-blur-md border-b border-darkBorder/60 px-4 py-3 flex items-center justify-between z-30 select-none">
+                <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-brand-600 to-brand-100 flex items-center justify-center shadow-lg">
+                        <i class="fa-solid fa-chart-line text-white text-xs"></i>
+                    </div>
+                    <div class="flex flex-col">
+                        <span class="text-xs font-black tracking-wider text-white">VALORAE</span>
+                        <span class="text-[8px] text-brand-500 font-mono tracking-widest uppercase -mt-1">WORKSPACE MOBILE</span>
+                    </div>
+                </div>
+                <!-- Action Tools -->
+                <div class="flex items-center gap-2">
+                    <!-- Mobile Bell -->
+                    <button onclick="openNotificationsModal()" class="w-8 h-8 rounded-lg bg-slate-900 border border-darkBorder/60 text-slate-400 hover:text-white flex items-center justify-center active:scale-95 relative transition-all">
+                        <i class="fa-solid fa-bell text-xs"></i>
+                        <span id="mobile-unread-badge" class="absolute top-1 right-1 w-2 h-2 bg-rose-500 rounded-full border border-darkCard hidden"></span>
+                    </button>
+                    <!-- Setup Exit -->
+                    <button onclick="toggleWorkspace(false)" class="w-8 h-8 rounded-lg bg-slate-900 border border-darkBorder/60 text-slate-400 hover:text-white flex items-center justify-center active:scale-95 transition-all">
+                        <i class="fa-solid fa-right-from-bracket text-xs"></i>
+                    </button>
+                </div>
+            </div>
+
             <!-- SIDEBAR NAV (PC) -->
-            <aside class="w-full lg:w-64 bg-darkCard/80 backdrop-blur-md border-r border-darkBorder/50 p-4 flex flex-col gap-5 select-none">
-                <div class="p-2 border-b border-darkBorder/40">
-                    <p class="text-[10px] uppercase font-mono tracking-widest text-[#ea9b0b]">Central de Ativos</p>
-                    <h2 class="text-white font-extrabold text-base">Workspace VALORAE</h2>
+            <aside class="hidden lg:flex lg:flex-col lg:w-64 bg-darkCard/80 backdrop-blur-md border-r border-darkBorder/50 p-4 gap-5 select-none shrink-0">
+                <div class="p-2 border-b border-darkBorder/40 flex items-center justify-between">
+                    <div>
+                        <p class="text-[10px] uppercase font-mono tracking-widest text-[#ea9b0b]">Central de Ativos</p>
+                        <h2 class="text-white font-extrabold text-base">Workspace VALORAE</h2>
+                    </div>
+                    <!-- Desktop bell -->
+                    <button onclick="openNotificationsModal()" class="w-8 h-8 rounded-lg bg-slate-900 border border-darkBorder/60 text-slate-400 hover:text-white flex items-center justify-center active:scale-95 relative transition-all">
+                        <i class="fa-regular fa-bell text-sm"></i>
+                        <span id="desktop-unread-badge" class="absolute top-1 right-1 w-2 h-2 bg-rose-500 rounded-full border border-darkCard hidden"></span>
+                    </button>
                 </div>
                 
                 <nav class="flex flex-row lg:flex-col gap-1 overflow-x-auto lg:overflow-visible pb-2 lg:pb-0">
@@ -300,7 +333,7 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
             </aside>
 
             <!-- MAIN WORKSPACE CONTENT WINDOW -->
-            <div class="flex-grow p-4 lg:p-8 flex flex-col gap-6 overflow-y-auto">
+            <div class="flex-grow p-4 pb-24 lg:p-8 flex flex-col gap-6 overflow-y-auto">
 
                 <!-- REAL-TIME B3 MARKET TICKER -->
                 <div class="bg-darkCard/40 border border-darkBorder/40 rounded-2xl overflow-hidden h-9 flex items-center select-none relative shrink-0">
@@ -445,25 +478,72 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
                 <!-- WORKSPACE SUBVIEW 3: CHARTS -->
                 <!-- --------------------------------- -->
                 <div id="tab-wp-charts" class="wp-tab-content hidden">
-                    <h4 class="font-extrabold text-white text-base mb-1">Diversificação Visual do Patrimônio</h4>
-                    <p class="text-xs text-slate-400 mb-6">Gráficos dinâmicos gerados em SVG baseados na sua alocação de ações e fundos imobiliários.</p>
+                    <div class="pb-4 border-b border-darkBorder/40 mb-6 flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+                        <div>
+                            <h4 class="font-black text-white text-lg">Gráficos & Estatísticas Avançadas</h4>
+                            <p class="text-xs text-slate-400 mt-0.5">Aprecie análises profundas de rentabilidade, proventos, diversidade e fluxo de caixa.</p>
+                        </div>
+                    </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <!-- Chart 1 Widget -->
-                        <div class="bg-darkCard border border-darkBorder rounded-2xl p-5 flex flex-col">
-                            <span class="text-xs text-slate-400 font-bold uppercase tracking-wider mb-4"><i class="fa-solid fa-chart-line text-brand-500"></i> Divisão por Classe</span>
-                            <div class="flex-grow flex items-center justify-center min-h-[200px]" id="svg-pie-chart-container">
-                                <!-- Pie chart SVG goes here -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pb-20">
+                    
+                        <!-- Card 1: Proventos -->
+                        <div onclick="openChartDetail('Proventos')" class="bg-darkCard border border-darkBorder rounded-2xl p-5 flex flex-col gap-3 cursor-pointer hover:border-brand-500/40 hover:-translate-y-0.5 transition-all duration-300 select-none">
+                            <div class="flex items-center justify-between">
+                                <span class="text-[10.5px] font-black text-brand-500 uppercase tracking-widest flex items-center gap-1.5"><i class="fa-solid fa-chart-line text-xs"></i> Evolução de Proventos</span>
+                                <span id="chart-stat-dy" class="text-[9.5px] bg-brand-500/10 text-brand-500 px-2.5 py-0.5 rounded-full font-bold">Yield Médio: 0,00%</span>
                             </div>
+                            <p class="text-[11.5px] text-slate-400">Seus dividendos projetados lineares recebidos e projetados a receber para os próximos 12 meses.</p>
+                            <div class="h-[140px] flex items-center justify-center bg-slate-900/30 rounded-xl" id="chart-holder-proventos">
+                                <!-- Stacked Bar SVG goes here -->
+                            </div>
+                            <span class="text-[9.5px] text-slate-500 text-center block font-bold hover:text-brand-500 mt-1 transition-colors">Visualizar demonstrativo detalhado &rarr;</span>
                         </div>
 
-                        <!-- Chart 2 Widget -->
-                        <div class="bg-darkCard border border-darkBorder rounded-2xl p-5 flex flex-col">
-                            <span class="text-xs text-slate-400 font-bold uppercase tracking-wider mb-4"><i class="fa-solid fa-network-wired text-amber-500"></i> Alocação por Setores</span>
-                            <div class="flex-grow flex items-center justify-center min-h-[200px]" id="svg-bar-chart-container">
-                                <!-- Bar chart SVG goes here -->
+                        <!-- Card 2: IPCA+ -->
+                        <div onclick="openChartDetail('IPCA+')" class="bg-darkCard border border-darkBorder rounded-2xl p-5 flex flex-col gap-3 cursor-pointer hover:border-indigo-500/40 hover:-translate-y-0.5 transition-all duration-300 select-none">
+                            <div class="flex items-center justify-between">
+                                <span class="text-[10.5px] font-black text-indigo-400 uppercase tracking-widest flex items-center gap-1.5"><i class="fa-solid fa-chart-area text-xs"></i> Rentabilidade vs IPCA+</span>
+                                <span id="chart-stat-ipca" class="text-[9.5px] bg-indigo-500/10 text-indigo-400 px-2.5 py-0.5 rounded-full font-bold">Ganho Real: 0,00%</span>
                             </div>
+                            <p class="text-[11.5px] text-slate-400">Sua carteira acumulada comparada com o IPCA (estimado a inflação geral de 5.5% a.a).</p>
+                            <div class="h-[140px] flex items-center justify-center bg-slate-900/30 rounded-xl" id="chart-holder-ipca">
+                                <!-- Line compare SVG goes here -->
+                            </div>
+                            <span class="text-[9.5px] text-slate-500 text-center block font-bold hover:text-indigo-400 mt-1 transition-colors">Visualizar análise inflacionária &rarr;</span>
                         </div>
+
+                        <!-- Card 3: Equilíbrio (Donut & Setores) -->
+                        <div onclick="openChartDetail('Diversificacao')" class="bg-darkCard border border-darkBorder rounded-2xl p-5 flex flex-col gap-3 cursor-pointer hover:border-amber-500/40 hover:-translate-y-0.5 transition-all duration-300 select-none">
+                            <div class="flex items-center justify-between">
+                                <span class="text-[10.5px] font-black text-amber-500 uppercase tracking-widest flex items-center gap-1.5"><i class="fa-solid fa-chart-pie text-xs"></i> Equilíbrio de Carteira</span>
+                                <span id="chart-stat-setores" class="text-[9.5px] bg-amber-500/10 text-amber-500 px-2.5 py-0.5 rounded-full font-bold">Setores Ativos</span>
+                            </div>
+                            <p class="text-[11.5px] text-slate-400">Distribuição em classes (Ações e FIIs) e paridade de atuação do mercado de atuação.</p>
+                            <div class="grid grid-cols-2 gap-2 h-[140px] items-center bg-slate-900/30 rounded-xl p-2">
+                                <div class="flex items-center justify-center h-full w-full" id="svg-pie-chart-container">
+                                    <!-- Donut inside -->
+                                </div>
+                                <div class="flex items-center justify-center h-full w-full" id="svg-bar-chart-container">
+                                    <!-- Bar segments inside -->
+                                </div>
+                            </div>
+                            <span class="text-[9.5px] text-slate-500 text-center block font-bold hover:text-amber-500 mt-1 transition-colors">Visualizar rebalanceor de capital &rarr;</span>
+                        </div>
+
+                        <!-- Card 4: Agenda -->
+                        <div onclick="openChartDetail('Agenda')" class="bg-darkCard border border-darkBorder rounded-2xl p-5 flex flex-col gap-3 cursor-pointer hover:border-emerald-500/40 hover:-translate-y-0.5 transition-all duration-300 select-none">
+                            <div class="flex items-center justify-between">
+                                <span class="text-[10.5px] font-black text-emerald-400 uppercase tracking-widest flex items-center gap-1.5"><i class="fa-solid fa-calendar-days text-xs"></i> Agenda de Proventos</span>
+                                <span id="chart-stat-agenda" class="text-[9.5px] bg-emerald-500/10 text-emerald-400 px-2.5 py-0.5 rounded-full font-bold">R$ 0,00 estimado</span>
+                            </div>
+                            <p class="text-[11.5px] text-slate-400">Datas de corte (Datas-Com) e calendário previsto de proventos de caixa da carteira.</p>
+                            <div class="h-[140px] flex items-center justify-center bg-slate-900/30 rounded-xl" id="chart-holder-agenda">
+                                <!-- Projections bars SVG -->
+                            </div>
+                            <span class="text-[9.5px] text-slate-500 text-center block font-bold hover:text-emerald-400 mt-1 transition-colors">Visualizar calendário futuro de caixa &rarr;</span>
+                        </div>
+
                     </div>
                 </div>
 
@@ -652,7 +732,7 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
                 <!-- WORKSPACE SUBVIEW 6: NEWS FEED -->
                 <!-- --------------------------------- -->
                 <div id="tab-wp-news" class="wp-tab-content hidden animate-fade-in">
-                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
                         <div>
                             <h4 class="font-extrabold text-white text-base mb-1">Feed de Notícias & Macroeconomia B3</h4>
                             <p class="text-xs text-slate-400">Acompanhe notícias sobre inflação, juros, proventos declarados por empresas e atualizações B3.</p>
@@ -662,7 +742,26 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
                         </button>
                     </div>
 
-                    <div class="flex flex-col gap-4" id="news-feed-list">
+                    <!-- Search and Filters row, identical to NewsScreen.kt -->
+                    <div class="flex flex-col gap-3 mb-6">
+                        <!-- Search Box style -->
+                        <div class="flex items-center gap-2.5 bg-slate-900 border border-darkBorder/60 rounded-xl px-3.5 py-2.5">
+                            <i class="fa-solid fa-magnifying-glass text-brand-500 text-xs"></i>
+                            <input type="text" id="news-search-input" oninput="filterNewsList()" placeholder="Buscar nos títulos ou reportagens..." class="bg-transparent w-full outline-none text-xs text-slate-200">
+                        </div>
+                        
+                        <!-- Categories horizontal scrolling list, identical to NewsScreen.kt categories row -->
+                        <div class="flex gap-2 overflow-x-auto pb-1.5 scrollbar-thin select-none">
+                            <button onclick="selectNewsCategory('Tudo')" id="news-cat-Tudo" class="news-cat-btn px-4 py-2 rounded-xl text-[10.5px] font-black shrink-0 transition-all bg-brand-500 text-darkBg">Tudo</button>
+                            <button onclick="selectNewsCategory('Ações')" id="news-cat-Acoes" class="news-cat-btn px-4 py-2 rounded-xl text-[10.5px] font-bold shrink-0 transition-all bg-slate-900 border border-darkBorder/40 text-slate-400 hover:text-white">Ações</button>
+                            <button onclick="selectNewsCategory('FIIs')" id="news-cat-FIIs" class="news-cat-btn px-4 py-2 rounded-xl text-[10.5px] font-bold shrink-0 transition-all bg-slate-900 border border-darkBorder/40 text-slate-400 hover:text-white">FIIs</button>
+                            <button onclick="selectNewsCategory('Macroeconomia')" id="news-cat-Macroeconomia" class="news-cat-btn px-4 py-2 rounded-xl text-[10.5px] font-bold shrink-0 transition-all bg-slate-900 border border-darkBorder/40 text-slate-400 hover:text-white">Macroeconomia</button>
+                            <button onclick="selectNewsCategory('Geral')" id="news-cat-Geral" class="news-cat-btn px-4 py-2 rounded-xl text-[10.5px] font-bold shrink-0 transition-all bg-slate-900 border border-darkBorder/40 text-slate-400 hover:text-white">Geral</button>
+                            <button onclick="selectNewsCategory('Salvos')" id="news-cat-Salvos" class="news-cat-btn px-4 py-2 rounded-xl text-[10.5px] font-bold shrink-0 transition-all bg-slate-900 border border-darkBorder/40 text-slate-400 hover:text-white"><i class="fa-regular fa-bookmark mr-1"></i> Salvos</button>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col gap-4 pb-20" id="news-feed-list">
                         <!-- Filled dynamically by javascript -->
                     </div>
                 </div>
@@ -798,6 +897,30 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
                     </div>
                 </div>
 
+            <!-- PERSISTENT MOBILE BOTTOM NAVIGATION BAR (lg:hidden) -->
+            <div class="lg:hidden fixed bottom-0 left-0 w-full bg-darkBg/95 backdrop-blur-md border-t border-darkBorder/60 py-2.5 px-2 flex items-center justify-around z-40 select-none shadow-2xl">
+                <button onclick="selectWorkspaceTab('tab-wp-dashboard')" id="mobile-nav-dashboard" class="flex flex-col items-center justify-center text-brand-500 py-1 transition-all flex-1 text-[10px] font-black scale-105">
+                    <i class="fa-solid fa-house mb-1 text-lg text-brand-500"></i>
+                    <span>Início</span>
+                </button>
+                <button onclick="selectWorkspaceTab('tab-wp-transactions')" id="mobile-nav-transactions" class="flex flex-col items-center justify-center text-slate-400 py-1 transition-all flex-1 text-[10px] font-medium">
+                    <i class="fa-solid fa-list-check mb-1 text-lg"></i>
+                    <span>Ordens</span>
+                </button>
+                <button onclick="selectWorkspaceTab('tab-wp-charts')" id="mobile-nav-charts" class="flex flex-col items-center justify-center text-slate-400 py-1 transition-all flex-1 text-[10px] font-medium">
+                    <i class="fa-solid fa-chart-pie mb-1 text-lg"></i>
+                    <span>Gráficos</span>
+                </button>
+                <button onclick="selectWorkspaceTab('tab-wp-analysis')" id="mobile-nav-analysis" class="flex flex-col items-center justify-center text-slate-400 py-1 transition-all flex-1 text-[10px] font-medium">
+                    <i class="fa-solid fa-magnifying-glass mb-1 text-lg"></i>
+                    <span>Análise</span>
+                </button>
+                <button onclick="toggleMobileMoreSheet(true)" id="mobile-nav-more" class="flex flex-col items-center justify-center text-slate-400 py-1 transition-all flex-1 text-[10px] font-medium">
+                    <i class="fa-solid fa-bars mb-1 text-lg"></i>
+                    <span>Mais</span>
+                </button>
+            </div>
+
             </div>
         </div>
 
@@ -823,6 +946,113 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
     <!-- ============================================== -->
     <!-- MODAL POPUPS & DETAILS WIDGET PANELS -->
     <!-- ============================================== -->
+
+    <!-- MOBILE 'MAIS' BOTTOM SHEET MODAL (lg:hidden) -->
+    <div id="mobile-more-sheet" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 transition-all duration-300 flex items-end">
+        <!-- Backdrop click target -->
+        <div class="absolute inset-0" onclick="toggleMobileMoreSheet(false)"></div>
+        <!-- Sheet content container -->
+        <div class="bg-darkCard w-full rounded-t-3xl border-t border-darkBorder/80 p-6 flex flex-col gap-5 z-10 relative transform translate-y-0 transition-transform duration-300 select-none">
+            <!-- Bar drag handle indicator -->
+            <div class="w-12 h-1.5 bg-slate-700 rounded-full mx-auto mb-2 opacity-60"></div>
+            
+            <h5 class="text-[10.5px] font-black text-slate-400 uppercase tracking-widest border-b border-darkBorder/40 pb-2.5 flex items-center gap-1.5"><i class="fa-solid fa-folder-plus text-xs"></i> Outros Recursos & Ferramentas</h5>
+            
+            <div class="grid grid-cols-2 gap-3 pb-8 text-slate-200">
+                <!-- Sincronia na nuvem -->
+                <button onclick="selectWorkspaceTabMobile('tab-wp-sync')" class="bg-slate-900 border border-darkBorder/40 hover:bg-slate-800 p-4 rounded-2xl flex flex-col items-center justify-center text-center gap-2 group transition-all duration-150">
+                    <i class="fa-solid fa-cloud-arrow-up text-brand-500 text-xl group-hover:scale-110 transition-transform"></i>
+                    <span class="text-[11px] font-extrabold">Sincronia Nuvem</span>
+                </button>
+                <!-- Calculadora DARF -->
+                <button onclick="selectWorkspaceTabMobile('tab-wp-darf')" class="bg-slate-900 border border-darkBorder/40 hover:bg-slate-800 p-4 rounded-2xl flex flex-col items-center justify-center text-center gap-2 group transition-all duration-150">
+                    <i class="fa-solid fa-percent text-indigo-400 text-xl group-hover:scale-110 transition-transform"></i>
+                    <span class="text-[11px] font-extrabold">DARF & Impostos</span>
+                </button>
+                <!-- Notícias -->
+                <button onclick="selectWorkspaceTabMobile('tab-wp-news')" class="bg-slate-900 border border-darkBorder/40 hover:bg-slate-800 p-4 rounded-2xl flex flex-col items-center justify-center text-center gap-2 group transition-all duration-150">
+                    <i class="fa-solid fa-newspaper text-emerald-400 text-xl group-hover:scale-110 transition-transform"></i>
+                    <span class="text-[11px] font-extrabold">Notícias B3</span>
+                </button>
+                <!-- Configurações -->
+                <button onclick="selectWorkspaceTabMobile('tab-wp-settings')" class="bg-slate-900 border border-darkBorder/40 hover:bg-slate-800 p-4 rounded-2xl flex flex-col items-center justify-center text-center gap-2 group transition-all duration-150">
+                    <i class="fa-solid fa-gears text-amber-500 text-xl group-hover:scale-110 transition-transform"></i>
+                    <span class="text-[11px] font-extrabold">Configurações</span>
+                </button>
+            </div>
+            
+            <button onclick="toggleWorkspace(false); toggleMobileMoreSheet(false);" class="w-full bg-slate-900 border border-darkBorder/50 text-rose-400 text-xs py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-800 active:scale-95 transition-all">
+                <i class="fa-solid fa-right-from-bracket text-xs"></i> Desconectar Painel
+            </button>
+        </div>
+    </div>
+
+    <!-- NOTIFICATIONS MODAL / DIALOG (Matches NotificationsDialog.kt) -->
+    <div id="notifications-modal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-darkCard w-full max-w-lg rounded-3xl border border-darkBorder/85 p-6 flex flex-col gap-4 relative animate-in fade-in zoom-in-95 duration-250 max-h-[85vh] overflow-hidden select-none">
+            <!-- Header -->
+            <div class="flex justify-between items-center pb-3 border-b border-darkBorder/40">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-9 h-9 rounded-full bg-brand-500/10 flex items-center justify-center">
+                        <i class="fa-regular fa-bell text-brand-500 text-sm"></i>
+                    </div>
+                    <div>
+                        <h4 class="font-black text-white text-sm">Central de Notificações B3</h4>
+                        <p id="notifications-subtitle" class="text-[10px] text-slate-400">0 mensagens pendentes</p>
+                    </div>
+                </div>
+                <button onclick="closeNotificationsModal()" class="w-8 h-8 rounded-xl bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center active:scale-95 transition-all">
+                    <i class="fa-solid fa-xmark text-sm"></i>
+                </button>
+            </div>
+            
+            <!-- Actions Bar -->
+            <div class="flex justify-between items-center text-[10.5px] text-slate-400">
+                <button onclick="markAllNotificationsAsRead()" class="text-brand-500 font-bold hover:underline py-1 flex items-center gap-1.5 active:scale-95 transition-all">
+                    <i class="fa-solid fa-check-double text-xs"></i> Marcar todas como lidas
+                </button>
+                <button onclick="clearAllNotifications()" class="text-rose-400 font-bold hover:underline py-1 flex items-center gap-1.5 active:scale-95 transition-all">
+                    <i class="fa-regular fa-trash-can text-xs"></i> Limpar todas as mensagens
+                </button>
+            </div>
+            
+            <!-- Content container (Empty or list) -->
+            <div id="notifications-list-container" class="flex flex-col gap-3 overflow-y-auto pr-1">
+                <!-- Populated dynamically -->
+            </div>
+            
+            <button onclick="closeNotificationsModal()" class="w-full bg-slate-900 border border-darkBorder/50 text-slate-300 text-xs py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-slate-800 active:scale-95 transition-all">
+                Fechar Notificações
+            </button>
+        </div>
+    </div>
+
+    <!-- POPUP 3: ADVANCED CHART DETAIL DIALOG/MODAL (Matches Kotlin ChartDetailPage) -->
+    <div id="chart-detail-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm hidden px-2 sm:px-4 select-none">
+        <div class="bg-darkCard border border-darkBorder rounded-3xl p-4 sm:p-6 w-full max-w-2xl shadow-2xl flex flex-col gap-4 relative animate-in fade-in zoom-in-95 duration-200 h-[80vh] overflow-hidden">
+            
+            <!-- Header of modal -->
+            <div class="flex justify-between items-center border-b border-darkBorder pb-3 shrink-0">
+                <div class="flex items-center gap-3">
+                    <button onclick="closeChartDetail()" class="w-9 h-9 bg-slate-900 border border-darkBorder/40 text-brand-500 rounded-xl flex items-center justify-center hover:bg-slate-800 transition-all">
+                        <i class="fa-solid fa-arrow-left text-xs"></i>
+                    </button>
+                    <div>
+                        <h3 class="text-xs sm:text-sm font-black text-white" id="chart-detail-title">Nome do Gráfico</h3>
+                        <p class="text-[10px] text-slate-400" id="chart-detail-subtitle">Descrição do painel estatístico</p>
+                    </div>
+                </div>
+                <button onclick="closeChartDetail()" class="text-slate-400 hover:text-white transition-colors text-lg"><i class="fa-solid fa-xmark text-sm"></i></button>
+            </div>
+
+            <!-- Scrollable container space inside modal -->
+            <div id="chart-detail-body" class="flex-grow flex flex-col gap-5 text-slate-200 overflow-y-auto pr-1">
+                <!-- Dynamically populated per chartType -->
+            </div>
+            
+            <button onclick="closeChartDetail()" class="w-full bg-slate-900 hover:bg-slate-800 border border-darkBorder font-bold px-4 py-2.5 rounded-xl text-xs transition-all mt-2 shrink-0">Fechar Relatório</button>
+        </div>
+    </div>
 
     <!-- POPUP 1: INSERT TRANSACTION MODAL -->
     <div id="modal-transaction" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm hidden px-4 select-none">
@@ -1150,8 +1380,37 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
             });
 
             // Show active
-            document.getElementById(tabId).classList.replace('hidden', 'block');
-            document.getElementById('nav-' + tabId.replace('tab-wp-', '')).className = "wp-nav-btn active flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold text-left transition-all w-full shrink-0 bg-brand-500 text-darkBg shadow-glow hover:shadow-brand-500/20";
+            const activeWp = document.getElementById(tabId);
+            if (activeWp) activeWp.classList.replace('hidden', 'block');
+            
+            const btnEl = document.getElementById('nav-' + tabId.replace('tab-wp-', ''));
+            if (btnEl) btnEl.className = "wp-nav-btn active flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold text-left transition-all w-full shrink-0 bg-brand-500 text-darkBg shadow-glow hover:shadow-brand-500/20";
+
+            // Update mobile navigation button highlight states
+            const mobileTabs = ['dashboard', 'transactions', 'charts', 'analysis'];
+            mobileTabs.forEach(name => {
+                const el = document.getElementById('mobile-nav-' + name);
+                if (el) {
+                    const iconEl = el.querySelector('i');
+                    if (tabId === 'tab-wp-' + name) {
+                        el.className = "flex flex-col items-center justify-center text-brand-500 py-1 transition-all flex-1 text-[10px] font-black scale-105";
+                        if (iconEl) iconEl.className = iconEl.className.replace('text-slate-400', 'text-brand-500');
+                    } else {
+                        el.className = "flex flex-col items-center justify-center text-slate-400 py-1 transition-all flex-1 text-[10px] font-medium";
+                        if (iconEl) iconEl.className = iconEl.className.replace('text-brand-500', 'text-slate-400');
+                    }
+                }
+            });
+
+            // Reset generic 'Mais' color highlights
+            const moreBtn = document.getElementById('mobile-nav-more');
+            if (moreBtn) {
+                if (!mobileTabs.map(t => 'tab-wp-' + t).includes(tabId)) {
+                    moreBtn.className = "flex flex-col items-center justify-center text-brand-500 py-1 transition-all flex-1 text-[10px] font-black scale-105";
+                } else {
+                    moreBtn.className = "flex flex-col items-center justify-center text-slate-400 py-1 transition-all flex-1 text-[10px] font-medium";
+                }
+            }
 
             // Trigger dynamic calculated reports on tab activation
             if (tabId === 'tab-wp-darf') {
@@ -2274,18 +2533,756 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
             }
         }
 
-        // Render pure custom SVGs dynamically based on Portfolio Allocation (Fast & responsive)
+        // ===================================
+        // MOBILE WORKSPACE HELPERS
+        // ===================================
+        function toggleMobileMoreSheet(show) {
+            const sheet = document.getElementById('mobile-more-sheet');
+            if (sheet) {
+                if (show) sheet.classList.remove('hidden');
+                else sheet.classList.add('hidden');
+            }
+        }
+        
+        function selectWorkspaceTabMobile(tabId) {
+            selectWorkspaceTab(tabId);
+            toggleMobileMoreSheet(false);
+        }
+
+        // ===================================
+        // NOTIFICATIONS SYSTEM (NotificationsDialog.kt)
+        // ===================================
+        let notificationsList = [
+            { id: 1, title: "Bem-vindo ao VALORAE", description: "Ficamos extremamente felizes em ter você por aqui! Comece adicionando ou importando suas transações com simplicidade e precisão. Suas informações são persistidas localmente de forma privada.", category: "SISTEMA", date: "Hoje às 15:30", iconName: "WALLET", isRead: false },
+            { id: 2, title: "Motor de Cotações v2.4 Ativo", description: "Fez-se o upgrade massivo de velocidade na busca offline de ativos, dividend yield de FIIs e controle tributário de ações. Aproveite painéis estatísticos idênticos aos nativos.", category: "SISTEMA", date: "Hoje às 15:34", iconName: "TRENDING", isRead: false }
+        ];
+
+        function openNotificationsModal() {
+            renderNotifications();
+            const modal = document.getElementById('notifications-modal');
+            if (modal) modal.classList.remove('hidden');
+        }
+
+        function closeNotificationsModal() {
+            const modal = document.getElementById('notifications-modal');
+            if (modal) modal.classList.add('hidden');
+        }
+
+        function renderNotifications() {
+            const listContainer = document.getElementById('notifications-list-container');
+            const subtitleEl = document.getElementById('notifications-subtitle');
+            if (!listContainer || !subtitleEl) return;
+            
+            const unreadCount = notificationsList.filter(n => !n.isRead).length;
+            subtitleEl.textContent = unreadCount > 0 ? `${unreadCount} pendentes` : "Nenhum novo alerta no momento";
+            
+            // Badge states
+            const mobileBadge = document.getElementById('mobile-unread-badge');
+            if (mobileBadge) {
+                if (unreadCount > 0) {
+                    mobileBadge.classList.remove('hidden');
+                    mobileBadge.textContent = unreadCount;
+                } else mobileBadge.classList.add('hidden');
+            }
+            const desktopBadge = document.getElementById('desktop-unread-badge');
+            if (desktopBadge) {
+                if (unreadCount > 0) desktopBadge.classList.remove('hidden');
+                else desktopBadge.classList.add('hidden');
+            }
+            
+            if (notificationsList.length === 0) {
+                listContainer.innerHTML = `
+                    <div class="flex flex-col items-center justify-center py-8 text-center select-none">
+                        <i class="fa-regular fa-bell-slash text-slate-600 text-3xl mb-2.5 block"></i>
+                        <h6 class="text-xs font-bold text-slate-300">Tudo limpo por aqui!</h6>
+                        <p class="text-[11px] text-slate-500 mt-0.5 max-w-xs">Nenhuma notificação recente para exibir.</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            let html = "";
+            notificationsList.forEach(n => {
+                const iconClass = n.iconName === "WALLET" ? "fa-solid fa-wallet text-brand-500" :
+                                  n.iconName === "TRENDING" ? "fa-solid fa-chart-line text-emerald-400" :
+                                  "fa-solid fa-bell text-indigo-400";
+                                  
+                const unreadBg = n.isRead ? "border-darkBorder/40 bg-slate-900/30 opacity-70" : "border-brand-500/20 bg-brand-500/5";
+                const checkIcon = n.isRead ? "fa-regular fa-envelope-open text-slate-500" : "fa-solid fa-envelope text-brand-500";
+                
+                html += `
+                    <div class="p-3 border rounded-2xl ${unreadBg} flex gap-2.5 items-start transition-all duration-150">
+                        <div class="w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center shrink-0 mt-0.5">
+                            <i class="${iconClass} text-xs"></i>
+                        </div>
+                        <div class="flex-grow">
+                            <div class="flex justify-between items-start gap-2">
+                                <h5 class="text-[11px] font-black text-white leading-snug">${n.title}</h5>
+                                <span class="text-[8px] text-slate-500 font-mono shrink-0">${n.date}</span>
+                            </div>
+                            <p class="text-[10px] text-slate-400 mt-1 leading-relaxed">${n.description}</p>
+                        </div>
+                        <div class="flex flex-col gap-1 shrink-0">
+                            <button onclick="toggleNotificationRead(${n.id})" class="text-sm cursor-pointer hover:text-brand-500 transition-colors" title="Alternar lida">
+                                <i class="${checkIcon}"></i>
+                            </button>
+                            <button onclick="deleteNotification(${n.id})" class="text-slate-600 hover:text-rose-400 text-xs cursor-pointer transition-colors" title="Excluir">
+                                <i class="fa-regular fa-trash-can"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            listContainer.innerHTML = html;
+        }
+
+        function toggleNotificationRead(id) {
+            const idx = notificationsList.findIndex(n => n.id === id);
+            if (idx !== -1) {
+                notificationsList[idx].isRead = !notificationsList[idx].isRead;
+                renderNotifications();
+            }
+        }
+
+        function deleteNotification(id) {
+            notificationsList = notificationsList.filter(n => n.id !== id);
+            renderNotifications();
+        }
+
+        function markAllNotificationsAsRead() {
+            notificationsList.forEach(n => n.isRead = true);
+            renderNotifications();
+        }
+
+        function clearAllNotifications() {
+            notificationsList = [];
+            renderNotifications();
+        }
+
+
+        // ===================================
+        // FINANCIAL NEWS FILTERING (NewsScreen.kt)
+        // ===================================
+        let activeNewsCategory = 'Tudo';
+        let bookmarkedNewsUrls = JSON.parse(localStorage.getItem('valorae_bookmarked_news') || '[]');
+        let readNewsUrls = JSON.parse(localStorage.getItem('valorae_read_news') || '[]');
+
+        function selectNewsCategory(category) {
+            activeNewsCategory = category;
+            document.querySelectorAll('.news-cat-btn').forEach(btn => {
+                const cleanId = 'news-cat-' + (category === "Ações" ? "Acoes" : category);
+                if (btn.id === cleanId) {
+                    btn.className = "news-cat-btn px-4 py-2 rounded-xl text-[10.5px] font-black shrink-0 transition-all bg-brand-500 text-darkBg shadow-md";
+                } else {
+                    btn.className = "news-cat-btn px-4 py-2 rounded-xl text-[10.5px] font-bold shrink-0 transition-all bg-slate-900 border border-darkBorder/40 text-slate-400 hover:text-white";
+                }
+            });
+            filterNewsList();
+        }
+
+        function toggleBookmarkNews(link) {
+            if (bookmarkedNewsUrls.includes(link)) {
+                bookmarkedNewsUrls = bookmarkedNewsUrls.filter(u => u !== link);
+            } else {
+                bookmarkedNewsUrls.push(link);
+            }
+            localStorage.setItem('valorae_bookmarked_news', JSON.stringify(bookmarkedNewsUrls));
+            filterNewsList();
+        }
+
+        function markNewsAsRead(link) {
+            if (!readNewsUrls.includes(link)) {
+                readNewsUrls.push(link);
+                localStorage.setItem('valorae_read_news', JSON.stringify(readNewsUrls));
+                const b64 = btoa(link).replace(/=/g, '');
+                const dot = document.getElementById('news-unread-dot-' + b64);
+                if (dot) dot.classList.add('hidden');
+            }
+        }
+
+        function filterNewsList() {
+            const feed = document.getElementById('news-feed-list');
+            if (!feed) return;
+            const query = (document.getElementById('news-search-input')?.value || '').toLowerCase();
+
+            function getNewsCategory(item) {
+                const text = (item.title + " " + item.content).toLowerCase();
+                if (text.includes("fii") || text.includes("mxrf") || text.includes("hglg") || text.includes("fundo imobiliário") || text.includes("fundos imobiliários") || text.includes("rendiment") || text.includes("dividendo de fii")) return "FIIs";
+                if (text.includes("petr") || text.includes("vale") || text.includes("ação") || text.includes("ações") || text.includes("divid") || text.includes("jcp") || text.includes("lucr") || text.includes("b3") || text.includes("empresa") || text.includes("wege")) return "Ações";
+                if (text.includes("selic") || text.includes("ipca") || text.includes("inflaç") || text.includes("focus") || text.includes("central") || text.includes("pib") || text.includes("juros") || text.includes("economia") || text.includes("governo") || text.includes("dólar") || text.includes("dolar")) return "Macroeconomia";
+                return "Geral";
+            }
+
+            const searchMatches = FINANCIAL_NEWS_SEED.filter(item => {
+                const link = item.link || "https://placeholder-news.b3.com/" + btoa(item.title).substr(0,8);
+                item.link = link; // writeback backplane link
+                
+                const matchesSearch = query === "" || item.title.toLowerCase().includes(query) || item.content.toLowerCase().includes(query);
+                const matchesCategory = activeNewsCategory === "Tudo" || 
+                                       (activeNewsCategory === "Salvos" ? bookmarkedNewsUrls.includes(link) : getNewsCategory(item) === activeNewsCategory);
+                return matchesSearch && matchesCategory;
+            });
+
+            if (searchMatches.length === 0) {
+                feed.innerHTML = `
+                    <div class="p-12 text-center bg-darkCard border border-darkBorder rounded-2xl">
+                        <i class="fa-regular fa-folder-open text-slate-500 text-xl mb-2 block"></i>
+                        <p class="text-xs text-slate-400">Nenhuma notícia encontrada nesta seleção.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            feed.innerHTML = '';
+            searchMatches.forEach(item => {
+                const isSaved = bookmarkedNewsUrls.includes(item.link);
+                const isRead = readNewsUrls.includes(item.link);
+                const b64 = btoa(item.link).replace(/=/g, '');
+                
+                feed.innerHTML += `
+                    <div class="bg-darkCard border border-darkBorder rounded-2xl p-4 flex flex-col gap-3 transition-colors hover:border-brand-500/35 relative">
+                        <div class="flex justify-between items-center gap-2 flex-wrap">
+                            <div class="flex items-center gap-2">
+                                <span class="bg-brand-500/10 text-brand-500 border border-brand-500/25 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-lg">${item.tag}</span>
+                                <span id="news-unread-dot-${b64}" class="w-2 h-2 rounded-full bg-rose-500 ${isRead ? 'hidden' : ''}"></span>
+                            </div>
+                            <span class="text-[9.5px] text-slate-500 font-mono">${item.date}</span>
+                        </div>
+                        <h5 class="text-white font-extrabold text-xs leading-snug"><a href="${item.link}" target="_blank" onclick="markNewsAsRead('${item.link}')" class="hover:text-brand-500 transition-colors">${item.title}</a></h5>
+                        <p class="text-[11px] text-slate-400 leading-relaxed">${item.content}</p>
+                        
+                        <div class="flex justify-between items-center text-[10.5px] border-t border-darkBorder/30 pt-3 mt-1">
+                            <a href="${item.link}" target="_blank" onclick="markNewsAsRead('${item.link}')" class="text-indigo-400 font-bold hover:underline flex items-center gap-1.5 active:scale-95 transition-all">
+                                <i class="fa-solid fa-arrow-up-right-from-square text-[9px]"></i> Ler matéria completa
+                            </a>
+                            <div class="flex items-center gap-2">
+                                <button onclick="toggleBookmarkNews('${item.link}')" class="p-1.5 rounded-lg bg-slate-950 border border-darkBorder/40 hover:bg-slate-800 transition-all ${isSaved ? 'text-brand-500 border-brand-500/40' : 'text-slate-400'}" title="Salvar notícia">
+                                    <i class="${isSaved ? 'fa-solid' : 'fa-regular'} fa-bookmark"></i>
+                                </button>
+                                <button onclick="navigator.clipboard.writeText('${item.link}'); alert('Link copiado para a área de transferência!')" class="p-1.5 rounded-lg bg-slate-950 border border-darkBorder/40 hover:bg-slate-800 text-slate-400 hover:text-white transition-all" title="Compartilhar Link">
+                                    <i class="fa-solid fa-share-nodes"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+
+        // ===================================
+        // ADVANCED MODAL DETAIL CHARTS (ChartDetailPage)
+        // ===================================
+        let activeSelectedChartDetailKey = 'Proventos';
+
+        function openChartDetail(chartKey) {
+            activeSelectedChartDetailKey = chartKey;
+            
+            const titleEl = document.getElementById('chart-detail-title');
+            const subEl = document.getElementById('chart-detail-subtitle');
+            
+            if (chartKey === 'Proventos') {
+                titleEl.textContent = 'Evolução de Proventos';
+                subEl.textContent = 'Dividendos projetados e recebimentos lineares nos próximos 12 meses.';
+            } else if (chartKey === 'IPCA+') {
+                titleEl.textContent = 'Rentabilidade vs IPCA+';
+                subEl.textContent = 'Comparativo de desempenho histórico acumulado frente ao índice inflacionário.';
+            } else if (chartKey === 'Diversificacao') {
+                titleEl.textContent = 'Diversificação & Equilíbrio';
+                subEl.textContent = 'Paridade e alocação estruturada por classes e setores do mercado.';
+            } else if (chartKey === 'Agenda') {
+                titleEl.textContent = 'Calendário de Dividendos (Agenda)';
+                subEl.textContent = 'Suas estimativas de recebimentos futuros sincronizadas às datas de corte da B3.';
+            }
+
+            renderChartDetailBody();
+            document.getElementById('chart-detail-modal').classList.remove('hidden');
+        }
+
+        function closeChartDetail() {
+            document.getElementById('chart-detail-modal').classList.add('hidden');
+        }
+
+        function renderChartDetailBody() {
+            const body = document.getElementById('chart-detail-body');
+            const holdings = getCalculatedHoldings();
+            
+            if (!body) return;
+
+            // Calculations
+            let totalCurrent = 0;
+            let stockYieldWeighted = 0, fiiYieldWeighted = 0;
+            let totalStocks = 0, totalFiis = 0;
+
+            holdings.forEach(h => {
+                totalCurrent += h.currentValue;
+                const meta = DEFAULT_ASSET_METADATA[h.ticker] || { dy: 6 };
+                const yieldWeight = h.currentValue * (meta.dy || 0);
+                if (h.type === "ACAO") {
+                    stockYieldWeighted += yieldWeight;
+                    totalStocks += h.currentValue;
+                } else {
+                    fiiYieldWeighted += yieldWeight;
+                    totalFiis += h.currentValue;
+                }
+            });
+
+            const avgDy = totalCurrent > 0 ? ((stockYieldWeighted + fiiYieldWeighted) / totalCurrent) : 0;
+            const finalMonthlyDiv = (totalCurrent * (avgDy / 100)) / 12;
+
+            if (activeSelectedChartDetailKey === 'Proventos') {
+                body.innerHTML = `
+                    <div class="grid grid-cols-3 gap-2.5 text-center bg-slate-900/40 p-4 rounded-2xl border border-darkBorder/40">
+                        <div>
+                            <p class="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Yield Médio</p>
+                            <h4 class="text-sm font-black text-brand-500 mt-1">${avgDy.toFixed(2)}%</h4>
+                        </div>
+                        <div class="border-l border-r border-darkBorder/45">
+                            <p class="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Média Mensal</p>
+                            <h4 class="text-sm font-black text-emerald-400 mt-1">${formatBRL(finalMonthlyDiv)}</h4>
+                        </div>
+                        <div>
+                            <p class="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Ano Projetado</p>
+                            <h4 class="text-sm font-black text-brand-500 mt-1">${formatBRL(finalMonthlyDiv * 12)}</h4>
+                        </div>
+                    </div>
+
+                    <!-- Configs panel inside detail -->
+                    <div class="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between text-xs bg-slate-900 border border-slate-800 p-3.5 rounded-2xl">
+                        <div id="detail-proventos-ctrl-class">
+                            <span class="font-bold text-slate-400">Classe de Ativo:</span>
+                            <select id="sel-prov-class" onchange="updateProventosDetailGraph()" class="bg-darkBg border border-darkBorder rounded-lg px-2.5 py-1 outline-none text-slate-300 font-bold focus:border-brand-500 ml-1">
+                                <option value="Todos">Todos</option>
+                                <option value="ACAO">Ações</option>
+                                <option value="FII">FIIs</option>
+                            </select>
+                        </div>
+                        <div id="detail-proventos-ctrl-time">
+                            <span class="font-bold text-slate-400">Timeframe:</span>
+                            <select id="sel-prov-time" onchange="updateProventosDetailGraph()" class="bg-darkBg border border-darkBorder rounded-lg px-2.5 py-1 outline-none text-slate-300 font-bold focus:border-brand-500 ml-1">
+                                <option value="12">Fidelidade 12 Meses</option>
+                                <option value="6">Fidelidade 6 Meses</option>
+                                <option value="24">Fidelidade 24 Meses</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="h-[200px] flex items-center justify-center p-3 bg-slate-950/40 rounded-3xl" id="detail-proventos-svg-housing">
+                        <!-- Redrawn by helper -->
+                    </div>
+
+                    <div class="flex flex-col gap-2.5">
+                        <h5 class="text-xs font-black uppercase tracking-wider text-slate-300 border-b border-darkBorder/40 pb-2"><i class="fa-solid fa-list text-brand-500 mr-1.5"></i> Contribuição Individual Estimadora</h5>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-[11px] text-slate-400">
+                                <thead>
+                                    <tr class="text-slate-500 border-b border-darkBorder/40 text-[9.5px]">
+                                        <th class="py-2">ATIVO</th>
+                                        <th class="py-2 text-center font-mono">QTD</th>
+                                        <th class="py-2 text-right">PREÇO ATUAL</th>
+                                        <th class="py-2 text-right">YIELD A.A</th>
+                                        <th class="py-2 text-right text-brand-500">MENSAL PROJETADO</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-darkBorder/30">
+                                    ${holdings.length === 0 ? `<tr><td colspan="5" class="py-4 text-center text-xs text-slate-500 italic">Cadastre transações na aba Ordens para preencher a planilha.</td></tr>` : 
+                                      holdings.map(h => {
+                                          const meta = DEFAULT_ASSET_METADATA[h.ticker] || { dy: 6 };
+                                          const assetDy = meta.dy || 0;
+                                          const shares = h.sharesCount;
+                                          const valueEst = shares * (h.marketPrice * (assetDy / 100)) / 12;
+                                          return `
+                                            <tr class="hover:bg-slate-900/45 text-slate-200">
+                                                <td class="py-2.5 font-black text-white">${h.ticker}</td>
+                                                <td class="py-2.5 text-center font-mono">${shares}</td>
+                                                <td class="py-2.5 text-right font-mono">${formatBRL(h.marketPrice)}</td>
+                                                <td class="py-2.5 text-right text-brand-500 font-bold">${assetDy.toFixed(2)}%</td>
+                                                <td class="py-2.5 text-right font-black text-emerald-400">${formatBRL(valueEst)}</td>
+                                            </tr>
+                                          `;
+                                      }).join('')
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+                updateProventosDetailGraph();
+            }
+
+            else if (activeSelectedChartDetailKey === 'IPCA+') {
+                let invested = 0, current = 0;
+                holdings.forEach(h => {
+                    invested += h.totalCost;
+                    current += h.currentValue;
+                });
+                const gain = current - invested;
+                const gainPct = invested > 0 ? (gain / invested) * 100 : 0;
+                const realPct = gainPct - 5.5;
+
+                const winning = realPct >= 0;
+
+                body.innerHTML = `
+                    <div class="grid grid-cols-3 gap-2.5 text-center bg-slate-900/40 p-4 rounded-2xl border border-darkBorder/40">
+                        <div>
+                            <p class="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Acumulado Carteira</p>
+                            <h4 class="text-sm font-black ${gainPct >= 0 ? 'text-emerald-400' : 'text-rose-400'} mt-1">${gainPct.toFixed(2)}%</h4>
+                        </div>
+                        <div class="border-l border-r border-darkBorder/45">
+                            <p class="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Inflação (IPCA+)</p>
+                            <h4 class="text-sm font-black text-indigo-400 mt-1">5,50%</h4>
+                        </div>
+                        <div>
+                            <p class="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Ganho Real Realizado</p>
+                            <h4 class="text-sm font-black text-brand-500 mt-1">${realPct.toFixed(2)}%</h4>
+                        </div>
+                    </div>
+
+                    <!-- Warning or success ribbon matching Kotlin -->
+                    <div class="p-4 border rounded-2xl flex gap-3 text-xs leading-relaxed ${winning ? 'border-brand-500/30 bg-brand-500/5 text-slate-200' : 'border-rose-500/30 bg-rose-500/5 text-slate-200'}">
+                        <i class="fa-solid fa-circle-info ${winning ? 'text-brand-500' : 'text-rose-400'} text-base mt-0.5"></i>
+                        <span>
+                            ${winning ? 'Sua carteira está vencendo a inflação, garantindo aumento e preservação do seu poder de compra estrutural.' : 
+                             'A inflação acumulada superou o rendimento nominal no período selecionado. Considere focar em aportes em ativos de valor ou atrelados ao IPCA na aba de Ordens para proteger seu capital de depreciações.'
+                            }
+                        </span>
+                    </div>
+
+                    <div class="h-[200px] flex items-center justify-center p-3 bg-slate-950/40 rounded-3xl">
+                        ${generateLineCompareSVG(gainPct)}
+                    </div>
+
+                    <div class="text-[11px] text-slate-400 flex flex-col gap-2">
+                        <p class="font-extrabold text-white text-xs uppercase tracking-wider border-b border-darkBorder/45 pb-2">Como é feito o cálculo?</p>
+                        <p>O índice de comparação de inflação (IPCA+ ou IPCA acumulado) assume uma projeção estável de 5.5% ao ano para inflações produtivas, simulando o decaimento inflacionário do dinheiro.</p>
+                        <p>O ganho real consolidado equivale ao rendimento líquido de variação patrimonial apurado na aba de Início menos o decaimento geral, espelhando a proteção patrimonial.</p>
+                    </div>
+                `;
+            }
+
+            else if (activeSelectedChartDetailKey === 'Diversificacao') {
+                const stockPct = totalCurrent > 0 ? (totalStocks / totalCurrent) * 100 : 50;
+                const fiiPct = totalCurrent > 0 ? (totalFiis / totalCurrent) * 100 : 50;
+
+                body.innerHTML = `
+                    <div class="grid grid-cols-2 gap-4 bg-slate-900/40 p-4 rounded-2xl border border-darkBorder/40">
+                        <div class="flex flex-col gap-2">
+                            <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Ações (ACAO)</p>
+                            <h4 class="text-sm font-black text-[#fbbf24] font-mono">${formatBRL(totalStocks)} <span class="text-xs text-slate-400 font-bold">(${stockPct.toFixed(1)}%)</span></h4>
+                            <div class="w-full bg-slate-950 rounded-full h-2.5 border border-darkBorder/30">
+                                <div class="bg-[#fbbf24] h-full rounded-full" style="width: ${stockPct}%"></div>
+                            </div>
+                        </div>
+                        <div class="flex flex-col gap-2 border-l border-darkBorder/40 pl-4">
+                            <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Fundos Imobiliários (FII)</p>
+                            <h4 class="text-sm font-black text-[#ea9b0b] font-mono">${formatBRL(totalFiis)} <span class="text-xs text-slate-400 font-bold">(${fiiPct.toFixed(1)}%)</span></h4>
+                            <div class="w-full bg-slate-950 rounded-full h-2.5 border border-darkBorder/30">
+                                <div class="bg-[#ea9b0b] h-full rounded-full" style="width: ${fiiPct}%"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="bg-slate-950/40 p-4 rounded-2xl flex flex-col items-center justify-center h-[200px]" id="detail-pie-placeholder">
+                            <!-- Custom Redrawn Donut SVG -->
+                        </div>
+                        <div class="bg-slate-950/40 p-4 rounded-2xl flex flex-col items-center justify-center h-[200px]" id="detail-sectors-placeholder">
+                            <!-- Custom Redrawn Sectors SVG -->
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col gap-2.5">
+                        <h5 class="text-xs font-black uppercase tracking-wider text-slate-300 border-b border-darkBorder/40 pb-2"><i class="fa-solid fa-scale-unbalanced text-amber-500 mr-1.5"></i> Balanço de Alocação do Patrimônio</h5>
+                        <p class="text-[11px] text-slate-400 leading-relaxed">Para otimizar o risco de flutuação, a recomendação clássica é diluir seu capital em múltiplos setores (como bancos, energia, logística e saneamento básica) na B3 de modo a evitar exposição nociva setorial.</p>
+                    </div>
+                `;
+                
+                // Redraw donuts and bars
+                const pieEl = document.getElementById('detail-pie-placeholder');
+                const sectEl = document.getElementById('detail-sectors-placeholder');
+                if (pieEl && sectEl) {
+                    renderDonutPieChartInline(holdings, pieEl);
+                    renderSectorsBarChartInline(holdings, sectEl);
+                }
+            }
+
+            else if (activeSelectedChartDetailKey === 'Agenda') {
+                // Event database matching typical upcoming events on B3
+                const SCHEDULE_DB = [
+                    { ticker: "WEGE3", type: "ACAO", ex: "22/06/2026", pay: "15/08/2026", amt: 0.12, name: "Dividendo Complementar" },
+                    { ticker: "ITUB4", type: "ACAO", ex: "01/06/2026", pay: "01/07/2026", amt: 0.024, name: "JCP Mensal" },
+                    { ticker: "PETR4", type: "ACAO", ex: "12/06/2026", pay: "20/08/2026", amt: 0.95, name: "Dividendos Ordinários" },
+                    { ticker: "MXRF11", type: "FII", ex: "31/05/2025", pay: "15/06/2026", amt: 0.10, name: "Distribuição Mensal FII" },
+                    { ticker: "KNRI11", type: "FII", ex: "31/05/2026", pay: "15/06/2026", amt: 1.00, name: "Rendimento Mensal Logística" },
+                    { ticker: "BBDC4", type: "ACAO", ex: "01/06/2026", pay: "01/07/2026", amt: 0.017, name: "JCP Mensal" },
+                    { ticker: "VALE3", type: "ACAO", ex: "10/06/2026", pay: "30/08/2026", amt: 2.10, name: "Dividendo semestral" }
+                ];
+
+                const matches = SCHEDULE_DB.filter(event => holdings.some(h => h.ticker === event.ticker));
+
+                body.innerHTML = `
+                    <div class="bg-emerald-900/10 border border-emerald-500/20 text-emerald-300 p-4 rounded-2xl flex gap-3 text-xs leading-relaxed">
+                        <i class="fa-solid fa-calendar-day text-base mt-0.5"></i>
+                        <div>
+                            <span class="font-extrabold block">Fluxo de Caixa Monitorado</span>
+                            Expondo proventos confirmados para ativos ativos na sua carteira física B3. Sincronização offline baseada em ciclos reais da bolsa.
+                        </div>
+                    </div>
+
+                    <div class="h-[150px] flex items-center justify-center p-3 bg-slate-950/40 rounded-3xl">
+                        ${generateAgendaSVG(holdings)}
+                    </div>
+
+                    <div class="flex flex-col gap-2.5">
+                        <h5 class="text-xs font-black uppercase tracking-wider text-slate-300 border-b border-darkBorder/40 pb-2"><i class="fa-solid fa-list-check text-emerald-400 mr-1.5"></i> Calendário Eventos Futuros (Próximos Pagamentos)</h5>
+                        <div class="flex flex-col gap-3">
+                            ${matches.length === 0 ? `
+                              <div class="p-8 text-center bg-slate-900 border border-slate-800 rounded-2xl text-xs text-slate-500 italic">
+                                  Cadastre ativos como ITUB4, PETR4, WEGE3, MXRF11, KNRI11 ou VALE3 em Ordens para ver seu fluxo específico de proventos do calendário na tela.
+                              </div>
+                            ` : 
+                             matches.map(evt => {
+                                 const h = holdings.find(item => item.ticker === evt.ticker);
+                                 const totalRec = h ? h.sharesCount * evt.amt : 0;
+                                 return `
+                                    <div class="bg-slate-900 border border-darkBorder/50 hover:border-emerald-500/20 p-3.5 rounded-2xl flex justify-between items-center transition-colors">
+                                        <div class="flex flex-col gap-1">
+                                            <div class="flex items-center gap-1.5 flex-wrap">
+                                                <span class="font-black text-xs text-white">${evt.ticker}</span>
+                                                <span class="text-[9px] bg-slate-950 border border-darkBorder text-slate-400 px-2 py-0.5 rounded">${evt.name}</span>
+                                            </div>
+                                            <div class="text-[10px] text-slate-400 flex items-center gap-2">
+                                                <span><strong class="text-slate-300">Ex:</strong> ${evt.ex}</span>
+                                                <span><strong class="text-slate-300">Pago:</strong> ${evt.pay}</span>
+                                            </div>
+                                        </div>
+                                        <div class="text-right">
+                                            <span class="text-[9px] text-slate-500 block">Projeção por Cota</span>
+                                            <span class="text-[10px] text-slate-400 font-mono block">${formatBRL(evt.amt)}</span>
+                                            <strong class="text-xs text-emerald-400 font-black font-mono block">${formatBRL(totalRec)}</strong>
+                                        </div>
+                                    </div>
+                                 `;
+                             }).join('')
+                            }
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        function updateProventosDetailGraph() {
+            const holdings = getCalculatedHoldings();
+            const classFilter = document.getElementById('sel-prov-class')?.value || 'Todos';
+            const timeFilter = parseInt(document.getElementById('sel-prov-time')?.value || '12');
+
+            const filteredAssets = holdings.filter(h => {
+                if (classFilter === 'Todos') return true;
+                return h.type === classFilter;
+            });
+
+            const assetAvgDyWeighted = filteredAssets.reduce((acc, current) => {
+                const meta = DEFAULT_ASSET_METADATA[current.ticker] || { dy: 6 };
+                return acc + (current.currentValue * (meta.dy || 0));
+            }, 0);
+
+            const filteredTotalVal = filteredAssets.reduce((arr, el) => arr + el.currentValue, 0);
+            const classAvgDy = filteredTotalVal > 0 ? (assetAvgDyWeighted / filteredTotalVal) : 0;
+            const classMonthlyDiv = (filteredTotalVal * (classAvgDy / 100)) / 12;
+
+            const targetSvgDiv = document.getElementById('detail-proventos-svg-housing');
+            if (targetSvgDiv) {
+                let svg = `<svg width="100%" height="100%" viewBox="0 0 540 180" class="overflow-visible font-sans bg-slate-950/20 p-2 rounded-2xl">`;
+                // Gridlines
+                for(let th=30; th<=150; th+=40) {
+                    svg += `<line x1="20" y1="${th}" x2="520" y2="${th}" stroke="#1e293b" stroke-dasharray="2 3" stroke-width="1"/>`;
+                }
+
+                // Generates column counts
+                const totalBars = timeFilter;
+                const gap = totalBars === 24 ? 18 : totalBars === 6 ? 64 : 36;
+                const width = totalBars === 24 ? 8 : totalBars === 6 ? 24 : 14;
+
+                const months = totalBars === 6 ? ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun"] :
+                               totalBars === 24 ? ["P1","P2","P3","P4","P5","P6","P7","P8","P9","P10","P11","P12","P13","P14","P15","P16","P17","P18","P19","P20","P21","P22","P23","P24"] :
+                               ["Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez", "Jan", "Fev", "Mar", "Abr", "Mai"];
+
+                months.forEach((m, idx) => {
+                    const x = 30 + (idx * gap);
+                    const valFactor = 0.5 + 0.5 * (idx / totalBars);
+                    
+                    const barHRec = Math.max(10, Math.min(130, classMonthlyDiv > 0 ? (classMonthlyDiv * 0.1 * valFactor * (idx+1)) : 10 + (idx * 5)));
+                    const barHProj = Math.max(5, Math.min(130, classMonthlyDiv > 0 ? (classMonthlyDiv * 0.15 * (totalBars - idx)) : 25 - idx));
+                    
+                    const yRec = 150 - barHRec;
+                    const yProj = yRec - barHProj;
+
+                    // Rec pillar
+                    svg += `<rect x="${x}" y="${yRec}" width="${width}" height="${barHRec}" rx="2" fill="#fbbf24" opacity="0.9"/>`;
+                    // Proj pillar
+                    svg += `<rect x="${x}" y="${yProj}" width="${width}" height="${barHProj}" rx="2" fill="#ea9b0b" opacity="0.4"/>`;
+                    
+                    svg += `<text x="${x + width/2}" y="166" fill="#94a3b8" font-size="8" text-anchor="middle" font-weight="black">${m}</text>`;
+                });
+                svg += `</svg>`;
+                targetSvgDiv.innerHTML = svg;
+            }
+        }
+
+
+        // ===================================
+        // DYNAMIC RESPONSIVE INLINE SVG GENERATION
+        // ===================================
+        function generateProventosSVG(monthlyDiv) {
+            let svg = `<svg width="100%" height="100%" viewBox="0 0 320 120" class="overflow-visible font-sans bg-transparent">`;
+            for(let th=20; th<=100; th+=25) {
+                svg += `<line x1="10" y1="${th}" x2="310" y2="${th}" stroke="#1e293b" stroke-dasharray="2 3" stroke-width="1"/>`;
+            }
+            const months = ["Dez", "Jan", "Fev", "Mar", "Abr", "Mai"];
+            months.forEach((m, idx) => {
+                const x = 20 + (idx * 50);
+                const barHRec = Math.max(10, Math.min(80, monthlyDiv > 0 ? (monthlyDiv * 0.15 * (idx+1)) : 15 + idx*10));
+                const barHProj = Math.max(5, Math.min(80, monthlyDiv > 0 ? (monthlyDiv * 0.25 * (6-idx)) : 30 - idx*4));
+                const yRec = 100 - barHRec;
+                const yProj = yRec - barHProj;
+                
+                svg += `<rect x="${x}" y="${yRec}" width="14" height="${barHRec}" rx="2.5" fill="#fbbf24" opacity="0.9"/>`;
+                svg += `<rect x="${x}" y="${yProj}" width="14" height="${barHProj}" rx="2.5" fill="#ea9b0b" opacity="0.35"/>`;
+                svg += `<text x="${x + 7}" y="114" fill="#64748b" font-size="8.5" text-anchor="middle" font-weight="black">${m}</text>`;
+            });
+            svg += `</svg>`;
+            return svg;
+        }
+
+        function generateLineCompareSVG(gainPct) {
+            let svg = `<svg width="100%" height="100%" viewBox="0 0 320 120" class="overflow-visible font-sans bg-transparent">`;
+            for(let th=20; th<=100; th+=25) {
+                svg += `<line x1="10" y1="${th}" x2="310" y2="${th}" stroke="#1e293b" stroke-dasharray="2 3" stroke-width="1"/>`;
+            }
+            svg += `<path d="M 20 90 L 78 80 L 136 70 L 194 60 L 252 50 L 310 40" fill="none" stroke="#6366f1" stroke-width="1.5" stroke-dasharray="3 3"/>`;
+            
+            const finalY = 90 - Math.min(75, Math.max(-10, gainPct * 1.5));
+            const y1 = 90 - (90 - finalY) * 0.15;
+            const y2 = 90 - (90 - finalY) * 0.40;
+            const y3 = 90 - (90 - finalY) * 0.55;
+            const y4 = 90 - (90 - finalY) * 0.80;
+            
+            svg += `<path d="M 20 90 L 78 ${y1.toFixed(1)} L 136 ${y2.toFixed(1)} L 194 ${y3.toFixed(1)} L 252 ${y4.toFixed(1)} L 310 ${finalY.toFixed(1)}" fill="none" stroke="#fbbf24" stroke-width="2"/>`;
+            
+            svg += `<circle cx="20" cy="90" r="3" fill="#fbbf24" stroke="#0f1115" stroke-width="1"/>`;
+            svg += `<circle cx="310" cy="${finalY.toFixed(1)}" r="4" fill="#fbbf24" stroke="#0f1115" stroke-width="1.5"/>`;
+            svg += `<circle cx="310" cy="40" r="2.5" fill="#6366f1" stroke="#0f1115" stroke-width="1"/>`;
+            
+            svg += `<text x="20" y="114" fill="#64748b" font-size="8.5" text-anchor="middle" font-weight="black">Dez</text>`;
+            svg += `<text x="310" y="114" fill="#64748b" font-size="8.5" text-anchor="middle" font-weight="black">Mai</text>`;
+            svg += `</svg>`;
+            return svg;
+        }
+
+        function generateAgendaSVG(holdings) {
+            let svg = `<svg width="100%" height="100%" viewBox="0 0 320 120" class="overflow-visible font-sans bg-transparent">`;
+            for(let th=20; th<=100; th+=25) {
+                svg += `<line x1="10" y1="${th}" x2="310" y2="${th}" stroke="#1e293b" stroke-dasharray="2 3" stroke-width="1"/>`;
+            }
+            const defaultTicks = ["ITUB4", "MXRF11", "PETR4", "VALE3", "KNRI11"];
+            const ticksToDraw = holdings.length > 0 ? holdings.map(h => h.ticker).slice(0, 5) : defaultTicks;
+            while(ticksToDraw.length < 5) {
+                ticksToDraw.push("B3SA3");
+            }
+            
+            ticksToDraw.forEach((ticker, idx) => {
+                const x = 20 + (idx * 58);
+                let valEst = 20 + (idx * 12);
+                const holding = holdings.find(h => h.ticker === ticker);
+                if (holding) {
+                    const meta = DEFAULT_ASSET_METADATA[ticker] || { dy: 6 };
+                    valEst = Math.max(15, Math.min(80, holding.sharesCount * (holding.marketPrice * (meta.dy / 100)) / 12));
+                }
+                const barH = Math.max(10, Math.min(80, valEst));
+                const y = 100 - barH;
+                
+                svg += `<rect x="${x}" y="${y}" width="16" height="${barH}" rx="3.5" fill="#10b981" opacity="0.85"/>`;
+                svg += `<text x="${x + 8}" y="114" fill="#64748b" font-size="8" text-anchor="middle" font-weight="black">${ticker.substr(0, 5)}</text>`;
+            });
+            svg += `</svg>`;
+            return svg;
+        }
+
+
+        // Override renderSVGCharts to compile and load all 4 sections
         function renderSVGCharts(holdings) {
             const pieContainer = document.getElementById('svg-pie-chart-container');
             const barContainer = document.getElementById('svg-bar-chart-container');
 
             if (holdings.length === 0) {
-                pieContainer.innerHTML = `<p class="text-xs text-slate-500 italic">Cadastre ativos para gerar os gráficos.</p>`;
-                barContainer.innerHTML = `<p class="text-xs text-slate-500 italic">Cadastre ativos para ver a análise setorial.</p>`;
+                pieContainer.innerHTML = `<p class="text-[10px] text-slate-500 italic">Preencha ativos.</p>`;
+                barContainer.innerHTML = `<p class="text-[10px] text-slate-500 italic">Aguardando dados setoriais.</p>`;
+                
+                document.getElementById('chart-holder-proventos').innerHTML = `<p class="text-[10px] text-slate-500 italic">Insira ativos para projetar os proventos.</p>`;
+                document.getElementById('chart-holder-ipca').innerHTML = `<p class="text-[10px] text-slate-500 italic">Insira ativos para comparar rentabilidade.</p>`;
+                document.getElementById('chart-holder-agenda').innerHTML = `<p class="text-[10px] text-slate-500 italic">Seu fluxo de proventos futuros B3.</p>`;
                 return;
             }
 
             // Calculation for Pie Chart classes share
+            let acoesVal = 0, fiisVal = 0;
+            let stocksDyWeighted = 0, fiisDyWeighted = 0;
+            
+            holdings.forEach(h => {
+                const meta = DEFAULT_ASSET_METADATA[h.ticker] || { dy: 6 };
+                if (h.type === "ACAO") {
+                    acoesVal += h.currentValue;
+                    stocksDyWeighted += h.currentValue * (meta.dy || 0);
+                } else {
+                    fiisVal += h.currentValue;
+                    fiisDyWeighted += h.currentValue * (meta.dy || 0);
+                }
+            });
+            const tot = acoesVal + fiisVal;
+            const avgDy = tot > 0 ? ((stocksDyWeighted + fiisDyWeighted) / tot) : 0;
+            const finalMonthlyDiv = (tot * (avgDy / 100)) / 12;
+
+            // Render sub-stats banners in Card headers
+            const dyEl = document.getElementById('chart-stat-dy');
+            if (dyEl) dyEl.textContent = `Yield Médio: ${avgDy.toFixed(2)}%`;
+            
+            let invested = holdings.reduce((a,el) => a + el.totalCost, 0);
+            let returnPct = invested > 0 ? ((tot - invested) / invested) * 100 : 0;
+            let realReturn = returnPct - 5.5;
+            
+            const ipcaEl = document.getElementById('chart-stat-ipca');
+            if (ipcaEl) ipcaEl.textContent = `Ganho Real: ${realReturn.toFixed(2)}%`;
+            
+            // Unique sectors
+            const activeSectorsCount = new Set(holdings.map(h => h.sector || 'Outros')).size;
+            const sectorsEl = document.getElementById('chart-stat-setores');
+            if (sectorsEl) sectorsEl.textContent = `${activeSectorsCount} Setores Ativos`;
+            
+            const agendaEl = document.getElementById('chart-stat-agenda');
+            if (agendaEl) agendaEl.textContent = `${formatBRL(finalMonthlyDiv)} / mês est.`;
+
+            // Draw SVG placeholders
+            const holderProv = document.getElementById('chart-holder-proventos');
+            if (holderProv) holderProv.innerHTML = generateProventosSVG(finalMonthlyDiv);
+            
+            const holderIpca = document.getElementById('chart-holder-ipca');
+            if (holderIpca) holderIpca.innerHTML = generateLineCompareSVG(returnPct);
+            
+            const holderAg = document.getElementById('chart-holder-agenda');
+            if (holderAg) holderAg.innerHTML = generateAgendaSVG(holdings);
+
+            // Render class donut
+            renderDonutPieChartInline(holdings, pieContainer);
+
+            // Render sectors bar
+            renderSectorsBarChartInline(holdings, barContainer);
+            
+            // Render mobile badge updates
+            renderNotifications();
+        }
+
+        function renderDonutPieChartInline(holdings, container) {
             let acoesVal = 0, fiisVal = 0;
             holdings.forEach(h => {
                 if (h.type === "ACAO") acoesVal += h.currentValue;
@@ -2295,44 +3292,49 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
             const acPct = tot > 0 ? (acoesVal / tot) : 0.5;
             const fiiPct = tot > 0 ? (fiisVal / tot) : 0.5;
 
-            // Simple responsive SVG Ring/Pie
-            // Circumference of radius 50 is 314.15
-            const circ = 314.15;
-            const acOffset = circ * (1 - acPct);
+            const strokeDashAções = Math.floor(acPct * 113); // circumference = 2 * PI * r = 2 * 3.1415 * 18 = 113.1
 
-            pieContainer.innerHTML = `
-                <svg width="200" height="200" class="transform -rotate-90">
-                    <circle cx="100" cy="100" r="50" fill="transparent" stroke="#ea9b0b" stroke-width="25"></circle>
-                    <circle cx="100" cy="100" r="50" fill="transparent" stroke="#fbbf24" stroke-width="25" stroke-dasharray="${circ}" stroke-dashoffset="${acOffset}"></circle>
-                    <text x="100" y="-95" transform="rotate(90)" text-anchor="middle" font-weight="extrabold" font-size="11" fill="#fff" font-family="Plus Jakarta Sans">
-                        Ações: ${(acPct*100).toFixed(0)}% | FIIs: ${(fiiPct*100).toFixed(0)}%
-                    </text>
+            container.innerHTML = `
+                <svg width="100%" height="100%" viewBox="0 0 140 120" class="overflow-visible font-sans">
+                    <circle cx="70" cy="55" r="18" fill="transparent" stroke="#ea9b0b" stroke-width="4.5" />
+                    <circle cx="70" cy="55" r="18" fill="transparent" stroke="#fbbf24" stroke-width="5" 
+                            stroke-dasharray="${strokeDashAções} 113" stroke-dashoffset="0" transform="rotate(-90, 70, 55)" />
+                    <!-- Legend labels -->
+                    <text x="70" y="58" fill="#ffffff" font-size="8" text-anchor="middle" font-weight="black">${(acPct * 100).toFixed(0)}% A</text>
+                    
+                    <g transform="translate(10, 105)">
+                        <rect x="0" y="0" width="6" height="6" fill="#fbbf24" rx="1.5" />
+                        <text x="10" y="6" fill="#ccd6f6" font-size="7.5" font-weight="bold">Ações</text>
+                        
+                        <rect x="58" y="0" width="6" height="6" fill="#ea9b0b" rx="1.5" />
+                        <text x="68" y="6" fill="#ccd6f6" font-size="7.5" font-weight="bold">FIIs</text>
+                    </g>
                 </svg>
             `;
+        }
 
-            // Simple responsive Dynamic SVG Bar chart for Sectors Representation
+        function renderSectorsBarChartInline(holdings, container) {
             const sectorSums = {};
             holdings.forEach(h => {
                 const sec = h.sector || 'Outros';
                 sectorSums[sec] = (sectorSums[sec] || 0) + h.currentValue;
             });
-
-            const sectors = Object.keys(sectorSums);
+            const sectors = Object.keys(sectorSums).sort((a,b) => sectorSums[b] - sectorSums[a]).slice(0, 3);
             const highestVal = Math.max(...Object.values(sectorSums));
 
-            let barSvgHtml = `<svg width="100%" height="160" class="font-sans">`;
+            let barSvgHtml = `<svg width="100%" height="100" viewBox="0 0 160 100" class="overflow-visible font-sans bg-transparent">`;
             sectors.forEach((sec, i) => {
                 const ratio = sectorSums[sec] / highestVal;
-                const barWidth = Math.floor(ratio * 160); // Max wide 160px
-                const y = 30 + (i * 32);
+                const barWidth = Math.floor(ratio * 90); // Max wide 90px
+                const y = 20 + (i * 26);
                 
                 barSvgHtml += `
-                    <text x="10" y="${y - 4}" fill="#94A3B8" font-size="9" font-weight="bold">${sec.toUpperCase()} (${formatBRL(sectorSums[sec])})</text>
-                    <rect x="10" y="${y}" width="${Math.max(10, barWidth)}" height="8" rx="4" fill="#fbbf24" opacity="0.85"></rect>
+                    <text x="5" y="${y - 4}" fill="#94A3B8" font-size="7.5" font-weight="black" class="truncate">${sec.toUpperCase()} (${(ratio*100).toFixed(0)}%)</text>
+                    <rect x="5" y="${y}" width="${Math.max(5, barWidth)}" height="5.5" rx="3" fill="#fbbf24" opacity="0.85"></rect>
                 `;
             });
             barSvgHtml += `</svg>`;
-            barContainer.innerHTML = barSvgHtml;
+            container.innerHTML = barSvgHtml;
         }
 
 
