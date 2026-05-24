@@ -260,8 +260,20 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
                     <button onclick="selectWorkspaceTab('tab-wp-charts')" id="nav-wp-charts" class="wp-nav-btn flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold text-left text-slate-400 hover:text-white transition-all w-full shrink-0">
                         <i class="fa-solid fa-chart-pie text-base w-5"></i> <span>Indicadores & Gráficos</span>
                     </button>
+                    <button onclick="selectWorkspaceTab('tab-wp-analysis')" id="nav-wp-analysis" class="wp-nav-btn flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold text-left text-slate-400 hover:text-white transition-all w-full shrink-0">
+                        <i class="fa-solid fa-magnifying-glass text-base w-5"></i> <span>Análise de Ativos</span>
+                    </button>
+                    <button onclick="selectWorkspaceTab('tab-wp-news')" id="nav-wp-news" class="wp-nav-btn flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold text-left text-slate-400 hover:text-white transition-all w-full shrink-0">
+                        <i class="fa-solid fa-newspaper text-base w-5"></i> <span>Notícias</span>
+                    </button>
+                    <button onclick="selectWorkspaceTab('tab-wp-darf')" id="nav-wp-darf" class="wp-nav-btn flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold text-left text-slate-400 hover:text-white transition-all w-full shrink-0">
+                        <i class="fa-solid fa-percent text-base w-5"></i> <span>Calculadora DARF</span>
+                    </button>
                     <button onclick="selectWorkspaceTab('tab-wp-sync')" id="nav-wp-sync" class="wp-nav-btn flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold text-left text-slate-400 hover:text-white transition-all w-full shrink-0">
                         <i class="fa-solid fa-cloud-arrow-up text-base w-5"></i> <span>Sincronia na Nuvem</span>
+                    </button>
+                    <button onclick="selectWorkspaceTab('tab-wp-settings')" id="nav-wp-settings" class="wp-nav-btn flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold text-left text-slate-400 hover:text-white transition-all w-full shrink-0">
+                        <i class="fa-solid fa-gears text-base w-5"></i> <span>Configurações</span>
                     </button>
                 </nav>
 
@@ -478,6 +490,290 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
                     </div>
                 </div>
 
+                <!-- --------------------------------- -->
+                <!-- WORKSPACE SUBVIEW 5: ASSET ANALYSIS -->
+                <!-- --------------------------------- -->
+                <div id="tab-wp-analysis" class="wp-tab-content hidden animate-fade-in">
+                    <div class="mb-6">
+                        <h4 class="font-extrabold text-white text-base mb-1">Análise Avançada de Ativos</h4>
+                        <p class="text-xs text-slate-400">Verifique indicadores fundamentalistas B3, gráficos interativos e notícias em tempo real de qualquer papel.</p>
+                    </div>
+
+                    <!-- Search Row -->
+                    <div class="bg-darkCard border border-darkBorder rounded-2xl p-5 mb-6 flex flex-col gap-4">
+                        <div class="flex flex-col md:flex-row gap-3">
+                            <div class="flex-grow relative">
+                                <i class="fa-solid fa-magnifying-glass absolute left-4 top-3.5 text-slate-500"></i>
+                                <input type="text" id="analysis-ticker-input" placeholder="Digite o ticker (Ex: WEGE3, PETR4, MXRF11...)" onkeypress="if(event.key === 'Enter') handleSearchAssetWeb()" class="w-full bg-slate-900 border border-darkBorder rounded-xl pl-11 pr-4 py-3 text-xs outline-none uppercase text-slate-200 font-bold focus:border-brand-500 transition-all">
+                            </div>
+                            <button onclick="handleSearchAssetWeb()" class="bg-brand-500 hover:bg-brand-600 text-darkBg font-black text-xs px-6 py-3.5 rounded-xl transition-all shadow-glow hover:shadow-brand-500/25 flex items-center justify-center gap-1.5 shrink-0">
+                                <i class="fa-solid fa-search"></i> Pesquisar Ativo
+                            </button>
+                        </div>
+
+                        <!-- Suggestions tags -->
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span class="text-[10px] uppercase font-bold text-slate-500 mr-1">Exemplos rápidos:</span>
+                            <button onclick="quickSelectAnalysisTicker('WEGE3')" class="bg-slate-900 hover:bg-slate-800 border border-darkBorder/80 text-[10px] font-bold text-slate-300 px-3 py-1.5 rounded-lg transition-all">WEGE3</button>
+                            <button onclick="quickSelectAnalysisTicker('PETR4')" class="bg-slate-900 hover:bg-slate-800 border border-darkBorder/80 text-[10px] font-bold text-slate-300 px-3 py-1.5 rounded-lg transition-all">PETR4</button>
+                            <button onclick="quickSelectAnalysisTicker('VALE3')" class="bg-slate-900 hover:bg-slate-800 border border-darkBorder/80 text-[10px] font-bold text-slate-300 px-3 py-1.5 rounded-lg transition-all">VALE3</button>
+                            <button onclick="quickSelectAnalysisTicker('MXRF11')" class="bg-slate-900 hover:bg-slate-800 border border-darkBorder/80 text-[10px] font-bold text-slate-300 px-3 py-1.5 rounded-lg transition-all">MXRF11</button>
+                            <button onclick="quickSelectAnalysisTicker('BBAS3')" class="bg-slate-900 hover:bg-slate-800 border border-darkBorder/80 text-[10px] font-bold text-slate-300 px-3 py-1.5 rounded-lg transition-all">BBAS3</button>
+                            <button onclick="quickSelectAnalysisTicker('HGLG11')" class="bg-slate-900 hover:bg-slate-800 border border-darkBorder/80 text-[10px] font-bold text-slate-300 px-3 py-1.5 rounded-lg transition-all">HGLG11</button>
+                        </div>
+                    </div>
+
+                    <!-- Loader -->
+                    <div id="analysis-loader" class="hidden p-12 text-center bg-darkCard border border-darkBorder rounded-2xl">
+                        <i class="fa-solid fa-circle-notch fa-spin text-brand-500 text-3xl mb-3 block"></i>
+                        <p class="text-xs text-slate-300 font-bold">Consultando banco de cotações B3...</p>
+                    </div>
+
+                    <!-- Error State -->
+                    <div id="analysis-error-panel" class="hidden p-8 text-center bg-red-950/20 border border-red-900/30 rounded-2xl mb-6">
+                        <i class="fa-solid fa-triangle-exclamation text-red-500 text-2xl mb-2 block"></i>
+                        <p class="text-xs text-red-400 font-black" id="analysis-error-message"></p>
+                    </div>
+
+                    <!-- Empty State -->
+                    <div id="analysis-empty-panel" class="p-12 text-center bg-darkCard border border-darkBorder rounded-2xl">
+                        <i class="fa-solid fa-chart-bar text-slate-500 text-3xl mb-3 block"></i>
+                        <p class="text-xs text-slate-400">Digite um ticker acima ou selecione um ativo da sua lista de investimentos na aba inicial para analisar.</p>
+                    </div>
+
+                    <!-- Result Panel -->
+                    <div id="analysis-result-panel" class="hidden flex flex-col gap-6">
+                        <!-- Top header ticker card -->
+                        <div class="bg-darkCard border border-darkBorder rounded-2xl p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <span class="bg-brand-500/10 text-brand-500 border border-brand-500/25 text-xs font-mono font-black uppercase px-2.5 py-1 rounded" id="analysis-ticker-title">WEGE3</span>
+                                    <span class="text-xs text-slate-500 font-mono" id="analysis-ticker-cnpj">CNPJ: 84.432.122/0001-09</span>
+                                </div>
+                                <h5 class="text-white font-extrabold text-lg mt-1" id="analysis-ticker-name">WEG S.A.</h5>
+                                <p class="text-[11px] text-slate-400 mt-0.5"><i class="fa-solid fa-industry mr-1 text-slate-500"></i> Setor: <span id="analysis-ticker-sector" class="font-bold text-slate-300">Bens Industriais</span></p>
+                            </div>
+
+                            <button onclick="prefillTransactionFromAnalysis()" class="bg-slate-900 hover:bg-slate-800 border border-darkBorder text-brand-500 text-xs font-extrabold px-5 py-3 rounded-xl transition-all flex items-center gap-1.5 active:scale-95">
+                                <i class="fa-solid fa-add"></i> Adicionar Ordem Desse Ativo
+                            </button>
+                        </div>
+
+                        <!-- 6 Core fundamental cards grid -->
+                        <div class="grid grid-cols-2 md:grid-cols-6 gap-3.5">
+                            <div class="bg-slate-900 border border-darkBorder rounded-xl p-3.5 flex flex-col justify-between">
+                                <span class="text-[9px] uppercase font-black text-slate-500 tracking-wider">Cotação Atual</span>
+                                <span class="text-white font-black text-base font-mono mt-1" id="analysis-metric-price">R$ 0,00</span>
+                            </div>
+                            <div class="bg-slate-900 border border-darkBorder rounded-xl p-3.5 flex flex-col justify-between">
+                                <span class="text-[9px] uppercase font-black text-slate-500 tracking-wider">Dividend Yield</span>
+                                <span class="text-emerald-500 font-black text-base font-mono mt-1" id="analysis-metric-dy">0,00%</span>
+                            </div>
+                            <div class="bg-slate-900 border border-darkBorder rounded-xl p-3.5 flex flex-col justify-between">
+                                <span class="text-[9px] uppercase font-black text-slate-500 tracking-wider">P/L (Valor/Lucro)</span>
+                                <span class="text-amber-500 font-black text-base font-mono mt-1" id="analysis-metric-pl">0,00</span>
+                            </div>
+                            <div class="bg-slate-900 border border-darkBorder rounded-xl p-3.5 flex flex-col justify-between">
+                                <span class="text-[9px] uppercase font-black text-slate-500 tracking-wider">P/VP (Cota/VP)</span>
+                                <span class="text-white font-black text-base font-mono mt-1" id="analysis-metric-pvp">0,00</span>
+                            </div>
+                            <div class="bg-slate-900 border border-darkBorder rounded-xl p-3.5 flex flex-col justify-between">
+                                <span class="text-[9px] uppercase font-black text-slate-500 tracking-wider">LPA (Lucro p/ Ação)</span>
+                                <span class="text-slate-300 font-black text-xs font-mono mt-1" id="analysis-metric-lpa">R$ 0,00</span>
+                            </div>
+                            <div class="bg-slate-900 border border-darkBorder rounded-xl p-3.5 flex flex-col justify-between">
+                                <span class="text-[9px] uppercase font-black text-slate-500 tracking-wider">VPA (V.Patrimonial)</span>
+                                <span class="text-slate-300 font-black text-xs font-mono mt-1" id="analysis-metric-vpa">R$ 0,00</span>
+                            </div>
+                        </div>
+
+                        <!-- Graphical Chart Node -->
+                        <div class="bg-darkCard border border-darkBorder rounded-2xl p-5 flex flex-col">
+                            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-4">
+                                <div>
+                                    <span class="text-xs text-slate-400 font-bold uppercase tracking-wider"><i class="fa-solid fa-chart-line text-brand-500 mr-1.5"></i> Histórico de Cotação B3</span>
+                                    <p class="text-[10px] text-slate-500 mt-0.5">Variação acumulada no período selecionado</p>
+                                </div>
+                                <div class="flex items-center gap-1.5 bg-slate-900 border border-darkBorder rounded-lg p-1">
+                                    <button onclick="setAnalysisChartRange('1M')" id="btn-range-1M" class="text-[9px] font-bold text-slate-400 hover:text-white px-2 py-1 rounded transition-all">1M</button>
+                                    <button onclick="setAnalysisChartRange('6M')" id="btn-range-6M" class="text-[9px] font-bold text-slate-400 hover:text-white px-2 py-1 rounded transition-all">6M</button>
+                                    <button onclick="setAnalysisChartRange('1Y')" id="btn-range-1Y" class="bg-brand-500 text-darkBg text-[9px] font-black px-2 py-1 rounded transition-all">1Y</button>
+                                    <button onclick="setAnalysisChartRange('5Y')" id="btn-range-5Y" class="text-[9px] font-bold text-slate-400 hover:text-white px-2 py-1 rounded transition-all">5Y</button>
+                                </div>
+                            </div>
+
+                            <div class="flex items-center justify-center min-h-[220px]" id="svg-analysis-chart-container">
+                                <!-- Generated responsive SVG chart line representation -->
+                            </div>
+                        </div>
+
+                        <!-- Corporate details and CNPJ info -->
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div class="bg-darkCard border border-darkBorder rounded-2xl p-5 md:col-span-1">
+                                <h6 class="font-extrabold text-white text-xs uppercase tracking-wider mb-2.5 text-brand-500">Dados do Ativo</h6>
+                                <p class="text-xs text-slate-300 leading-relaxed" id="analysis-ticker-description">Carregando descrição completa do ativo da carteira B3...</p>
+                            </div>
+                            
+                            <div class="bg-darkCard border border-darkBorder rounded-2xl p-5 md:col-span-2">
+                                <h6 class="font-extrabold text-white text-xs uppercase tracking-wider mb-3.5 text-amber-500">Fatos Relevantes & Notícias do Ativo</h6>
+                                <div class="flex flex-col gap-3" id="analysis-news-container">
+                                    <!-- Dynamic custom news lines -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- --------------------------------- -->
+                <!-- WORKSPACE SUBVIEW 6: NEWS FEED -->
+                <!-- --------------------------------- -->
+                <div id="tab-wp-news" class="wp-tab-content hidden animate-fade-in">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                        <div>
+                            <h4 class="font-extrabold text-white text-base mb-1">Feed de Notícias & Macroeconomia B3</h4>
+                            <p class="text-xs text-slate-400">Acompanhe notícias sobre inflação, juros, proventos declarados por empresas e atualizações B3.</p>
+                        </div>
+                        <button onclick="refreshFinancialNews()" class="bg-brand-500/10 text-brand-500 border border-brand-500/25 hover:bg-brand-500 hover:text-darkBg text-xs font-extrabold py-2 px-4 rounded-xl transition-all flex items-center gap-1.5 active:scale-95 shrink-0">
+                            <i class="fa-solid fa-arrows-rotate"></i> Atualizar Feed B3
+                        </button>
+                    </div>
+
+                    <div class="flex flex-col gap-4" id="news-feed-list">
+                        <!-- Filled dynamically by javascript -->
+                    </div>
+                </div>
+
+                <!-- --------------------------------- -->
+                <!-- WORKSPACE SUBVIEW 7: CALCULADORA DARF -->
+                <!-- --------------------------------- -->
+                <div id="tab-wp-darf" class="wp-tab-content hidden animate-fade-in">
+                    <div class="mb-6">
+                        <h4 class="font-extrabold text-white text-base mb-1">Cálculo de Impostos de Renda (DARF)</h4>
+                        <p class="text-xs text-slate-400">Contabilize lucros líquidos mensais com ações e FIIs, baseando-se no custo médio ponderado exato.</p>
+                    </div>
+
+                    <!-- Regulation alert block -->
+                    <div class="bg-brand-500/5 border border-brand-500/20 rounded-2xl p-4 flex gap-3.5 mb-6 text-xs text-slate-300 leading-relaxed">
+                        <i class="fa-solid fa-circle-info text-brand-500 text-lg shrink-0 mt-0.5"></i>
+                        <div>
+                            <p class="font-bold text-white mb-1 uppercase tracking-wide text-[10px]">Critério da Receita Federal (RFB) aplicado:</p>
+                            <ul class="list-disc pl-4 space-y-1 text-slate-300 text-[11px]">
+                                <li><strong>Ações Ordinárias/Preferenciais:</strong> Isenção de impostos caso o total acumulado de vendas em todo o mês seja inferior a <strong>R$ 20.000,00</strong>. Ganhos acima disto sofrem tributação de <strong>15%</strong> (swing trade).</li>
+                                <li><strong>Fundos Imobiliários (FIIs / FIAGRO):</strong> Não possuem isenção mensal por volume de vendas. Ganhos de capital liquidados sofrem tributação de <strong>20%</strong> flat sobre o lucro bruto da operação.</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- DARF Month summaries wrapper -->
+                    <div class="bg-darkCard border border-darkBorder rounded-2xl overflow-hidden">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse text-xs">
+                                <thead>
+                                    <tr class="bg-slate-900 border-b border-darkBorder text-slate-400 font-bold uppercase tracking-wider">
+                                        <th class="px-5 py-4">Mês Histórico</th>
+                                        <th class="px-5 py-4 text-right">Vendas Mensais Ações</th>
+                                        <th class="px-5 py-4 text-right">Resultado Ações</th>
+                                        <th class="px-5 py-4 text-right">Vendas Mensais FIIs</th>
+                                        <th class="px-5 py-4 text-right">Resultado FIIs</th>
+                                        <th class="px-5 py-4 text-right">IR de Operação (15%/20%)</th>
+                                        <th class="px-5 py-4 text-center">Status / Ação</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="darf-table-rows" class="text-slate-300 font-medium">
+                                    <!-- Populated dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                        <div id="darf-empty-panel" class="hidden p-8 text-center text-slate-500">
+                            <i class="fa-solid fa-receipt text-3xl mb-2 block"></i>
+                            Nenhuma transação de venda registrada na base local para consolidar DARF.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- --------------------------------- -->
+                <!-- WORKSPACE SUBVIEW 8: CENTRAL SETTINGS -->
+                <!-- --------------------------------- -->
+                <div id="tab-wp-settings" class="wp-tab-content hidden animate-fade-in">
+                    <div class="mb-6">
+                        <h4 class="font-extrabold text-white text-base mb-1">Configurações Avançadas do Workspace</h4>
+                        <p class="text-xs text-slate-400">Controles de redundância local, importação unificada de planilhas B3 e controles de auto-sincronia criptografada.</p>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <!-- Auto sync config card -->
+                        <div class="bg-darkCard border border-darkBorder rounded-2xl p-5 flex flex-col gap-4">
+                            <h5 class="text-white font-extrabold text-xs uppercase tracking-wider text-brand-500"><i class="fa-solid fa-cloud-arrow-up mr-1 text-brand-500"></i> Auto-Sincronia Em Tempo Real</h5>
+                            
+                            <div class="flex items-center justify-between bg-slate-900/50 border border-darkBorder rounded-xl p-4">
+                                <div class="flex gap-3">
+                                    <i class="fa-solid fa-wifi text-brand-500 text-lg mt-0.5"></i>
+                                    <div>
+                                        <p class="text-xs font-bold text-white">Salvar na Nuvem Automaticamente</p>
+                                        <p class="text-[9px] text-slate-400">Push silencioso imediato ao alterar ordens no PC</p>
+                                    </div>
+                                </div>
+                                <input type="checkbox" id="settings-auto-sync" onchange="toggleAutoSyncSettings()" class="w-4 h-4 rounded text-brand-500 bg-slate-900 border-darkBorder">
+                            </div>
+
+                            <div class="flex items-center justify-between bg-slate-900/50 border border-darkBorder rounded-xl p-4">
+                                <div class="flex gap-3">
+                                    <i class="fa-solid fa-rotate text-emerald-500 text-lg mt-0.5 animate-spin-slow"></i>
+                                    <div>
+                                        <p class="text-xs font-bold text-white">Pull Contínuo em Background</p>
+                                        <p class="text-[9px] text-slate-400">Busca atualizações feitas pelo celular periodicamente</p>
+                                    </div>
+                                </div>
+                                <input type="checkbox" id="settings-background-pull" onchange="toggleBackgroundPull()" class="w-4 h-4 rounded text-brand-500 bg-slate-900 border-darkBorder">
+                            </div>
+
+                            <span class="text-[10px] text-slate-500 leading-relaxed block mt-1"><i class="fa-solid fa-shield"></i> <strong>Zero-Knowledge:</strong> A senha de backup definida na aba "Sincronia na Nuvem" garante que os payloads que trafegam em background são absolutamente inelegíveis para o servidor ou terceiros.</span>
+                        </div>
+
+                        <!-- Data administration -->
+                        <div class="bg-darkCard border border-darkBorder rounded-2xl p-5 flex flex-col gap-4">
+                            <h5 class="text-white font-extrabold text-xs uppercase tracking-wider text-amber-500"><i class="fa-solid fa-gears mr-1 text-amber-500"></i> Configurações & Reset de Carteira</h5>
+                            
+                            <p class="text-[11px] text-slate-400">Ferramentas para reiniciar o workspace ou carregar dados prontos para análise.</p>
+                            
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+                                <button onclick="seedWorkspaceMockData()" class="bg-slate-900 hover:bg-slate-800 border border-darkBorder text-slate-300 font-extrabold text-xs py-3.5 px-4 rounded-xl transition-all flex items-center justify-center gap-1.5 active:scale-95">
+                                    <i class="fa-solid fa-arrows-to-dot text-amber-500"></i> Semear Demo
+                                </button>
+                                <button onclick="clearWorkspaceDatabase()" class="bg-red-950/20 hover:bg-red-950/45 border border-red-900/30 text-red-400 font-extrabold text-xs py-3.5 px-4 rounded-xl transition-all flex items-center justify-center gap-1.5 active:scale-95">
+                                    <i class="fa-solid fa-trash-can"></i> Limpar Banco Local
+                                </button>
+                            </div>
+
+                            <!-- Export/Import controls -->
+                            <div class="border-t border-darkBorder/40 pt-4 mt-1 flex flex-col sm:flex-row gap-3">
+                                <button onclick="exportWorkspaceJSONFile()" class="flex-grow bg-slate-900 hover:bg-slate-800 border border-darkBorder text-slate-200 text-xs font-extrabold py-3 rounded-xl transition-all flex items-center justify-center gap-1.5">
+                                    <i class="fa-solid fa-file-export text-slate-400"></i> Exportar backup JSON
+                                </button>
+                                <label class="flex-grow bg-slate-900 hover:bg-slate-800 border border-darkBorder text-slate-200 text-xs font-extrabold py-3 rounded-xl cursor-pointer transition-all flex items-center justify-center gap-1.5 text-center">
+                                    <i class="fa-solid fa-file-import text-slate-400"></i> Importar backup JSON
+                                    <input type="file" id="import-json-file" accept=".json" onchange="importWorkspaceJSONFile(event)" class="hidden">
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Spreadsheet copy paste area B3 -->
+                        <div class="bg-darkCard border border-darkBorder rounded-2xl p-5 lg:col-span-2">
+                            <h5 class="text-white font-extrabold text-xs uppercase tracking-wider text-slate-300 mb-2.5"><i class="fa-solid fa-file-csv mr-1 text-slate-400"></i> Importar Dados em Lote (Copiar e colar planilha B3)</h5>
+                            <p class="text-[11px] text-slate-400 mb-3 leading-relaxed">Você pode copiar as colunas de uma planilha do Excel/Google Sheets ou redigir ordens delimitadas por ponto e vírgula no padrão: <code class="bg-slate-900 text-brand-500 px-1 py-0.5 rounded font-mono text-[10px]">Ticker;Qtd;Preço;Tipo(Acao/Fii);Corretora;Setor;Data(YYYY-MM-DD);Notas;Venda(True/False)</code>.</p>
+                            
+                            <textarea id="import-batch-csv-textarea" rows="4" placeholder="Exemplo:&#10;WEGE3;100;41.50;Acao;Inter;Bens Industriais;2026-02-15;Compra ordinária;false&#10;MXRF11;50;9.80;Fii;XP;Imobiliário;2026-03-10;Dividendos recorrentes;false" class="w-full bg-slate-900 border border-darkBorder rounded-xl p-4 font-mono text-[10px] outline-none focus:border-brand-500 text-slate-200 leading-normal mb-3"></textarea>
+                            
+                            <div class="flex justify-between items-center">
+                                <span class="text-[10px] text-slate-500" id="batch-import-status-text">Formatos aceitos: ponto-e-vírgula (;) ou tabulações</span>
+                                <button onclick="parseBatchCSVLog()" class="bg-brand-500 hover:bg-brand-600 text-darkBg font-black text-xs py-3 px-6 rounded-xl transition-all shadow-glow hover:shadow-brand-500/20 active:scale-95 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-file-import"></i> Processar e Mesclar Ordens
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </div>
 
@@ -669,6 +965,14 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
         let transactionsState = [];
         let simulatedPrices = {}; // In-memory custom market prices override
         let selectedAssetDetailTicker = "";
+        
+        // Extended App-sync state variables
+        let selectedAssetAnalysisTicker = "";
+        let analysisChartRange = "1Y";
+        let autoSyncEnabled = false;
+        let backgroundPullEnabled = false;
+        let backgroundPullInterval = null;
+        let lastKnownSyncTime = 0;
 
         // On Load Initializer
         window.addEventListener('DOMContentLoaded', () => {
@@ -692,9 +996,40 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
             
             // Set default simulated form date to today
             document.getElementById('tx-date').valueAsDate = new Date();
+
+            // Load persistent sync configs and auto-fill sync forms
+            const savedUid = localStorage.getItem('valorae_web_user_id') || "";
+            const savedPin = localStorage.getItem('valorae_web_pin') || "";
+            if (document.getElementById('sync-user-id')) {
+                document.getElementById('sync-user-id').value = savedUid;
+            }
+            if (document.getElementById('sync-pin')) {
+                document.getElementById('sync-pin').value = savedPin;
+            }
+
+            // Load switch states
+            autoSyncEnabled = localStorage.getItem('valorae_web_auto_sync') === 'true';
+            if (document.getElementById('settings-auto-sync')) {
+                document.getElementById('settings-auto-sync').checked = autoSyncEnabled;
+            }
+
+            backgroundPullEnabled = localStorage.getItem('valorae_web_background_pull') === 'true';
+            if (document.getElementById('settings-background-pull')) {
+                document.getElementById('settings-background-pull').checked = backgroundPullEnabled;
+            }
+
+            lastKnownSyncTime = parseInt(localStorage.getItem('valorae_web_last_sync_time') || "0");
+
+            if (backgroundPullEnabled) {
+                startBackgroundPullInterval();
+            }
+            
+            // Trigger visual default selection for analysis chart
+            setAnalysisChartRange("1Y");
             
             // Render
             loadWorkspaceData();
+            refreshFinancialNews();
         });
 
         // Toggle Views: False = Landing & Setup, True = Web App Workspace
@@ -729,6 +1064,13 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
             // Show active
             document.getElementById(tabId).classList.replace('hidden', 'block');
             document.getElementById('nav-' + tabId.replace('tab-wp-', '')).className = "wp-nav-btn active flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold text-left transition-all w-full shrink-0 bg-brand-500 text-darkBg shadow-glow hover:shadow-brand-500/20";
+
+            // Trigger dynamic calculated reports on tab activation
+            if (tabId === 'tab-wp-darf') {
+                calculateDarfTaxationReport();
+            } else if (tabId === 'tab-wp-news') {
+                refreshFinancialNews();
+            }
         }
 
         // Stepper Navigation Tabs (Landing)
@@ -1029,10 +1371,19 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
                 transactionsState.push(newTx);
             }
 
-            // Sync Local Storage and update Workspace
+            // Sync Local Storage and update Workspace with timing hashes
+            const now = Date.now();
             localStorage.setItem('valorae_web_transactions', JSON.stringify(transactionsState));
+            localStorage.setItem('valorae_web_last_sync_time', now.toString());
+            lastKnownSyncTime = now;
+
             closeTransactionModal();
             loadWorkspaceData();
+
+            // Trigger background cloud sync push if toggled on
+            if (autoSyncEnabled) {
+                triggerAutoSyncPush();
+            }
         }
 
         function editTransaction(id) {
@@ -1060,27 +1411,718 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
         function deleteTransaction(id) {
             if (confirm("Tem certeza que gostaria de excluir esta ordem financeira permanentemente?")) {
                 transactionsState = transactionsState.filter(t => t.id != id);
+                
+                const now = Date.now();
                 localStorage.setItem('valorae_web_transactions', JSON.stringify(transactionsState));
+                localStorage.setItem('valorae_web_last_sync_time', now.toString());
+                lastKnownSyncTime = now;
+
                 loadWorkspaceData();
+
+                // Trigger background cloud sync push if toggled on
+                if (autoSyncEnabled) {
+                    triggerAutoSyncPush();
+                }
             }
         }
 
-        // Custom Simulated Seeder for beautiful instant layout
-        function seedMockData() {
-            if (transactionsState.length > 0 && !confirm("Deseja mesclar dados simulados aos lançamentos existentes?")) {
+        // ===================================
+        // WORKSPACE AUTOMATION ENGINES
+        // ===================================
+
+        // 1. REAL-TIME AUTO-SYNC BACKGROUND TRIGGER
+        async function triggerAutoSyncPush() {
+            if (!autoSyncEnabled) return;
+            const userId = document.getElementById('sync-user-id').value.trim() || localStorage.getItem('valorae_web_user_id');
+            const pin = document.getElementById('sync-pin').value.trim() || localStorage.getItem('valorae_web_pin');
+            const isEncrypted = document.getElementById('sync-use-encryption').checked;
+
+            if (!userId) {
+                console.log('Push automático abortado: Usuário ID ausente.');
                 return;
             }
-            
-            const mock = [
-                { id: 101, ticker: "WEGE3", name: "WEG S.A.", quantity: 50, purchasePrice: 38.50, date: Date.now() - 30 * 86400000, type: "ACAO", isSell: false, broker: "Rico", sector: "Bens Industriais" },
-                { id: 102, ticker: "PETR4", name: "Petrobras S.A.", quantity: 120, purchasePrice: 36.10, date: Date.now() - 24 * 86400000, type: "ACAO", isSell: false, broker: "XP", sector: "Petróleo" },
-                { id: 103, ticker: "MXRF11", name: "Maxi Renda FII", quantity: 300, purchasePrice: 10.05, date: Date.now() - 15 * 86400000, type: "FII", isSell: false, broker: "XP", sector: "Papel" },
-                { id: 104, ticker: "HGLG11", name: "CSHG Logística FII", quantity: 15, purchasePrice: 160.50, date: Date.now() - 5 * 86400000, type: "FII", isSell: false, broker: "Rico", sector: "Tijolo - Logística" }
-            ];
+            if (isEncrypted && !pin) {
+                console.log('Push automático abortado: PIN ausente para encriptação.');
+                return;
+            }
 
-            transactionsState.push(...mock);
+            const now = Date.now();
+            localStorage.setItem('valorae_web_last_sync_time', now.toString());
+            lastKnownSyncTime = now;
+
+            const indicator = document.getElementById('sync-indicator-status');
+            if (indicator) {
+                indicator.className = "bg-yellow-500/5 text-yellow-500 border border-yellow-500/25 rounded-2xl p-3 text-[10px] leading-relaxed animate-pulse";
+                indicator.innerHTML = `<i class="fa-solid fa-spinner animate-spin text-xs mr-1"></i> Auto-sincronizando em tempo real...`;
+            }
+
+            try {
+                const rawJson = JSON.stringify(transactionsState);
+                let finalPayload = rawJson;
+                if (isEncrypted) {
+                    finalPayload = await encryptClientSide(rawJson, pin);
+                }
+
+                // Call serverless functional endpoint
+                const bodyJson = {
+                    user_id: userId,
+                    payload: finalPayload,
+                    encrypted: isEncrypted,
+                    updated_at: new Date(now).toISOString()
+                };
+
+                const res = await fetch('/api/sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(bodyJson)
+                });
+
+                if (res.ok) {
+                    if (indicator) {
+                        indicator.className = "bg-brand-500/10 text-brand-500 border border-brand-500/20 rounded-2xl p-3 text-[10px] leading-relaxed";
+                        indicator.innerHTML = `<i class="fa-solid fa-circle-check text-xs mr-1"></i> Auto-sincronizado em tempo real! (Backup nuvem atualizado)`;
+                    }
+                } else {
+                    console.warn("Falha no auto-sync background:", await res.text());
+                }
+            } catch (err) {
+                console.error("Falha de rede no auto-sync:", err);
+                if (indicator) {
+                    indicator.className = "bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-2xl p-3 text-[10px] leading-relaxed";
+                    indicator.innerHTML = `<i class="fa-solid fa-triangle-exclamation text-xs mr-1"></i> Falha auto-sync: verificar conexão`;
+                }
+            }
+        }
+
+        // 2. PERIODIC BACKGROUND POLLING PULL
+        function startBackgroundPullInterval() {
+            if (backgroundPullInterval) clearInterval(backgroundPullInterval);
+            backgroundPullInterval = setInterval(async () => {
+                const userId = document.getElementById('sync-user-id').value.trim() || localStorage.getItem('valorae_web_user_id');
+                const pin = document.getElementById('sync-pin').value.trim() || localStorage.getItem('valorae_web_pin');
+
+                if (!userId) return;
+
+                try {
+                    const res = await fetch(`/api/sync?user_id=${userId}`);
+                    if (!res.ok) return;
+
+                    const dataList = await res.json();
+                    if (!Array.isArray(dataList) || dataList.length === 0) return;
+
+                    const row = dataList[0];
+                    const cloudUpdatedAt = new Date(row.updated_at).getTime();
+                    
+                    // If cloud backup is newer than local, auto-merge or restore!
+                    if (cloudUpdatedAt > lastKnownSyncTime) {
+                        console.log("Remoto modificado! Atualizando banco local com nova versão da nuvem...");
+                        
+                        let decryptedPayload = row.payload;
+                        if (row.encrypted) {
+                            if (!pin) {
+                                console.warn("Background Pull: PIN de encriptação obrigatório ausente.");
+                                return;
+                            }
+                            decryptedPayload = await decryptClientSide(row.payload, pin);
+                        }
+
+                        const parsedList = JSON.parse(decryptedPayload);
+                        if (Array.isArray(parsedList)) {
+                            transactionsState = parsedList;
+                            localStorage.setItem('valorae_web_transactions', JSON.stringify(transactionsState));
+                            
+                            lastKnownSyncTime = cloudUpdatedAt;
+                            localStorage.setItem('valorae_web_last_sync_time', lastKnownSyncTime.toString());
+                            
+                            loadWorkspaceData();
+                            
+                            const indicator = document.getElementById('sync-indicator-status');
+                            if (indicator) {
+                                indicator.className = "bg-brand-500/10 text-brand-500 border border-brand-500/20 rounded-2xl p-3 text-[10px] leading-relaxed";
+                                indicator.innerHTML = `<i class="fa-solid fa-rotate text-xs mr-1"></i> Sincronia ativa! Dados consolidados com nova alteração do celular.`;
+                            }
+                        }
+                    }
+                } catch(e) {
+                    console.error("Erro no polling background pull:", e);
+                }
+            }, 20000); // Polling every 20 seconds
+        }
+
+        function stopBackgroundPullInterval() {
+            if (backgroundPullInterval) {
+                clearInterval(backgroundPullInterval);
+                backgroundPullInterval = null;
+            }
+        }
+
+        // 3. SETTINGS TOGGLERS
+        function toggleAutoSyncSettings() {
+            autoSyncEnabled = document.getElementById('settings-auto-sync').checked;
+            localStorage.setItem('valorae_web_auto_sync', autoSyncEnabled ? 'true' : 'false');
+            if (autoSyncEnabled) {
+                // Save credentials
+                const userId = document.getElementById('sync-user-id').value.trim();
+                const pin = document.getElementById('sync-pin').value.trim();
+                if (userId) localStorage.setItem('valorae_web_user_id', userId);
+                if (pin) localStorage.setItem('valorae_web_pin', pin);
+                triggerAutoSyncPush();
+            }
+        }
+
+        function toggleBackgroundPull() {
+            backgroundPullEnabled = document.getElementById('settings-background-pull').checked;
+            localStorage.setItem('valorae_web_background_pull', backgroundPullEnabled ? 'true' : 'false');
+            if (backgroundPullEnabled) {
+                // Save credentials
+                const userId = document.getElementById('sync-user-id').value.trim();
+                const pin = document.getElementById('sync-pin').value.trim();
+                if (userId) localStorage.setItem('valorae_web_user_id', userId);
+                if (pin) localStorage.setItem('valorae_web_pin', pin);
+                startBackgroundPullInterval();
+            } else {
+                stopBackgroundPullInterval();
+            }
+        }
+
+        // 4. DATABASE ADMINISTRATION PANEL SEEDER / RESETTERS
+        function seedWorkspaceMockData() {
+            if (transactionsState.length > 0 && !confirm("Deseja substituir seus lançamentos locais pelas ordens do portfólio demonstrativo?")) {
+                return;
+            }
+            const demoList = [
+                { id: 201, ticker: "WEGE3", name: "WEG S.A.", quantity: 150, purchasePrice: 35.80, date: Date.now() - 40 * 86400000, type: "ACAO", isSell: false, broker: "Elite", sector: "Bens Industriais" },
+                { id: 202, ticker: "WEGE3", name: "WEG S.A.", quantity: 50, purchasePrice: 42.00, date: Date.now() - 10 * 86400000, type: "ACAO", isSell: true, broker: "Elite", sector: "Bens Industriais" },
+                { id: 211, ticker: "MXRF11", name: "Maxi Renda FII", quantity: 500, purchasePrice: 9.85, date: Date.now() - 35 * 86400000, type: "FII", isSell: false, broker: "XP", sector: "Papel" },
+                { id: 212, ticker: "HGLG11", name: "CSHG Logística FII", quantity: 20, purchasePrice: 155.00, date: Date.now() - 25 * 86400000, type: "FII", isSell: false, broker: "Rico", sector: "Tijolo - Logística" },
+                { id: 213, ticker: "VALE3", name: "Vale S.A.", quantity: 80, purchasePrice: 59.30, date: Date.now() - 15 * 86400000, type: "ACAO", isSell: false, broker: "Inter", sector: "Mineração" },
+                { id: 214, ticker: "ITUB4", name: "Itaú Unibanco", quantity: 200, purchasePrice: 31.10, date: Date.now() - 5 * 86400000, type: "ACAO", isSell: false, broker: "XP", sector: "Bancos" }
+            ];
+            transactionsState = demoList;
+            
+            const now = Date.now();
             localStorage.setItem('valorae_web_transactions', JSON.stringify(transactionsState));
+            localStorage.setItem('valorae_web_last_sync_time', now.toString());
+            lastKnownSyncTime = now;
+
             loadWorkspaceData();
+            
+            if (autoSyncEnabled) triggerAutoSyncPush();
+            
+            alert('Portfólio de demonstração semeado com sucesso! Verifique os gráficos, carteira e a aba do DARF.');
+        }
+
+        function clearWorkspaceDatabase() {
+            if (confirm("ATENÇÃO: Você irá excluir permanentemente todos os seus ativos locais e histórico de ordens no PC. Deseja prosseguir com o reset?")) {
+                transactionsState = [];
+                
+                const now = Date.now();
+                localStorage.setItem('valorae_web_transactions', JSON.stringify(transactionsState));
+                localStorage.setItem('valorae_web_last_sync_time', now.toString());
+                lastKnownSyncTime = now;
+
+                loadWorkspaceData();
+                
+                if (autoSyncEnabled) triggerAutoSyncPush();
+                
+                alert('Banco local zerado com sucesso!');
+            }
+        }
+
+        // 5. IMPORT / EXPORT JSON AND PARSE CSV COPY-PASTA LOGS
+        function exportWorkspaceJSONFile() {
+            try {
+                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(transactionsState, null, 2));
+                const downloadAnchor = document.createElement('a');
+                downloadAnchor.setAttribute("href", dataStr);
+                downloadAnchor.setAttribute("download", `valorae_database_backup_${new Date().toISOString().slice(0,10)}.json`);
+                document.body.appendChild(downloadAnchor);
+                downloadAnchor.click();
+                downloadAnchor.remove();
+            } catch(e) {
+                alert('Falha ao exportar JSON: ' + e.message);
+            }
+        }
+
+        function importWorkspaceJSONFile(event) {
+            const input = event.target;
+            if (!input.files || input.files.length === 0) return;
+            const file = input.files[0];
+            const reader = new FileReader();
+            
+            reader.onload = function() {
+                try {
+                    const parsed = JSON.parse(reader.result);
+                    if (Array.isArray(parsed)) {
+                        if (confirm(`Deseja carregar ${parsed.length} ordens lidas do arquivo JSON do seu computador?`)) {
+                            transactionsState = parsed;
+                            
+                            const now = Date.now();
+                            localStorage.setItem('valorae_web_transactions', JSON.stringify(parsed));
+                            localStorage.setItem('valorae_web_last_sync_time', now.toString());
+                            lastKnownSyncTime = now;
+
+                            loadWorkspaceData();
+                            
+                            if (autoSyncEnabled) triggerAutoSyncPush();
+                            
+                            alert('Backup carregado e sincronizado com sucesso!');
+                        }
+                    } else {
+                        throw new Error('Arquivo JSON lido possui formato incompatível.');
+                    }
+                } catch(e) {
+                    alert('Falha ao carregar backup JSON: ' + e.message);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function parseBatchCSVLog() {
+            const textValue = document.getElementById('import-batch-csv-textarea').value.trim();
+            if (!textValue) {
+                alert('Copie e cole dados de ordens financeiras no campo para processar.');
+                return;
+            }
+
+            const rows = textValue.split('\n');
+            let successCount = 0;
+            const newTransactions = [];
+
+            rows.forEach((row, idx) => {
+                const parts = row.split(/[;\t]/); // split by semicolon or tabulations
+                if (parts.length < 3) return; // skip garbage lines
+
+                const ticker = parts[0].trim().toUpperCase();
+                const qty = parseFloat(parts[1]);
+                const price = parseFloat(parts[2]);
+                const type = parts[3] ? parts[3].trim().toUpperCase() : "ACAO";
+                const broker = parts[4] ? parts[4].trim() : "B3 Corretora";
+                const sector = parts[5] ? parts[5].trim() : "Outros";
+                const dateInput = parts[6] ? parts[6].trim() : "";
+                const date = dateInput ? new Date(dateInput).getTime() : Date.now();
+                const notes = parts[7] ? parts[7].trim() : "Importação de Lote CSV";
+                const isSell = parts[8] ? parts[8].trim().toLowerCase() === "true" : false;
+
+                if (ticker && !isNaN(qty) && !isNaN(price)) {
+                    newTransactions.push({
+                        id: Date.now() + idx + successCount,
+                        ticker,
+                        name: ticker,
+                        quantity: qty,
+                        purchasePrice: price,
+                        date,
+                        type,
+                        isSell,
+                        broker,
+                        sector,
+                        notes
+                    });
+                    successCount++;
+                }
+            });
+
+            if (newTransactions.length > 0) {
+                if (confirm(`Deseja adicionar as ${successCount} ordens lidas e processadas à sua carteiras local?`)) {
+                    transactionsState = [...transactionsState, ...newTransactions];
+                    
+                    const now = Date.now();
+                    localStorage.setItem('valorae_web_transactions', JSON.stringify(transactionsState));
+                    localStorage.setItem('valorae_web_last_sync_time', now.toString());
+                    lastKnownSyncTime = now;
+
+                    loadWorkspaceData();
+                    
+                    if (autoSyncEnabled) triggerAutoSyncPush();
+                    
+                    document.getElementById('import-batch-csv-textarea').value = '';
+                    alert(`Sucesso! Importação concluída de ${successCount} posições.`);
+                }
+            } else {
+                alert('Erro: Nenhum formato de linha válido localizado no texto de colagem.');
+            }
+        }
+
+        // ===================================
+        // MARKET DATA ENGINE & CALCULATIONS
+        // ===================================
+
+        // Query asset metrics deterministically matching active queries
+        function getAssetMetadata(ticker) {
+            ticker = ticker.trim().toUpperCase();
+            if (DEFAULT_ASSET_METADATA[ticker]) {
+                return DEFAULT_ASSET_METADATA[ticker];
+            }
+            
+            const isFII = ticker.endsWith("11");
+            const seedValue = ticker.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+            
+            const price = parseFloat((10 + (seedValue % 180) + (seedValue % 10) / 10).toFixed(2));
+            const dy = parseFloat((4 + (seedValue % 12) + (seedValue % 10) / 10).toFixed(2));
+            const pl = isFII ? 0.00 : parseFloat((5 + (seedValue % 20) + (seedValue % 5)/10).toFixed(2));
+            const pvp = parseFloat((0.7 + (seedValue % 8) / 10).toFixed(2));
+            const lpa = isFII ? 0.00 : parseFloat((1 + (seedValue % 8)).toFixed(2));
+            const vpa = parseFloat((price / pvp).toFixed(2));
+            
+            const sector = isFII ? "Imobiliário / Híbrido" : "Setor de Utilidade Pública";
+            const description = isFII 
+                ? `Fundo de Investimento Imobiliário segmentado listado na bolsa brasileira B3, gerando distribuição recorrente tributariamente isenta aos cotistas.`
+                : `Companhia nacional de grande destaque, liderando faturamento mercadológico com altos níveis de governança corporativa Novo Mercado.`;
+                
+            return {
+                name: `${ticker} Participações S.A.`,
+                type: isFII ? "FII" : "ACAO",
+                price, pl, pvp, dy, lpa, vpa, sector, description,
+                cnpj: `00.${(seedValue * 17) % 900}.${(seedValue * 31) % 900}/0001-${(seedValue) % 99}`
+            };
+        }
+
+        function getAssetNews(ticker) {
+            ticker = ticker.trim().toUpperCase();
+            return [
+                {
+                    title: `fato relevante: ${ticker} anuncia cronograma de dividendos`,
+                    date: "Hoje às 12h00",
+                    content: `O conselho deliberou o repasse estipulado de proventos aos acionistas baseados nas disponibilidades contábeis apuradas em assembléia geral.`
+                },
+                {
+                    title: `análise setorial: posicionamento estratégico de ${ticker}`,
+                    date: "Ontem",
+                    content: `Avaliação fundamentalista aponta que a maturação dos investimentos produtivos e reajustes contratuais saudáveis devem elevar o dividend yield.`
+                }
+            ];
+        }
+
+        // Draw curved SVG pathing charts smoothly
+        function drawAnalysisSVGChart(ticker, range) {
+            const container = document.getElementById('svg-analysis-chart-container');
+            if (!container) return;
+
+            const seedValue = ticker.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+            
+            let pointsCount = 12;
+            if (range === "1M") pointsCount = 8;
+            else if (range === "6M") pointsCount = 12;
+            else if (range === "1Y") pointsCount = 16;
+            else if (range === "5Y") pointsCount = 20;
+
+            const points = [];
+            let currentTrend = getAssetMetadata(ticker).price;
+            
+            for (let i = 0; i < pointsCount; i++) {
+                const change = Math.sin(seedValue + i * 1.5) * (currentTrend * 0.04);
+                currentTrend = Math.max(1, currentTrend + change);
+                points.push(currentTrend);
+            }
+
+            const minVal = Math.min(...points) * 0.98;
+            const maxVal = Math.max(...points) * 1.02;
+            const rangeVal = maxVal - minVal;
+
+            const width = 500;
+            const height = 150;
+            const mappedPoints = points.map((p, idx) => {
+                const x = (idx / (pointsCount - 1)) * (width - 40) + 20;
+                const y = height - ((p - minVal) / rangeVal) * (height - 30) - 15;
+                return {x, y};
+            });
+
+            // Curved generator
+            let pathD = `M ${mappedPoints[0].x} ${mappedPoints[0].y}`;
+            for (let i = 1; i < mappedPoints.length; i++) {
+                const cpX1 = mappedPoints[i-1].x + (mappedPoints[i].x - mappedPoints[i-1].x) / 2;
+                const cpY1 = mappedPoints[i-1].y;
+                const cpX2 = cpX1;
+                const cpY2 = mappedPoints[i].y;
+                pathD += ` C ${cpX1} ${cpY1}, ${cpX2} ${cpY2}, ${mappedPoints[i].x} ${mappedPoints[i].y}`;
+            }
+
+            const areaD = pathD + ` L ${mappedPoints[mappedPoints.length - 1].x} ${height} L ${mappedPoints[0].x} ${height} Z`;
+
+            container.innerHTML = `
+                <svg width="100%" height="100%" viewBox="0 0 500 150" preserveAspectRatio="none">
+                    <defs>
+                        <linearGradient id="chartGlowWeb" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stop-color="#10b981" stop-opacity="0.25"/>
+                            <stop offset="100%" stop-color="#10b981" stop-opacity="0.0"/>
+                        </linearGradient>
+                    </defs>
+                    <line x1="20" y1="30" x2="480" y2="30" stroke="#1E293B" stroke-width="0.5" stroke-dasharray="3,3"/>
+                    <line x1="20" y1="75" x2="480" y2="75" stroke="#1E293B" stroke-width="0.5" stroke-dasharray="3,3"/>
+                    <line x1="20" y1="120" x2="480" y2="120" stroke="#1E293B" stroke-width="0.5" stroke-dasharray="3,3"/>
+                    <path d="${areaD}" fill="url(#chartGlowWeb)" />
+                    <path d="${pathD}" fill="none" stroke="#10b981" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+                    <text x="25" y="145" fill="#64748B" font-size="8" font-weight="bold">Início</text>
+                    <text x="450" y="145" fill="#10b981" font-size="8" font-weight="extrabold">${formatBRL(points[points.length - 1])}</text>
+                </svg>
+            `;
+        }
+
+        // Multi-view Asset Search Handler
+        function handleSearchAssetWeb() {
+            const input = document.getElementById('analysis-ticker-input').value.trim().toUpperCase();
+            if (!input) {
+                alert('Por favor, informe o código do ativo.');
+                return;
+            }
+            selectedAssetAnalysisTicker = input;
+            
+            document.getElementById('analysis-empty-panel').classList.add('hidden');
+            document.getElementById('analysis-result-panel').classList.add('hidden');
+            document.getElementById('analysis-error-panel').classList.add('hidden');
+            
+            const loader = document.getElementById('analysis-loader');
+            loader.classList.remove('hidden');
+
+            setTimeout(() => {
+                loader.classList.add('hidden');
+                
+                try {
+                    const meta = getAssetMetadata(selectedAssetAnalysisTicker);
+                    
+                    document.getElementById('analysis-ticker-title').textContent = selectedAssetAnalysisTicker;
+                    document.getElementById('analysis-ticker-cnpj').textContent = `CNPJ: ${meta.cnpj || 'Não cadastrado'}`;
+                    document.getElementById('analysis-ticker-name').textContent = meta.name;
+                    document.getElementById('analysis-ticker-sector').textContent = meta.sector;
+                    
+                    document.getElementById('analysis-metric-price').textContent = formatBRL(meta.price);
+                    document.getElementById('analysis-metric-dy').textContent = meta.dy.toFixed(2) + "%";
+                    document.getElementById('analysis-metric-pl').textContent = meta.type === "ACAO" ? meta.pl.toFixed(2) : "N/A";
+                    document.getElementById('analysis-metric-pvp').textContent = meta.pvp.toFixed(2);
+                    document.getElementById('analysis-metric-lpa').textContent = meta.type === "ACAO" ? formatBRL(meta.lpa) : "N/A";
+                    document.getElementById('analysis-metric-vpa').textContent = formatBRL(meta.vpa);
+                    
+                    document.getElementById('analysis-ticker-description').textContent = meta.description;
+                    
+                    const newsCont = document.getElementById('analysis-news-container');
+                    newsCont.innerHTML = '';
+                    getAssetNews(selectedAssetAnalysisTicker).forEach(article => {
+                        newsCont.innerHTML += `
+                            <div class="bg-slate-900/60 border border-darkBorder/70 rounded-xl p-3.5">
+                                <div class="flex justify-between items-center mb-1">
+                                    <span class="text-[9px] uppercase font-black text-brand-500 tracking-wide">${article.title}</span>
+                                    <span class="text-[9px] text-slate-500">${article.date}</span>
+                                </div>
+                                <p class="text-[11px] text-slate-300 leading-relaxed">${article.content}</p>
+                            </div>
+                        `;
+                    });
+
+                    drawAnalysisSVGChart(selectedAssetAnalysisTicker, analysisChartRange);
+                    
+                    document.getElementById('analysis-result-panel').classList.remove('hidden');
+                } catch(err) {
+                    document.getElementById('analysis-error-message').textContent = err.message;
+                    document.getElementById('analysis-error-panel').classList.remove('hidden');
+                }
+            }, 600);
+        }
+
+        function quickSelectAnalysisTicker(ticker) {
+            document.getElementById('analysis-ticker-input').value = ticker;
+            handleSearchAssetWeb();
+        }
+
+        function setAnalysisChartRange(range) {
+            analysisChartRange = range;
+            
+            ['1M', '6M', '1Y', '5Y'].forEach(r => {
+                const btn = document.getElementById(`btn-range-${r}`);
+                if (btn) {
+                    if (r === range) {
+                        btn.className = "bg-brand-500 text-darkBg text-[9px] font-black px-2 py-1 rounded transition-all";
+                    } else {
+                        btn.className = "text-[9px] font-bold text-slate-400 hover:text-white px-2 py-1 rounded transition-all";
+                    }
+                }
+            });
+            
+            if (selectedAssetAnalysisTicker) {
+                drawAnalysisSVGChart(selectedAssetAnalysisTicker, range);
+            }
+        }
+
+        function prefillTransactionFromAnalysis() {
+            if (!selectedAssetAnalysisTicker) return;
+            const meta = getAssetMetadata(selectedAssetAnalysisTicker);
+            
+            document.getElementById('modal-tx-title').textContent = "Lançar Nova Ordem";
+            document.getElementById('tx-id').value = "";
+            document.getElementById('tx-ticker').value = selectedAssetAnalysisTicker;
+            document.getElementById('tx-quantity').value = "10";
+            document.getElementById('tx-price').value = meta.price;
+            document.getElementById('tx-type').value = meta.type;
+            document.getElementById('tx-sector').value = meta.sector || "Análise Técnica";
+            document.getElementById('tx-broker').value = "XP Investimentos";
+            document.getElementById('tx-notes').value = "Ordem gerada automaticamente da aba de análise de mercado.";
+            document.getElementById('tx-date').valueAsDate = new Date();
+            document.getElementById('tx-is-sell').value = "false";
+            
+            selectWorkspaceTab('tab-wp-dashboard');
+            openTransactionModal();
+        }
+
+        // 6. DARF DETAILED MATHEMATICAL REPORT (Brazil standard weighted average)
+        function calculateDarfTaxationReport() {
+            const container = document.getElementById('darf-table-rows');
+            const emptyPanel = document.getElementById('darf-empty-panel');
+            if (!container) return;
+
+            const sellTransactions = transactionsState.filter(t => t.isSell);
+            if (sellTransactions.length === 0) {
+                container.innerHTML = '';
+                if (emptyPanel) emptyPanel.classList.remove('hidden');
+                return;
+            }
+            if (emptyPanel) emptyPanel.classList.add('hidden');
+
+            const monthsMap = {};
+            const sortedTx = [...transactionsState].sort((a,b) => a.date - b.date);
+            const ledger = {}; // { TICKER: { totalQty: 0, totalCost: 0, avgPrice: 0 } }
+
+            sortedTx.forEach(tx => {
+                const ticker = tx.ticker.trim().toUpperCase();
+                if (!ledger[ticker]) {
+                    ledger[ticker] = { totalQty: 0, totalCost: 0, avgPrice: 0 };
+                }
+
+                const info = ledger[ticker];
+
+                if (!tx.isSell) {
+                    info.totalQty += tx.quantity;
+                    info.totalCost += (tx.quantity * tx.purchasePrice);
+                    info.avgPrice = info.totalQty > 0 ? (info.totalCost / info.totalQty) : 0;
+                } else {
+                    const costOfSale = tx.quantity * info.avgPrice;
+                    const saleReturn = tx.quantity * tx.purchasePrice;
+                    const realizedGainLoss = saleReturn - costOfSale;
+
+                    info.totalQty = Math.max(0, info.totalQty - tx.quantity);
+                    info.totalCost = info.totalQty * info.avgPrice;
+
+                    const dateObj = new Date(tx.date);
+                    const monthKey = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
+                    
+                    if (!monthsMap[monthKey]) {
+                        monthsMap[monthKey] = {
+                            monthLabel: `${String(dateObj.getMonth() + 1).padStart(2, '0')}/${dateObj.getFullYear()}`,
+                            stockSales: 0,
+                            stockProfit: 0,
+                            fiiSales: 0,
+                            fiiProfit: 0
+                        };
+                    }
+
+                    const mStats = monthsMap[monthKey];
+                    if (tx.type === "ACAO") {
+                        mStats.stockSales += saleReturn;
+                        mStats.stockProfit += realizedGainLoss;
+                    } else if (tx.type === "FII") {
+                        mStats.fiiSales += saleReturn;
+                        mStats.fiiProfit += realizedGainLoss;
+                    }
+                }
+            });
+
+            const monthlyList = Object.values(monthsMap).sort((a,b) => {
+                const [mA, yA] = a.monthLabel.split('/').map(Number);
+                const [mB, yB] = b.monthLabel.split('/').map(Number);
+                return (yB * 12 + mB) - (yA * 12 + mA);
+            });
+
+            container.innerHTML = '';
+            
+            monthlyList.forEach(m => {
+                let stockTax = 0;
+                if (m.stockSales > 20000 && m.stockProfit > 0) {
+                    stockTax = m.stockProfit * 0.15;
+                }
+
+                let fiiTax = 0;
+                if (m.fiiProfit > 0) {
+                    fiiTax = m.fiiProfit * 0.20;
+                }
+
+                const totalTaxToPay = stockTax + fiiTax;
+                
+                let badgeHtml = '';
+                if (totalTaxToPay > 0) {
+                    badgeHtml = `<span class="bg-amber-500/10 text-amber-500 border border-amber-500/25 text-[10px] font-black px-2.5 py-1 rounded-xl">Pagar DARF: ${formatBRL(totalTaxToPay)}</span>`;
+                } else if (m.stockProfit <= 0 && m.fiiProfit <= 0) {
+                    badgeHtml = `<span class="bg-slate-800 text-slate-400 text-[10px] font-bold px-2.5 py-1 rounded-xl">Sem Lucro</span>`;
+                } else {
+                    badgeHtml = `<span class="bg-emerald-500/10 text-emerald-500 border border-emerald-500/25 text-[10px] font-black px-2.5 py-1 rounded-xl">Isento RFB</span>`;
+                }
+
+                container.innerHTML += `
+                    <tr class="border-b border-darkBorder hover:bg-slate-900/40 transition-colors">
+                        <td class="px-5 py-4 font-bold text-white">${m.monthLabel}</td>
+                        <td class="px-5 py-4 text-right font-mono">${formatBRL(m.stockSales)}</td>
+                        <td class="px-5 py-4 text-right font-mono ${m.stockProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${m.stockProfit >= 0 ? '+' : ''}${formatBRL(m.stockProfit)}</td>
+                        <td class="px-5 py-4 text-right font-mono">${formatBRL(m.fiiSales)}</td>
+                        <td class="px-5 py-4 text-right font-mono ${m.fiiProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${m.fiiProfit >= 0 ? '+' : ''}${formatBRL(m.fiiProfit)}</td>
+                        <td class="px-5 py-4 text-right font-mono font-bold text-slate-200">${formatBRL(totalTaxToPay)}</td>
+                        <td class="px-5 py-4 text-center">${badgeHtml}</td>
+                    </tr>
+                `;
+            });
+        }
+
+        // ===================================
+        // FINANCIAL NEWS FEED DATABASE
+        // ===================================
+        const FINANCIAL_NEWS_SEED = [
+            {
+                title: "b3 decola impulsionada por corte na taxa selic e influxo estrangeiro",
+                date: "Hoje às 17h45",
+                tag: "Bolsa de Valores",
+                content: "O Ibovespa consolidou fechamento técnico positivo subindo 1,4%, rompendo topos anteriores fustigados por pronunciamentos pacíficos do COPOM e rali consistente de commodities globais."
+            },
+            {
+                title: "proventos de tijolo: fiis logísticos elevam proventos mensais em 7%",
+                date: "Hoje às 14h10",
+                tag: "FIIs",
+                content: "Fundos imobiliários emblemáticos de galpões estruturados relataram novos contratos revisando os aluguéis acima do índice oficial de inflação IPCA, resultando em distribuição turbinada de cotas."
+            },
+            {
+                title: "copom sinaliza corte de juros para manter a estabilidade produtiva",
+                date: "Ontem às 18h30",
+                tag: "Selic",
+                content: "Autoridades monetárias pontuaram que a solidez fiscal autoriza reduções brandas na taxa básica. Renda fixa migra gradualmente a posições fundamentalistas robustas na B3."
+            }
+        ];
+
+        function refreshFinancialNews() {
+            const feed = document.getElementById('news-feed-list');
+            if (!feed) return;
+
+            feed.innerHTML = `
+                <div class="p-12 text-center bg-darkCard border border-darkBorder rounded-2xl">
+                    <i class="fa-solid fa-arrows-rotate fa-spin text-brand-500 text-lg mb-2 block"></i>
+                    <p class="text-xs text-slate-400 font-mono text-[10px]">Consultando novos feeds de mercado B3...</p>
+                </div>
+            `;
+
+            setTimeout(() => {
+                feed.innerHTML = '';
+                FINANCIAL_NEWS_SEED.forEach(item => {
+                    feed.innerHTML += `
+                        <div class="bg-darkCard border border-darkBorder rounded-2xl p-5 flex flex-col gap-2 transition-all hover:border-darkBorder/90">
+                            <div class="flex justify-between items-center">
+                                <span class="bg-brand-500/10 text-brand-500 border border-brand-500/25 text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg">${item.tag}</span>
+                                <span class="text-[10px] text-slate-500 font-mono">${item.date}</span>
+                            </div>
+                            <h5 class="text-white font-extrabold text-sm mt-1">${item.title}</h5>
+                            <p class="text-xs text-slate-400 leading-relaxed">${item.content}</p>
+                        </div>
+                    `;
+                });
+            }, 500);
+        }
+
+        // Hook seeder function
+        function seedMockData() {
+            seedWorkspaceMockData();
         }
 
         // Detail asset drawer triggers

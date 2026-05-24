@@ -1,6 +1,6 @@
 /**
  * Vercel Serverless Function: Secure Supabase Sync Proxy (Bridge)
- * Location: /api/sync.js
+ * Save this file as /api/sync.js in your Vercel project root folder.
  * 
  * Securely communicates with Supabase from Vercel servers, 
  * keeping your private Supabase credentials (URL, Key) confidential.
