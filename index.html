@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VALORAE — Gestão Profissional de Portfólio & Investimentos</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Plus Jakarta Sans', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            200: '#bbf7d0',
+                            500: '#10b981', // Emerald - typical high wealth growth green
+                            600: '#059669',
+                            700: '#047857',
+                            900: '#064e3b',
+                        },
+                        darkBg: '#090D16',
+                        darkCard: '#131926',
+                        darkBorder: '#1E293B',
+                    },
+                    boxShadow: {
+                        glow: '0 0 20px rgba(16, 185, 129, 0.15)',
+                        glowGold: '0 0 20px rgba(234, 179, 8, 0.15)',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #090D16;
+            color: #F8FAFC;
+        }
+        .text-gradient {
+            background: linear-gradient(135deg, #F8FAFC 30%, #34D399 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .text-gradient-gold {
+            background: linear-gradient(135deg, #F59E0B 30%, #FBBF24 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .pulse-soft {
+            animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; filter: drop-shadow(0 0 10px rgba(16,185,129,0.2)); }
+            50% { opacity: .8; filter: drop-shadow(0 0 25px rgba(16,185,129,0.4)); }
+        }
+    </style>
+</head>
+<body class="font-sans antialiased overflow-x-hidden selection:bg-brand-500/30 selection:text-brand-100">
+
+    <!-- Header Navigation -->
+    <header class="fixed top-0 left-0 w-full z-50 bg-darkBg/85 backdrop-blur-md border-b border-darkBorder/60 transition-all duration-300">
+        <div class="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+            <a href="#" class="flex items-center gap-3 group">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-emerald-400 flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform duration-300">
+                    <i class="fa-solid fa-chart-line text-white text-lg"></i>
+                </div>
+                <div class="flex flex-col">
+                    <span class="text-xl font-extrabold tracking-wider text-white">VALORAE</span>
+                    <span class="text-[9px] text-brand-500 font-mono tracking-widest uppercase -mt-1">PORTFOLIO</span>
+                </div>
+            </a>
+
+            <!-- Nav Links -->
+            <nav class="hidden md:flex items-center gap-8 text-sm font-semibold text-slate-400">
+                <a href="#recursos" class="hover:text-brand-500 transition-colors">Recursos</a>
+                <a href="#seguranca" class="hover:text-brand-500 transition-colors">Segurança</a>
+                <a href="#configuracao" class="hover:text-emerald-400 transition-colors flex items-center gap-1">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Setup Vercel & Supabase
+                </a>
+                <a href="#atualizacoes" class="hover:text-brand-500 transition-colors">Atualizações (OTA)</a>
+            </nav>
+
+            <!-- Right Buttons -->
+            <div class="flex items-center gap-4">
+                <a href="https://github.com" target="_blank" class="hidden sm:inline-flex text-slate-400 hover:text-white text-lg transition-colors" title="GitHub Repository">
+                    <i class="fa-brands fa-github"></i>
+                </a>
+                <a href="#configuracao" class="bg-brand-500 hover:bg-brand-600 text-darkBg font-extrabold px-5 py-2.5 rounded-xl text-sm transition-all shadow-glow hover:shadow-brand-500/20 active:scale-95">
+                    Instalar Setup <i class="fa-solid fa-cloud-arrow-down ml-1"></i>
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN CONTAINER -->
+    <main class="pt-24">
+
+        <!-- HERO SECTION -->
+        <section class="relative py-16 lg:py-24 px-6 max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+            <!-- Background Gradients -->
+            <div class="absolute top-20 left-1/4 w-96 h-96 bg-brand-500/5 rounded-full blur-[120px] -z-10 pointer-events-none"></div>
+            <div class="absolute bottom-10 right-1/4 w-96 h-96 bg-indigo-500/5 rounded-full blur-[120px] -z-10 pointer-events-none"></div>
+
+            <!-- Left Info -->
+            <div class="lg:col-span-7 flex flex-col gap-6 text-center lg:text-left">
+                <div class="inline-flex py-1.5 px-3.5 rounded-full bg-brand-500/10 border border-brand-500/20 text-brand-500 font-mono text-xs w-fit mx-auto lg:mx-0">
+                    <i class="fa-solid fa-lock-open mr-1.5 mt-0.5"></i> Arquitetura Serverless Ativa
+                </div>
+                <h1 class="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-none text-white text-gradient">
+                    Sua gestão financeira rápida, privada e sincronizada.
+                </h1>
+                <p class="text-slate-400 text-lg leading-relaxed max-w-2xl mx-auto lg:mx-0">
+                    O <strong>VALORAE</strong> é um organizador móvel de portfólio de investimentos de alta performance. 
+                    Com criptografia em nível militar executada diretamente no seu celular e uma ponte segura serverless pela <strong>Vercel</strong>, os dados do seu patrimônio físico ficam protegidos contra qualquer vazamento de forma definitiva.
+                </p>
+
+                <!-- Action CTA -->
+                <div class="flex flex-col sm:flex-row gap-4 mt-4 justify-center lg:justify-start">
+                    <a href="#configuracao" class="bg-gradient-to-r from-brand-500 to-emerald-400 hover:from-brand-600 hover:to-emerald-500 text-darkBg font-extrabold px-8 py-4 rounded-xl shadow-glow hover:shadow-emerald-500/30 flex items-center justify-center gap-2 transition-all active:scale-95 text-base">
+                        <i class="fa-solid fa-gears"></i> Ativar Sincronização Agora
+                    </a>
+                    <a href="#status-check" class="bg-darkCard hover:bg-slate-800 border border-darkBorder text-slate-300 font-semibold px-8 py-4 rounded-xl flex items-center justify-center gap-2 transition-colors">
+                        <i class="fa-solid fa-network-wired text-brand-500"></i> Testar Conexão Ponte
+                    </a>
+                </div>
+
+                <!-- Live badges -->
+                <div class="grid grid-cols-3 gap-6 pt-8 mt-8 border-t border-darkBorder/60 max-w-lg mx-auto lg:mx-0">
+                    <div class="flex flex-col">
+                        <span class="text-2xl font-bold text-white">100%</span>
+                        <span class="text-[11px] text-slate-500 uppercase tracking-wider">Zero-Knowledge</span>
+                    </div>
+                    <div class="flex flex-col">
+                        <span class="text-2xl font-bold text-white">Vercel</span>
+                        <span class="text-[11px] text-slate-500 uppercase tracking-wider">Serverless OK</span>
+                    </div>
+                    <div class="flex flex-col">
+                        <span class="text-2xl font-bold text-white">AES-256</span>
+                        <span class="text-[11px] text-slate-500 uppercase tracking-wider">Criptografia Local</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Phone Mockup & Interactive preview -->
+            <div class="lg:col-span-5 flex justify-center">
+                <div class="relative w-80 h-[580px] bg-darkBg border-8 border-slate-800 rounded-[50px] shadow-2xl overflow-hidden flex flex-col p-4">
+                    <!-- Speaker & Camera notch -->
+                    <div class="absolute top-2.5 left-1/2 transform -translate-x-1/2 w-32 h-5 bg-slate-800 rounded-full flex justify-center items-center gap-1.5 z-20">
+                        <span class="w-2 h-2 rounded-full bg-slate-900 border border-slate-700"></span>
+                        <span class="w-12 h-1 bg-slate-900 rounded-full"></span>
+                    </div>
+
+                    <!-- Inner App Content Preview -->
+                    <div class="flex-grow flex flex-col gap-4 text-xs font-sans overflow-y-auto mt-4 pt-4 select-none">
+                        <!-- Top header -->
+                        <div class="flex items-center justify-between">
+                            <span class="font-bold text-slate-300">VALORAE</span>
+                            <div class="flex items-center gap-1.5 bg-brand-500/10 text-brand-500 px-2 py-0.5 rounded-full text-[10px]">
+                                <i class="fa-solid fa-cloud-check text-[9px] animate-pulse"></i> Sincronizado
+                            </div>
+                        </div>
+
+                        <!-- Mini Chart / Balance Widget -->
+                        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 flex flex-col gap-1.5">
+                            <span class="text-slate-400 text-[10px]">Patrimônio Total</span>
+                            <div class="text-lg font-extrabold text-white">R$ 145.890,22</div>
+                            <span class="text-[10px] text-brand-500 font-semibold"><i class="fa-solid fa-arrow-trend-up"></i> +12,4% este mês</span>
+                            
+                            <!-- Visual placeholder graph -->
+                            <div class="h-10 flex items-end gap-1 pt-2">
+                                <div class="bg-brand-500/20 w-full h-1/4 rounded-sm"></div>
+                                <div class="bg-brand-500/30 w-full h-2/5 rounded-sm"></div>
+                                <div class="bg-brand-500/40 w-full h-1/2 rounded-sm"></div>
+                                <div class="bg-brand-500/50 w-full h-3/5 rounded-sm"></div>
+                                <div class="bg-brand-500/75 w-full h-3/4 rounded-sm"></div>
+                                <div class="bg-brand-500 w-full h-full rounded-sm shadow-[0_0_10px_rgba(16,185,129,0.3)]"></div>
+                            </div>
+                        </div>
+
+                        <!-- Mini Stocks List of Assets -->
+                        <div class="flex flex-col gap-2">
+                            <span class="text-slate-400 text-[10px] font-semibold tracking-wider uppercase">Meus Ativos</span>
+                            
+                            <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-2.5 flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    <span class="w-7 h-7 rounded-lg bg-indigo-500/10 text-indigo-400 flex items-center justify-center font-bold">WEGE</span>
+                                    <div>
+                                        <div class="font-bold text-white text-[11px]">WEGE3</div>
+                                        <div class="text-[9px] text-slate-500">50 ações</div>
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    <div class="font-bold text-slate-300">R$ 2.450,00</div>
+                                    <div class="text-[9px] text-brand-500">+1.5%</div>
+                                </div>
+                            </div>
+
+                            <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-2.5 flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    <span class="w-7 h-7 rounded-lg bg-emerald-500/10 text-brand-500 flex items-center justify-center font-bold">PETR</span>
+                                    <div>
+                                        <div class="font-bold text-white text-[11px]">PETR4</div>
+                                        <div class="text-[9px] text-slate-500">120 ações</div>
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    <div class="font-bold text-slate-300">R$ 4.620,00</div>
+                                    <div class="text-[9px] text-rose-500">-0.8%</div>
+                                </div>
+                            </div>
+
+                            <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-2.5 flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    <span class="w-7 h-7 rounded-lg bg-amber-500/10 text-amber-500 flex items-center justify-center font-bold">BCO</span>
+                                    <div>
+                                        <div class="font-bold text-white text-[11px]">BBDC4</div>
+                                        <div class="text-[9px] text-slate-500">80 ações</div>
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    <div class="font-bold text-slate-300">R$ 1.136,00</div>
+                                    <div class="text-[9px] text-brand-500">+2.3%</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Encrypted status bar -->
+                        <div class="mt-auto bg-brand-500/5 border border-brand-500/20 rounded-xl p-2 flex items-center gap-2">
+                            <i class="fa-solid fa-shield-halved text-brand-500 text-sm"></i>
+                            <div class="text-[9px] text-slate-400 leading-snug">
+                                <span class="font-bold text-white block">Criptografia Local Ativa</span>
+                                AES-256-GCM ativado com sucesso.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- FEATURES SECTIONS -->
+        <section id="recursos" class="py-20 bg-slate-950/40 border-y border-darkBorder/40 px-6">
+            <div class="max-w-7xl mx-auto">
+                <div class="text-center max-w-2xl mx-auto mb-16">
+                    <span class="text-brand-500 font-mono font-bold tracking-widest text-xs uppercase">Por que VALORAE?</span>
+                    <h2 class="text-3xl md:text-4xl font-extrabold text-white mt-2">Tecnologia robusta, portabilidade e privacidade absoluta</h2>
+                    <p class="text-slate-400 mt-4 leading-relaxed">Conheça os pilares funcionais que tornam nossa plataforma o ambiente ideal para rastrear sua riqueza.</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    <!-- Feature Card 1 -->
+                    <div class="bg-darkCard/60 border border-darkBorder rounded-2xl p-8 hover:border-brand-500/30 transition-all duration-300 group hover:-translate-y-1">
+                        <div class="w-12 h-12 bg-brand-500/10 rounded-xl flex items-center justify-center text-brand-500 mb-6 group-hover:bg-brand-500/20 transition-all">
+                            <i class="fa-solid fa-chart-pie text-xl"></i>
+                        </div>
+                        <h3 class="text-xl font-bold text-white">Análise Gráfica Poderosa</h3>
+                        <p class="text-slate-400 mt-4 text-sm leading-relaxed">
+                            Visualize a distribuição histórica de sua carteira (por setores, classes de ativos ou corretoras) em interfaces dinâmicas criadas em Jetpack Compose.
+                        </p>
+                    </div>
+
+                    <!-- Feature Card 2 -->
+                    <div class="bg-darkCard/60 border border-darkBorder rounded-2xl p-8 hover:border-yellow-500/30 transition-all duration-300 group hover:-translate-y-1">
+                        <div class="w-12 h-12 bg-yellow-500/10 rounded-xl flex items-center justify-center text-yellow-500 mb-6 group-hover:bg-yellow-500/20 transition-all">
+                            <i class="fa-solid fa-vault text-xl"></i>
+                        </div>
+                        <h3 class="text-xl font-bold text-white">Privacidade Sem Limites</h3>
+                        <p class="text-slate-400 mt-4 text-sm leading-relaxed">
+                            Criptografe seus ativos usando chave derivada por PBKDF2 diretamente no dispositivo. Suas ordens financeiras e saldos nunca trafegam em texto puro pela internet.
+                        </p>
+                    </div>
+
+                    <!-- Feature Card 3 -->
+                    <div class="bg-darkCard/60 border border-darkBorder rounded-2xl p-8 hover:border-emerald-500/30 transition-all duration-300 group hover:-translate-y-1">
+                        <div class="w-12 h-12 bg-emerald-500/10 rounded-xl flex items-center justify-center text-emerald-500 mb-6 group-hover:bg-emerald-500/20 transition-all">
+                            <i class="fa-solid fa-server text-xl"></i>
+                        </div>
+                        <h3 class="text-xl font-bold text-white">Ponte Serverless Vercel</h3>
+                        <p class="text-slate-400 mt-4 text-sm leading-relaxed">
+                            Graças à arquitetura de api-route serverless, as configurações e senhas de acesso do Supabase ficam ocultas no servidor no Vercel, impedindo ataques de engenharia reversa no APK.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECURITY SECTION -->
+        <section id="seguranca" class="py-20 px-6 max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+            <div>
+                <img src="https://images.unsplash.com/photo-1563986768609-322da13575f3?auto=format&fit=crop&w=800&q=80" alt="Criptografia" class="rounded-3xl border border-darkBorder shadow-2xl overflow-hidden filter saturate-[1.2] opacity-85 hover:opacity-100 transition-opacity duration-300">
+            </div>
+            <div class="flex flex-col gap-6">
+                <span class="text-brand-500 font-mono text-xs uppercase tracking-wider">Criptografia Local Zero-Knowledge</span>
+                <h2 class="text-3xl md:text-4xl font-extrabold text-white">Seus investimentos não pertencem a ninguém a não ser você.</h2>
+                <p class="text-slate-400 leading-relaxed">
+                    A maioria dos aplicativos gerencia seu portfólio salvando dados em texto aberto no servidor. Se o servidor for hackeado, seus saldos são expostos. No <strong>VALORAE</strong>, isso é impossível.
+                </p>
+                <p class="text-slate-400 leading-relaxed font-semibold">
+                    🔑 O funcionamento é extremamente prático:
+                </p>
+                <ul class="flex flex-col gap-3 text-sm text-slate-300">
+                    <li class="flex items-start gap-2.5">
+                        <i class="fa-regular fa-circle-check text-brand-500 mt-1"></i>
+                        <span><strong>Cifragem na Origem</strong>: Os dados são empacotados em JSON, encriptados de forma assimétrica/simétrica com AES-256-GCM no chip criptográfico local do Android.</span>
+                    </li>
+                    <li class="flex items-start gap-2.5">
+                        <i class="fa-regular fa-circle-check text-brand-500 mt-1"></i>
+                        <span><strong>Tráfego Oculto</strong>: O tráfego para a ponte Vercel envia apenas o <i>ciphertext</i> criptografado sem conter sua senha ou frase-semente.</span>
+                    </li>
+                    <li class="flex items-start gap-2.5">
+                        <i class="fa-regular fa-circle-check text-brand-500 mt-1"></i>
+                        <span><strong>Armazenamento Cego</strong>: O banco do Supabase apenas retém o hash cifrado. Somente você pode restaurar e ler os ativos digitando sua senha privada no celular.</span>
+                    </li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- CONFIGURATION & ROADMAP STEP BY STEP -->
+        <section id="configuracao" class="py-20 bg-slate-950 px-6 border-y border-darkBorder/60">
+            <div class="max-w-5xl mx-auto">
+                <div class="text-center max-w-3xl mx-auto mb-16">
+                    <span class="text-brand-500 font-mono font-bold tracking-widest text-xs uppercase">Guia Prático do Servidor</span>
+                    <h2 class="text-3xl md:text-4xl font-extrabold text-white mt-2">Como configurar o Vercel & Supabase de ponta-a-ponta</h2>
+                    <p class="text-slate-400 mt-4">Com os arquivos já publicados no seu repositório sincronizado com o GitHub, siga o roteiro de 3 passos abaixo para deixar o sistema 100% online.</p>
+                </div>
+
+                <!-- Tabs header -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-2 bg-darkBg border border-darkBorder p-1.5 rounded-2xl mb-8">
+                    <button onclick="switchTab('tab-step-1')" id="btn-tab-step-1" class="tab-btn active bg-brand-500 text-darkBg py-3.5 px-4 rounded-xl text-sm font-extrabold transition-all">
+                        1. SQL no Supabase <i class="fa-solid fa-database ml-1"></i>
+                    </button>
+                    <button onclick="switchTab('tab-step-2')" id="btn-tab-step-2" class="tab-btn hover:text-white text-slate-400 py-3.5 px-4 rounded-xl text-sm font-bold transition-all">
+                        2. Variáveis na Vercel <i class="fa-solid fa-server ml-1"></i>
+                    </button>
+                    <button onclick="switchTab('tab-step-3')" id="btn-tab-step-3" class="tab-btn hover:text-white text-slate-400 py-3.5 px-4 rounded-xl text-sm font-bold transition-all">
+                        3. Secret no AI Studio <i class="fa-solid fa-mobile-screen ml-1"></i>
+                    </button>
+                </div>
+
+                <!-- Tab Content 1: SQL Editor -->
+                <div id="tab-step-1" class="tab-content block bg-darkCard border border-darkBorder rounded-3xl p-6 sm:p-8">
+                    <div class="flex flex-col gap-4">
+                        <div class="flex justify-between items-center flex-wrap gap-4">
+                            <div>
+                                <h3 class="text-lg font-bold text-white">Criar a Tabela de Backups</h3>
+                                <p class="text-xs text-slate-400 mt-1">Execute este script no painel SQL Editor do seu projeto Supabase.</p>
+                            </div>
+                            <button onclick="copySQL()" class="bg-darkBg hover:bg-slate-900 border border-darkBorder text-slate-300 hover:text-white font-semibold text-xs px-4 py-2.5 rounded-xl flex items-center gap-1.5 active:scale-95 transition-all">
+                                <i class="fa-regular fa-copy" id="copy-icon"></i> <span id="copy-text">Copiar Código SQL</span>
+                            </button>
+                        </div>
+                        
+                        <!-- SQL Codeblock -->
+                        <div class="relative bg-darkBg border border-darkBorder rounded-xl p-5 overflow-x-auto text-xs font-mono text-brand-200 leading-relaxed shadow-inner">
+                            <pre id="sql-block"><code class="language-sql"><span class="text-slate-500">-- 1. Criar a Tabela de Backups Sincronizados</span>
+<span class="text-brand-500">CREATE TABLE IF NOT EXISTS</span> valorae_sync_backups (
+    user_id <span class="text-amber-400">TEXT</span> <span class="text-brand-500">PRIMARY KEY</span>,
+    payload <span class="text-amber-400">TEXT</span> <span class="text-brand-500">NOT NULL</span>,
+    encrypted <span class="text-amber-400">BOOLEAN</span> <span class="text-brand-500">DEFAULT FALSE</span>,
+    updated_at <span class="text-amber-400">TIMESTAMPTZ</span> <span class="text-brand-500">DEFAULT CURRENT_TIMESTAMP</span>
+);
+
+<span class="text-slate-500">-- 2. Desabilitar RLS (Recomendado para uso com chave anônima oculta no Vercel)</span>
+<span class="text-brand-500">ALTER TABLE</span> valorae_sync_backups <span class="text-brand-500">DISABLE ROW LEVEL SECURITY</span>;</code></pre>
+                        </div>
+
+                        <!-- Tip box -->
+                        <div class="bg-brand-500/5 border border-brand-500/20 rounded-2xl p-4 flex gap-3 text-xs leading-relaxed text-slate-300">
+                            <i class="fa-solid fa-circle-info text-brand-500 text-sm mt-0.5"></i>
+                            <div>
+                                <strong class="text-white">Por que desabilitar o RLS é seguro aqui?</strong> Os dados do payload são criptografados pelo app diretamente no seu celular (com AES-256 baseado na frase-semente que apenas você sabe). O banco apenas armazena bytes ilegíveis e sem dados pessoais visíveis nos logs de rede, evitando qualquer possibilidade de leitura externa da sua carteira de investimentos.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab Content 2: Vercel variables -->
+                <div id="tab-step-2" class="tab-content hidden bg-darkCard border border-darkBorder rounded-3xl p-6 sm:p-8">
+                    <div class="flex flex-col gap-6">
+                        <div>
+                            <h3 class="text-lg font-bold text-white">Configurar as Variáveis de Ambiente no Vercel</h3>
+                            <p class="text-xs text-slate-400 mt-1">Como as chaves serão acessadas apenas no lado do servidor, elas nunca vazarão no aplicativo compilado.</p>
+                        </div>
+
+                        <div class="flex flex-col gap-4">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div class="bg-darkBg border border-darkBorder p-5 rounded-2xl">
+                                    <div class="flex justify-between items-center mb-2">
+                                        <span class="font-mono text-xs text-slate-400">Variável 1 (Nome)</span>
+                                        <span class="text-[10px] text-brand-500 font-mono tracking-widest uppercase">SUPABASE_URL</span>
+                                    </div>
+                                    <p class="text-xs text-slate-300">Insira a URL de conexão do seu Supabase. Encontre em <strong>Project Settings > API</strong> no Supabase.</p>
+                                    <div class="mt-4 font-mono text-[10px] bg-slate-900 border border-slate-800 p-2 rounded-lg text-slate-400">
+                                        ex: https://mynbpxg...supabase.co
+                                    </div>
+                                </div>
+
+                                <div class="bg-darkBg border border-darkBorder p-5 rounded-2xl">
+                                    <div class="flex justify-between items-center mb-2">
+                                        <span class="font-mono text-xs text-slate-400">Variável 2 (Nome)</span>
+                                        <span class="text-[10px] text-amber-500 font-mono tracking-widest uppercase">SUPABASE_ANON_KEY</span>
+                                    </div>
+                                    <p class="text-xs text-slate-300">Insira a chave JWT anônima do projeto (marcada como <code>anon / public</code>).</p>
+                                    <div class="mt-4 font-mono text-[10px] bg-slate-900 border border-slate-800 p-2 rounded-lg text-slate-400">
+                                        ex: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="border border-darkBorder p-5 rounded-2xl bg-slate-900/50 text-xs text-slate-300 leading-relaxed">
+                                <h4 class="font-bold text-white mb-2"><i class="fa-solid fa-circle-play text-brand-500 mr-1.5"></i> Tutorial passo-a-passo:</h4>
+                                <ol class="list-decimal pl-5 space-y-1.5 text-slate-400">
+                                    <li>Abra seu painel no <a href="https://vercel.com" target="_blank" class="text-brand-500 underline">Vercel Dashboard</a> e acesse seu projeto.</li>
+                                    <li>Clique na aba <strong class="text-white">Settings</strong> no topo e depois vá em <strong class="text-white">Environment Variables</strong> no menu lateral esquerdo.</li>
+                                    <li>Adicione a variável <strong>SUPABASE_URL</strong> e cole a respectiva URL obtida nas configurações do Supabase.</li>
+                                    <li>Adicione a variável <strong>SUPABASE_ANON_KEY</strong> e cole a chave anônima.</li>
+                                    <li>Clique em <strong class="text-white">Save</strong>. <i>Dica: Faça um novo "Deploy" para as variáveis entrarem em vigor em alguns segundos!</i></li>
+                                </ol>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab Content 3: Secret Android config -->
+                <div id="tab-step-3" class="tab-content hidden bg-darkCard border border-darkBorder rounded-3xl p-6 sm:p-8">
+                    <div class="flex flex-col gap-6">
+                        <div>
+                            <h3 class="text-lg font-bold text-white">Configurar a URL do Vercel no Aplicativo Android</h3>
+                            <p class="text-xs text-slate-400 mt-1">Conecte o APK do Android diretamente ao seu servidor Vercel.</p>
+                        </div>
+
+                        <div class="bg-darkBg border border-darkBorder p-6 rounded-2xl flex flex-col gap-4">
+                            <span class="text-xs text-slate-400 font-mono">CHAVE DE INJEÇÃO (SEGREDO NO STUDIO)</span>
+                            <div class="flex items-center justify-between border-b border-darkBorder pb-4">
+                                <span class="font-mono text-semibold text-sm text-yellow-500">VERCEL_BACKEND_URL</span>
+                                <span class="text-xs bg-brand-500/10 text-brand-500 font-mono px-3 py-1 rounded-full"><i class="fa-solid fa-info-circle"></i> Segredos</span>
+                            </div>
+                            
+                            <p class="text-sm text-slate-300 leading-relaxed">
+                                No painel lateral do seu chat no <strong>AI Studio</strong>, acesse as configurações de <strong class="text-white">Secrets (Segredos)</strong> e adicione o segredo com o nome <code>VERCEL_BACKEND_URL</code> contendo a URL gerada pelo Vercel.
+                            </p>
+                            
+                            <div class="font-mono text-xs bg-slate-900 border border-slate-800 p-4 rounded-xl text-slate-200">
+                                <span class="text-slate-500">Valor da Secret (Exemplo):</span><br>
+                                https://meu-projeto-valorae.vercel.app
+                            </div>
+
+                            <div class="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-4 flex gap-3 text-xs leading-relaxed text-slate-300 mt-2">
+                                <i class="fa-solid fa-triangle-exclamation text-amber-500 text-sm mt-0.5"></i>
+                                <div>
+                                    <strong class="text-white">Atenção! Limpe suas variáveis antigas:</strong> Certifique-se de <strong>remover ou deixar em branco</strong> as variáveis antigas <code>SUPABASE_URL</code> e <code>SUPABASE_ANON_KEY</code> no painel de Segredos do AI Studio. Quando estas variáveis do Supabase estão apagadas no app, o Android detecta automaticamente a ausência delas e passa a enviar as requisições de backup e restauração de forma exclusiva e ultra-segura pela sua rota da Vercel!
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- PONTE ACTIVE MONITOR -->
+        <section id="status-check" class="py-20 px-6 max-w-4xl mx-auto">
+            <div class="bg-darkBg border border-darkBorder rounded-3xl p-8 shadow-2xl relative overflow-hidden">
+                <div class="absolute -right-20 -bottom-20 w-80 h-80 bg-brand-500/5 rounded-full blur-[120px]"></div>
+                
+                <div class="flex flex-col md:flex-row justify-between items-center gap-8">
+                    <div class="flex flex-col gap-2 max-w-lg text-center md:text-left">
+                        <div class="inline-flex py-1 px-2.5 bg-slate-900 rounded-full text-slate-400 font-mono text-[10px] w-fit mx-auto md:mx-0">
+                            TESTE INTEGRADO DE INFRAESTRUTURA
+                        </div>
+                        <h3 class="text-2xl font-black text-white">Verificar Status do Servidor</h3>
+                        <p class="text-slate-400 text-sm leading-relaxed">
+                            Insira a URL gerada pelo seu deploy na Vercel abaixo para testar instantaneamente se a sua API serveless e a conexão com o Supabase estão conversando direito!
+                        </p>
+                    </div>
+
+                    <div class="flex flex-col gap-3 w-full md:w-80">
+                        <input type="text" id="vercel-url" placeholder="https://seu-projeto.vercel.app" 
+                               class="w-full bg-slate-900 border border-darkBorder font-mono text-xs rounded-xl px-4 py-3 placeholder-slate-600 text-slate-200 outline-none focus:border-brand-500 transition-all">
+                        <button onclick="pingVercel()" class="w-full bg-brand-500 hover:bg-brand-600 text-darkBg font-extrabold py-3 px-4 rounded-xl text-xs transition-transform active:scale-[98] flex items-center justify-center gap-1.5">
+                            <i class="fa-solid fa-play"></i> Testar Conexão
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Status output box -->
+                <div id="ping-result-box" class="hidden mt-8 border-t border-darkBorder/60 pt-6">
+                    <div id="ping-result" class="rounded-2xl p-4 flex gap-3 text-xs leading-relaxed"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SERVICE UPDATES / OTA SECTION -->
+        <section id="atualizacoes" class="py-20 bg-slate-950/30 px-6 border-t border-darkBorder/40">
+            <div class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+                <div class="lg:col-span-6 flex flex-col gap-6">
+                    <span class="text-brand-500 font-mono text-xs uppercase tracking-wider">Distribuição Centralizada</span>
+                    <h2 class="text-3xl md:text-4xl font-extrabold text-white">Atualizações Automáticas Over-The-Air (OTA)</h2>
+                    <p class="text-slate-400 leading-relaxed">
+                        Este site não serve apenas para hospedar a interface de introdução e o servidor proxy das chaves. Ele também serve como o <strong>núcleo de distribuição de atualizações automáticas via internet para o aplicativo Android!</strong>
+                    </p>
+                    <p class="text-slate-300 text-sm leading-relaxed">
+                        Sempre que você atualizar o app, tudo que precisa fazer é:
+                    </p>
+                    <ul class="flex flex-col gap-3.5 text-xs text-slate-400">
+                        <li class="flex gap-2">
+                            <span class="bg-slate-900 border border-darkBorder text-slate-300 font-bold w-6 h-6 rounded-lg flex items-center justify-center shrink-0">1</span>
+                            <span>Gerar o arquivo <code>app-release.apk</code> de uma nova versão estável (por exemplo, 1.0.6 com versionCode 7).</span>
+                        </li>
+                        <li class="flex gap-2">
+                            <span class="bg-slate-900 border border-darkBorder text-slate-300 font-bold w-6 h-6 rounded-lg flex items-center justify-center shrink-0">2</span>
+                            <span>Criar uma nova Release pública no seu GitHub e colocar o link direto do APK no campo <code>downloadUrl</code> do arquivo <code>update.json</code> na sua árvore de código.</span>
+                        </li>
+                        <li class="flex gap-2">
+                            <span class="bg-slate-900 border border-darkBorder text-slate-300 font-bold w-6 h-6 rounded-lg flex items-center justify-center shrink-0">3</span>
+                            <span>Atualizar as informações de <code>versionCode</code>, <code>versionName</code> e <code>changelog</code> do arquivo <code>update.json</code> e subir para o GitHub.</span>
+                        </li>
+                    </ul>
+                    <p class="text-brand-500 text-xs font-semibold leading-normal bg-brand-500/5 p-4 rounded-xl border border-brand-500/10">
+                        🚀 A Vercel fará a re-publicação estática em segundos, e o aplicativo instalado no celular do seu usuário identificará o novo arquivo de metadados na inicialização do app, avisando ao seu usuário e baixando e instalando a atualização de forma totalmente autônoma e segura!
+                    </p>
+                </div>
+
+                <div class="lg:col-span-6">
+                    <div class="bg-darkCard border border-darkBorder rounded-3xl p-8 flex flex-col gap-4">
+                        <h3 class="text-lg font-bold text-white mb-2"><i class="fa-solid fa-code text-brand-500 mr-2"></i> Estrutura do arquivo update.json</h3>
+                        
+                        <div class="bg-darkBg border border-darkBorder rounded-2xl p-5 overflow-x-auto text-xs font-mono text-slate-300 leading-normal">
+                            <pre><code class="language-json">{
+  <span class="text-amber-400">"latestVersionCode"</span>: 6,
+  <span class="text-amber-400">"versionName"</span>: <span class="text-brand-500">"1.0.5"</span>,
+  <span class="text-amber-400">"downloadUrl"</span>: <span class="text-blue-400">"https://github.com/..."</span>,
+  <span class="text-amber-400">"releaseDate"</span>: <span class="text-brand-500">"2026-05-22"</span>,
+  <span class="text-amber-400">"changelog"</span>: [
+    <span class="text-emerald-400">"✓ Desempenho de carregamento acelerado do portfólio"</span>,
+    <span class="text-emerald-400">"✓ Novo sistema de backup seguro via ponte Vercel"</span>
+  ]
+}</code></pre>
+                        </div>
+                        <p class="text-[11px] text-slate-500 italic leading-relaxed mt-2 text-center">
+                            Você pode ler e editar este arquivo chamado <strong>update.json</strong> localizado diretamente na pasta raiz do seu repositório.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- FOOTER NAV -->
+    <footer class="bg-darkBg border-t border-darkBorder/60 py-12 px-6">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-brand-600 to-emerald-400 flex items-center justify-center">
+                    <i class="fa-solid fa-chart-line text-white text-xs"></i>
+                </div>
+                <span class="text-base font-bold text-white tracking-wider">VALORAE PORTFOLIO</span>
+            </div>
+
+            <!-- Badges -->
+            <div class="flex flex-wrap items-center justify-center gap-4 text-xs font-mono text-slate-500">
+                <span>⚡ Desenvolvido com Jetpack Compose</span>
+                <span>•</span>
+                <span>🔒 Banco Supabase</span>
+                <span>•</span>
+                <span>🌍 Vercel Serverless v1</span>
+            </div>
+
+            <!-- Copyright -->
+            <p class="text-xs text-slate-500">
+                &copy; 2026 VALORAE. Todos os direitos reservados.
+            </p>
+        </div>
+    </footer>
+
+    <!-- INTERTACTIVE ACTIONS SCRIPT -->
+    <script>
+        // Tab switching function
+        function switchTab(tabId) {
+            // Hide all tab contents
+            const contents = document.querySelectorAll('.tab-content');
+            contents.forEach(content => {
+                content.classList.replace('block', 'hidden');
+            });
+
+            // Show selected contents
+            const activeContent = document.getElementById(tabId);
+            if (activeContent) {
+                activeContent.classList.replace('hidden', 'block');
+            }
+
+            // Remove active classes from all buttons
+            const buttons = document.querySelectorAll('.tab-btn');
+            buttons.forEach(btn => {
+                btn.className = "tab-btn text-slate-400 hover:text-white py-3.5 px-4 rounded-xl text-sm font-bold transition-all";
+            });
+
+            // Add active button styling
+            const activeBtn = document.getElementById("btn-" + tabId);
+            if (activeBtn) {
+                activeBtn.className = "tab-btn bg-brand-500 text-darkBg py-3.5 px-4 rounded-xl text-sm font-extrabold transition-all";
+            }
+        }
+
+        // SQL Code copying helper
+        function copySQL() {
+            const sqlText = `CREATE TABLE IF NOT EXISTS valorae_sync_backups (
+    user_id TEXT PRIMARY KEY,
+    payload TEXT NOT NULL,
+    encrypted BOOLEAN DEFAULT FALSE,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Desabilitar RLS para uso na api do Vercel
+ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;`;
+
+            navigator.clipboard.writeText(sqlText).then(() => {
+                const btnText = document.getElementById('copy-text');
+                const btnIcon = document.getElementById('copy-icon');
+
+                // Update text
+                btnText.textContent = "Código Copiado!";
+                btnIcon.className = "fa-solid fa-check text-brand-500";
+                
+                setTimeout(() => {
+                    btnText.textContent = "Copiar Código SQL";
+                    btnIcon.className = "fa-regular fa-copy";
+                }, 3000);
+            }).catch(err => {
+                console.error("Falha ao copiar: ", err);
+            });
+        }
+
+        // Bridge health tester helper logic
+        async function pingVercel() {
+            const inputField = document.getElementById('vercel-url');
+            const resultBox = document.getElementById('ping-result-box');
+            const resultDiv = document.getElementById('ping-result');
+            
+            let urlVal = inputField.value.trim();
+            if (!urlVal) {
+                alert('Por favor, informe a URL do seu deploy no Vercel (ex: https://meu-projeto.vercel.app)');
+                return;
+            }
+
+            // Format URL values securely
+            if (!urlVal.startsWith('http://') && !urlVal.startsWith('https://')) {
+                urlVal = 'https://' + urlVal;
+            }
+            urlVal = urlVal.replace(/\/$/, '');
+
+            resultBox.classList.remove('hidden');
+            resultDiv.className = "rounded-2xl p-4 flex gap-3 text-xs leading-relaxed bg-slate-900 border border-slate-800 text-slate-300";
+            resultDiv.innerHTML = `<i class="fa-solid fa-circle-notch animate-spin text-brand-500 mt-0.5"></i> <div><strong>Conectando...</strong> Enviando requisição de teste para o servidor Vercel en: <code>${urlVal}/api/sync</code>...</div>`;
+
+            try {
+                // Fetch proxy ping endpoint
+                const res = await fetch(`${urlVal}/api/sync`, { method: 'GET' });
+                const data = await res.json();
+
+                if (res.ok) {
+                    resultDiv.className = "rounded-2xl p-4 flex gap-3 text-xs leading-relaxed bg-brand-500/10 border border-brand-500/20 text-brand-200";
+                    resultDiv.innerHTML = `
+                        <i class="fa-solid fa-circle-check text-brand-500 text-lg shrink-0 mt-0.5"></i>
+                        <div>
+                            <strong class="text-white text-sm block mb-1">🎉 Sucesso total na Conexão!</strong>
+                            A ponte da Vercel respondeu com sucesso! <br>
+                            <strong>Status:</strong> ${data.status} <br>
+                            <strong>Mensagem:</strong> ${data.message || 'Ponte ativa!'}<br>
+                            Seu banco Supabase está devidamente conectado e respondendo à rota serverless. O aplicativo no Android agora pode inicializar e restaurar backups normalmente através deste link!
+                        </div>
+                    `;
+                } else {
+                    resultDiv.className = "rounded-2xl p-4 flex gap-3 text-xs leading-relaxed bg-rose-500/10 border border-rose-500/20 text-rose-300";
+                    resultDiv.innerHTML = `
+                        <i class="fa-solid fa-triangle-exclamation text-rose-500 text-lg shrink-0 mt-0.5"></i>
+                        <div>
+                            <strong class="text-white text-sm block mb-1">Ponte com pendências (Código HTTP ${res.status})</strong>
+                            A Vercel respondeu, mas indicou um erro ao bater no Supabase. <br>
+                            <strong>Detalhes do erro:</strong> ${data.error || 'Erro desconhecido.'} <br>
+                            ${data.details ? `<strong>Dica do console:</strong> ${data.details}` : 'Certifique-se de que adicionou as chaves do Supabase nas Environment Variables de produção da Vercel.'}
+                        </div>
+                    `;
+                }
+
+            } catch (err) {
+                resultDiv.className = "rounded-2xl p-4 flex gap-3 text-xs leading-relaxed bg-rose-500/10 border border-rose-500/20 text-rose-300";
+                resultDiv.innerHTML = `
+                    <i class="fa-solid fa-triangle-exclamation text-rose-500 text-lg shrink-0 mt-0.5"></i>
+                    <div>
+                        <strong class="text-white text-sm block mb-1">Falha de Comunicação (Rede)</strong>
+                        Não conseguimos alcançar o Vercel. <br>
+                        <strong>Erro de rede:</strong> ${err.message}<br>
+                        <strong class="text-white block mt-2">Causas comuns:</strong>
+                        1. A URL informada está incorreta ou incorreu em digitação (confira o final <code>.vercel.app</code>)<br>
+                        2. O deploy ainda não terminou de atualizar no Vercel (aguarde 1 minuto)<br>
+                        3. Bloqueio por políticas locais ou de navegador (tente usar protocolo HTTPS)<br>
+                        4. Falta da configuração do CORS no servidor se o domínio de origem for bloqueado.
+                    </div>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>
