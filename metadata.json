@@ -1,6 +1,6 @@
 {
-  "name": "Investidor Portfolio",
-  "description": "Portfolio de investimentos com dashboard, análise detalhada de ações e FIIs, feeds de notícias financeiras e relatórios integrados via IA.",
+  "name": "VALORAE",
+  "description": "Plataforma profissional de gestão de portfólio, análise de ativos e monitoramento de mercado financeiro.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
