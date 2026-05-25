@@ -931,8 +931,27 @@ fun AddTransactionDialog(
     
     // Value total calculation
     val qVal = quantity.replace(",", ".").toDoubleOrNull() ?: 0.0
-    val pVal = price.replace(".", "").replace(",", ".").toDoubleOrNull() ?: 0.0
-    val cVal = otherCosts.replace(".", "").replace(",", ".").toDoubleOrNull() ?: 0.0
+    val pVal = price.let {
+        if (it.contains(",") && it.contains(".")) {
+            // Likely periodic format like 1.234,56
+            it.replace(".", "").replace(",", ".").toDoubleOrNull()
+        } else if (it.contains(",")) {
+            // Likely 1234,56
+            it.replace(",", ".").toDoubleOrNull()
+        } else {
+            // Likely 1234.56 or 1234
+            it.toDoubleOrNull()
+        }
+    } ?: 0.0
+    val cVal = otherCosts.let {
+        if (it.contains(",") && it.contains(".")) {
+            it.replace(".", "").replace(",", ".").toDoubleOrNull()
+        } else if (it.contains(",")) {
+            it.replace(",", ".").toDoubleOrNull()
+        } else {
+            it.toDoubleOrNull()
+        }
+    } ?: 0.0
     val valorTotal = (qVal * pVal) + cVal
 
     var expandedType by remember { mutableStateOf(false) }

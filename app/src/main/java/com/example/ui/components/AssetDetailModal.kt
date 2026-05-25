@@ -36,6 +36,7 @@ import com.example.network.B3NetworkService
 import com.example.network.B3AssetData
 import com.example.ui.theme.*
 import com.example.viewmodel.AssetSummary
+import com.example.ui.B3UIUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -372,31 +373,32 @@ fun AssetDetailModal(
                                     Spacer(modifier = Modifier.height(20.dp))
 
                                     val metrics = mutableListOf<Triple<String, String, String>>()
+
                                     if (realData != null) {
-                                        metrics.add(Triple("Dividend Yield", "${String.format(java.util.Locale.US, "%.2f", realData.dy)}%", "Retorno em proventos"))
-                                        metrics.add(Triple("P/VP", String.format(java.util.Locale.US, "%.2f", realData.pvp), "Preço / Valor Patrimonial"))
-                                        metrics.add(Triple(if (isFii) "Últ. Provento" else "P/L", if (isFii) "R$ ${String.format(java.util.Locale.US, "%.2f", realData.lastDividend)}" else String.format(java.util.Locale.US, "%.2f", realData.pl), if (isFii) "Baseado na última distr." else "Preço / Lucro anual"))
-                                        metrics.add(Triple("VPA", "R$ ${String.format(java.util.Locale.US, "%.2f", realData.vpa)}", "Valor Justo Contábil"))
+                                        metrics.add(Triple("Dividend Yield", B3UIUtils.formatValue(realData.dy, suffix = "%"), "Retorno em proventos"))
+                                        metrics.add(Triple("P/VP", B3UIUtils.formatValue(realData.pvp), "Preço / Valor Patrimonial"))
+                                        metrics.add(Triple(if (isFii) "Últ. Provento" else "P/L", if (isFii) B3UIUtils.formatValue(realData.lastDividend, prefix = "R$ ") else B3UIUtils.formatValue(realData.pl), if (isFii) "Baseado na última distr." else "Preço / Lucro anual"))
+                                        metrics.add(Triple("VPA", B3UIUtils.formatValue(realData.vpa, prefix = "R$ "), "Valor Justo Contábil"))
                                         
                                         if (isFii) {
-                                            metrics.add(Triple("Vacância", "${String.format(java.util.Locale.US, "%.1f", realData.fiiVacancy)}%", "Área corporativa vaga"))
-                                            metrics.add(Triple("Liquidez Diária", if (realData.dailyLiquidity > 1_000_000) String.format(java.util.Locale.US, "%.1fM", realData.dailyLiquidity / 1_000_000) else String.format(java.util.Locale.US, "%.0f", realData.dailyLiquidity), "Volume financeiro mensal"))
-                                            metrics.add(Triple("Segmento", realData.fiiSegment.ifEmpty { "Outros" }, "Tipo de operação"))
+                                            metrics.add(Triple("Vacância", B3UIUtils.formatValue(realData.fiiVacancy, suffix = "%", precision = 1), "Área corporativa vaga"))
+                                            metrics.add(Triple("Liquidez Diária", B3UIUtils.formatLargeNumber(realData.dailyLiquidity).replace("R$ ", ""), "Volume financeiro mensal"))
+                                            metrics.add(Triple("Segmento", B3UIUtils.formatText(realData.fiiSegment, "Outros"), "Tipo de operação"))
                                             if (realData.magicNumber > 0) {
-                                                metrics.add(Triple("Magic Number", String.format(java.util.Locale.US, "%.0f cotas", realData.magicNumber), "Auto-compra com dividendos"))
+                                                metrics.add(Triple("Magic Number", "${realData.magicNumber.toInt()} cotas", "Auto-compra com dividendos"))
                                             }
                                         } else {
-                                            metrics.add(Triple("LPA", "R$ ${String.format(java.util.Locale.US, "%.2f", realData.lpa)}", "Lucro líquido por ação"))
-                                            metrics.add(Triple("Margem Líquida", "${String.format(java.util.Locale.US, "%.2f", realData.margins)}%", "Eficiência líquida"))
-                                            metrics.add(Triple("ROE", "${String.format(java.util.Locale.US, "%.2f", realData.roe)}%", "Retorno s/ Patr. Líq."))
-                                            metrics.add(Triple("ROIC", "${String.format(java.util.Locale.US, "%.2f", realData.roic)}%", "Retorno s/ Capital Invest."))
+                                            metrics.add(Triple("LPA", B3UIUtils.formatValue(realData.lpa, prefix = "R$ "), "Lucro líquido por ação"))
+                                            metrics.add(Triple("Margem Líquida", B3UIUtils.formatValue(realData.margins, suffix = "%"), "Eficiência líquida"))
+                                            metrics.add(Triple("ROE", B3UIUtils.formatValue(realData.roe, suffix = "%"), "Retorno s/ Patr. Líq."))
+                                            metrics.add(Triple("ROIC", B3UIUtils.formatValue(realData.roic, suffix = "%"), "Retorno s/ Capital Invest."))
                                         }
                                     } else {
                                         // Fallback to local asset stats
-                                        metrics.add(Triple("Dividend Yield", "${String.format("%.2f", asset.dividendYield)}%", "Últimos 12 meses"))
-                                        metrics.add(Triple("P/VP", "1.08", "Preço / Valor Patrimonial (Est.)"))
-                                        metrics.add(Triple("VPA", "R$ 95,40", "Valor Patrimonial por Ação (Est.)"))
-                                        metrics.add(Triple("Últ. Provento", "R$ ${String.format("%.2f", asset.lastDividend)}", "Última distribuição paga"))
+                                        metrics.add(Triple("Dividend Yield", B3UIUtils.formatValue(asset.dividendYield, suffix = "%"), "Últimos 12 meses"))
+                                        metrics.add(Triple("P/VP", "--", "Preço / Valor Patrimonial (Est.)"))
+                                        metrics.add(Triple("VPA", "--", "Valor Patrimonial por Ação (Est.)"))
+                                        metrics.add(Triple("Últ. Provento", B3UIUtils.formatValue(asset.lastDividend, prefix = "R$ "), "Última distribuição paga"))
                                     }
 
                                     Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {

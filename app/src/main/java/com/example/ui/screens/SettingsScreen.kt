@@ -33,6 +33,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.content.Intent
+import android.net.Uri
 import java.util.UUID
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -1369,6 +1370,7 @@ private fun NotificationsSettingsPage() {
 
 @Composable
 private fun HelpGuidePage() {
+    val context = androidx.compose.ui.platform.LocalContext.current
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1418,6 +1420,29 @@ private fun HelpGuidePage() {
             icon = Icons.Outlined.Update,
             title = "Como Atualizar o App?",
             description = "Utilize a seção 'Atualizações' para baixar o APK mais recente. Você não perde seus dados ao atualizar, mas recomendamos sempre gerar um backup antes de grandes migrações de versão."
+        )
+
+        Text(
+            text = "EXTENSÕES E DESENVOLVIMENTO",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.Black,
+            modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+        )
+
+        HelpItem(
+            icon = Icons.Outlined.Code,
+            title = "Download Nexus Engine JS",
+            description = "Baixe a versão mais recente do motor de inteligência (nexus-engine.js) para auditoria ou uso em proxies customizados. Clique para baixar.",
+            onClick = {
+                val baseUrl = BuildConfig.VERCEL_BACKEND_URL.trimEnd('/')
+                if (baseUrl.isNotEmpty() && !baseUrl.contains("your-backend")) {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("$baseUrl/api/engine"))
+                    context.startActivity(intent)
+                } else {
+                    android.widget.Toast.makeText(context, "URL de Backend não configurada no Painel de Segredos!", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
         )
         
         Spacer(modifier = Modifier.height(24.dp))
@@ -1792,7 +1817,7 @@ private fun DarfStep(number: Int, text: String) {
 }
 
 @Composable
-private fun HelpItem(icon: ImageVector, title: String, description: String) {
+private fun HelpItem(icon: ImageVector, title: String, description: String, onClick: (() -> Unit)? = null) {
     var expanded by remember { mutableStateOf(false) }
     Surface(
         color = MaterialTheme.colorScheme.surface,
@@ -1800,7 +1825,9 @@ private fun HelpItem(icon: ImageVector, title: String, description: String) {
         border = BorderStroke(1.2.dp, BorderColor.copy(alpha = 0.12f)),
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { expanded = !expanded }
+            .clickable { 
+                if (onClick != null) onClick() else expanded = !expanded 
+            }
     ) {
         Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {

@@ -1193,6 +1193,8 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
 
 
     <!-- ============================================== -->
+    <!-- MOTOR NEXUS CUSTOMIZADO -->
+    <script src="./nexus-core.js"></script>
     <!-- JAVASCRIPT SYSTEM ENGINE (VALORAE CORE) -->
     <!-- ============================================== -->
     <script>
@@ -1453,13 +1455,13 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
                 if (!map[tk]) {
                     map[tk] = {
                         ticker: tk,
-                        name: DEFAULT_ASSET_METADATA[tk]?.name || tk,
-                        type: DEFAULT_ASSET_METADATA[tk]?.type || trade.type || "ACAO",
+                        name: getAssetMetadata(tk)?.name || tk,
+                        type: getAssetMetadata(tk)?.type || trade.type || "ACAO",
                         quantity: 0,
                         totalInvestedCost: 0,
                         averagePrice: 0,
                         broker: trade.broker || "Comum",
-                        sector: trade.sector || DEFAULT_ASSET_METADATA[tk]?.sector || "Outros",
+                        sector: trade.sector || getAssetMetadata(tk)?.sector || "Outros",
                         notes: trade.notes || ""
                     };
                 }
@@ -1482,7 +1484,7 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
             const holdings = Object.values(map).filter(asset => asset.quantity > 0);
             holdings.forEach(asset => {
                 // Determine market price
-                const metaPrice = DEFAULT_ASSET_METADATA[asset.ticker]?.price || 50.0;
+                const metaPrice = getAssetMetadata(asset.ticker)?.price || 50.0;
                 asset.marketPrice = Number(simulatedPrices[asset.ticker] || metaPrice);
                 asset.currentValue = asset.quantity * asset.marketPrice;
                 asset.gainLossRaw = asset.currentValue - asset.totalInvestedCost;
@@ -1508,7 +1510,7 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
                 totalInvested += asset.totalInvestedCost;
                 totalCurrent += asset.currentValue;
 
-                const meta = DEFAULT_ASSET_METADATA[asset.ticker] || {};
+                const meta = getAssetMetadata(asset.ticker) || {};
                 const dy = meta.dy || 5.0; // Default estimate 5% yield if unknown
 
                 if (asset.type === "ACAO") {
@@ -1697,7 +1699,7 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
             const dateInput = document.getElementById('tx-date').value;
             const date = dateInput ? new Date(dateInput).getTime() : Date.now();
 
-            const meta = DEFAULT_ASSET_METADATA[ticker] || {};
+            const meta = getAssetMetadata() || {};
 
             if (idVal) {
                 // Edit
@@ -2097,6 +2099,9 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
         // Query asset metrics deterministically matching active queries
         function getAssetMetadata(ticker) {
             ticker = ticker.trim().toUpperCase();
+            if (typeof liveAssetMetadata !== 'undefined' && liveAssetMetadata[ticker]) {
+                return { ...(DEFAULT_ASSET_METADATA[ticker] || {}), ...liveAssetMetadata[ticker] };
+            }
             if (DEFAULT_ASSET_METADATA[ticker]) {
                 return DEFAULT_ASSET_METADATA[ticker];
             }
@@ -2451,19 +2456,7 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
             `;
 
             setTimeout(() => {
-                feed.innerHTML = '';
-                FINANCIAL_NEWS_SEED.forEach(item => {
-                    feed.innerHTML += `
-                        <div class="bg-darkCard border border-darkBorder rounded-2xl p-5 flex flex-col gap-2 transition-all hover:border-darkBorder/90">
-                            <div class="flex justify-between items-center">
-                                <span class="bg-brand-500/10 text-brand-500 border border-brand-500/25 text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg">${item.tag}</span>
-                                <span class="text-[10px] text-slate-500 font-mono">${item.date}</span>
-                            </div>
-                            <h5 class="text-white font-extrabold text-sm mt-1">${item.title}</h5>
-                            <p class="text-xs text-slate-400 leading-relaxed">${item.content}</p>
-                        </div>
-                    `;
-                });
+                filterNewsList();
             }, 500);
         }
 
@@ -2475,7 +2468,7 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
         // Detail asset drawer triggers
         function openAssetDetail(ticker) {
             selectedAssetDetailTicker = ticker;
-            const meta = DEFAULT_ASSET_METADATA[ticker] || {
+            const meta = getAssetMetadata() || {
                 name: ticker,
                 type: "ACAO",
                 pl: 15, pvp: 1.1, dy: 6, lpa: 1, vpa: 10,
@@ -2517,7 +2510,11 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
             document.getElementById('detail-sim-price-input').value = asset.marketPrice;
 
             document.getElementById('modal-asset-detail').classList.remove('hidden');
+
+            // Dispara busca assíncrona dos dados ao vivo do Investidor10 via Proxy
+            buscarDadosAtivo(ticker);
         }
+
 
         function closeAssetDetail() {
             document.getElementById('modal-asset-detail').classList.add('hidden');
@@ -2817,7 +2814,7 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
 
             holdings.forEach(h => {
                 totalCurrent += h.currentValue;
-                const meta = DEFAULT_ASSET_METADATA[h.ticker] || { dy: 6 };
+                const meta = getAssetMetadata() || { dy: 6 };
                 const yieldWeight = h.currentValue * (meta.dy || 0);
                 if (h.type === "ACAO") {
                     stockYieldWeighted += yieldWeight;
@@ -2888,7 +2885,7 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
                                 <tbody class="divide-y divide-darkBorder/30">
                                     ${holdings.length === 0 ? `<tr><td colspan="5" class="py-4 text-center text-xs text-slate-500 italic">Cadastre transações na aba Ordens para preencher a planilha.</td></tr>` : 
                                       holdings.map(h => {
-                                          const meta = DEFAULT_ASSET_METADATA[h.ticker] || { dy: 6 };
+                                          const meta = getAssetMetadata(h.ticker) || { dy: 6 };
                                           const assetDy = meta.dy || 0;
                                           const shares = h.sharesCount;
                                           const valueEst = shares * (h.marketPrice * (assetDy / 100)) / 12;
@@ -3083,7 +3080,7 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
             });
 
             const assetAvgDyWeighted = filteredAssets.reduce((acc, current) => {
-                const meta = DEFAULT_ASSET_METADATA[current.ticker] || { dy: 6 };
+                const meta = getAssetMetadata(current.ticker) || { dy: 6 };
                 return acc + (current.currentValue * (meta.dy || 0));
             }, 0);
 
@@ -3196,7 +3193,7 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
                 let valEst = 20 + (idx * 12);
                 const holding = holdings.find(h => h.ticker === ticker);
                 if (holding) {
-                    const meta = DEFAULT_ASSET_METADATA[ticker] || { dy: 6 };
+                    const meta = getAssetMetadata(ticker) || { dy: 6 };
                     valEst = Math.max(15, Math.min(80, holding.sharesCount * (holding.marketPrice * (meta.dy / 100)) / 12));
                 }
                 const barH = Math.max(10, Math.min(80, valEst));
@@ -3230,7 +3227,7 @@ ALTER TABLE valorae_sync_backups DISABLE ROW LEVEL SECURITY;</code></pre>
             let stocksDyWeighted = 0, fiisDyWeighted = 0;
             
             holdings.forEach(h => {
-                const meta = DEFAULT_ASSET_METADATA[h.ticker] || { dy: 6 };
+                const meta = getAssetMetadata(h.ticker) || { dy: 6 };
                 if (h.type === "ACAO") {
                     acoesVal += h.currentValue;
                     stocksDyWeighted += h.currentValue * (meta.dy || 0);

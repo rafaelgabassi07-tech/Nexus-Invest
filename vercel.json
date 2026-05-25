@@ -4,6 +4,22 @@
     {
       "source": "/api/sync",
       "destination": "/api/sync.js"
+    },
+    {
+      "source": "/api/scrape",
+      "destination": "/api/scrape.js"
+    },
+    {
+      "source": "/api/asset",
+      "destination": "/api/asset.ts"
+    },
+    {
+      "source": "/api/assets",
+      "destination": "/api/assets.ts"
+    },
+    {
+      "source": "/api/engine",
+      "destination": "/api/engine.js"
     }
   ],
   "headers": [
@@ -45,7 +61,7 @@
         },
         {
           "key": "Access-Control-Allow-Headers",
-          "value": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version"
+          "value": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, X-Cache-Version"
         }
       ]
     }

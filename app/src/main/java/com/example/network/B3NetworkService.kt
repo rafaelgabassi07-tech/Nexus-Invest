@@ -333,25 +333,70 @@ object B3NetworkService {
                 }
             }
 
-            // 3. Fallback and Enrich (Scraping disabled)
-            val nexusFallback = emptyMap<String, Any>()
-            if (price == 0.0 && nexusFallback.containsKey("price")) price = nexusFallback["price"] as Double
-            if (dy == 0.0 && nexusFallback.containsKey("dy")) dy = nexusFallback["dy"] as Double
-            if (pl == 0.0 && !isFii && nexusFallback.containsKey("pl")) pl = nexusFallback["pl"] as Double
-            if (pvp == 0.0 && nexusFallback.containsKey("pvp")) pvp = nexusFallback["pvp"] as Double
-            if (vpa == 0.0 && nexusFallback.containsKey("vpa")) vpa = nexusFallback["vpa"] as Double
-            if (lpa == 0.0 && !isFii && nexusFallback.containsKey("lpa")) lpa = nexusFallback["lpa"] as Double
-            if (roe == 0.0 && nexusFallback.containsKey("roe")) roe = nexusFallback["roe"] as Double
-            if (margins == 0.0 && nexusFallback.containsKey("margins")) margins = nexusFallback["margins"] as Double
-            if (dailyLiquidity == 0.0 && nexusFallback.containsKey("liquidity")) dailyLiquidity = nexusFallback["liquidity"] as Double
-            if (marketCap == 0.0 && nexusFallback.containsKey("marketCap")) marketCap = nexusFallback["marketCap"] as Double
-            if (isFii && nexusFallback.containsKey("fiiVacancy")) fiiVacancy = nexusFallback["fiiVacancy"] as Double
-            
-            if (nextEarningsDate.isEmpty() && nexusFallback.containsKey("nextEarningsDate")) {
-                nextEarningsDate = nexusFallback["nextEarningsDate"] as String
+            // 3. Fallback and Enrich (Scraping from Nexus Proxy)
+            val numericFallback = mutableMapOf<String, Double>()
+            val textFallback = mutableMapOf<String, String>()
+
+            try {
+                kotlinx.coroutines.runBlocking {
+                    fun parseNumberOrNull(value: String): Double? {
+                        var str = value
+                            .replace("R$", "")
+                            .replace("%", "")
+                            .replace("Bilhões", "")
+                            .replace("Bilhão", "")
+                            .replace("Milhões", "")
+                            .replace("Milhão", "")
+                            .replace("B", "") // common short suffixes
+                            .replace("M", "")
+                            .trim()
+
+                        if (str.isBlank() || str == "-" || str == "N/A" || str.equals("undefined", true) || str.equals("n.d.", true)) return null
+                        if (str.contains(",")) str = str.replace(".", "").replace(",", ".")
+                        return str.toDoubleOrNull()
+                    }
+
+                    val result = NexusProxyClient().buscarDadosAtivo(ticker)
+                    if (result != null) {
+                        val textKeys = setOf(
+                            "cnpj", "listSegment", "foundationYear", "listingYear", "employeesCount", 
+                            "totalPapers", "fiiTotalHolders", "fiiIssuedShares", "fiiAdminFee", 
+                            "fiiFundType", "fiiMandate", "fiiTargetAudience", "fiiManagementType", 
+                            "fiiDuration", "fiiSegment", "nextEarningsDate", "assetDescription", "subSector", "name"
+                        )
+                        for ((key, value) in result.results) {
+                            if (value.isNotEmpty()) {
+                                if (textKeys.contains(key)) {
+                                    textFallback[key] = value
+                                } else {
+                                    val num = parseNumberOrNull(value)
+                                    if (num != null) numericFallback[key] = num
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch(e: Exception) {
+                Log.e("B3NetworkService", "Nexus Error: ${e.message}")
             }
 
-            if (nexusFallback.containsKey("lastDividend")) lastDividend = nexusFallback["lastDividend"] as Double
+            // Sync from fallbacks if Yahoo is missing (0.0 or empty)
+            if (price == 0.0) price = numericFallback["price"] ?: 0.0
+            if (changePercent == 0.0) changePercent = numericFallback["changePercent"] ?: 0.0
+            if (dy == 0.0) dy = numericFallback["dy"] ?: 0.0
+            if (pl == 0.0 && !isFii) pl = numericFallback["pl"] ?: 0.0
+            if (pvp == 0.0) pvp = numericFallback["pvp"] ?: 0.0
+            if (vpa == 0.0) vpa = numericFallback["vpa"] ?: 0.0
+            if (lpa == 0.0 && !isFii) lpa = numericFallback["lpa"] ?: 0.0
+            if (roe == 0.0) roe = numericFallback["roe"] ?: 0.0
+            if (margins == 0.0) margins = numericFallback["margins"] ?: 0.0
+            if (dailyLiquidity == 0.0) dailyLiquidity = numericFallback["liquidity"] ?: 0.0
+            if (marketCap == 0.0) marketCap = numericFallback["marketCap"] ?: 0.0
+            if (isFii) fiiVacancy = numericFallback["fiiVacancy"] ?: 0.0
+            
+            if (nextEarningsDate.isEmpty()) nextEarningsDate = textFallback["nextEarningsDate"] ?: ""
+            if (lastDividend == 0.0) lastDividend = numericFallback["lastDividend"] ?: 0.0
+            if (name == ticker.uppercase()) name = textFallback["name"] ?: name
 
             val result = B3AssetData(
                 ticker = ticker.uppercase(),
@@ -371,66 +416,66 @@ object B3NetworkService {
                 high52 = high52,
                 low52 = low52,
                 forwardPE = forwardPE,
-                priceToSales = nexusFallback["priceToSales"] as? Double ?: priceToSales,
+                priceToSales = numericFallback["priceToSales"] ?: priceToSales,
                 nextEarningsDate = nextEarningsDate,
                 isFii = isFii,
                 fiiVacancy = fiiVacancy,
                 
                 // Novos Campos Investidor10
-                grossMargin = nexusFallback["grossMargin"] as? Double ?: 0.0,
-                ebitMargin = nexusFallback["ebitMargin"] as? Double ?: 0.0,
-                ebitdaMargin = nexusFallback["ebitdaMargin"] as? Double ?: 0.0,
-                evEbitda = nexusFallback["evEbitda"] as? Double ?: 0.0,
-                evEbit = nexusFallback["evEbit"] as? Double ?: 0.0,
-                priceEbitda = nexusFallback["priceEbitda"] as? Double ?: 0.0,
-                priceEbit = nexusFallback["priceEbit"] as? Double ?: 0.0,
-                priceAsset = nexusFallback["priceAsset"] as? Double ?: 0.0,
-                priceCapGiro = nexusFallback["priceCapGiro"] as? Double ?: 0.0,
-                priceAtivoCircLiq = nexusFallback["priceAtivoCircLiq"] as? Double ?: 0.0,
-                giroAtivos = nexusFallback["giroAtivos"] as? Double ?: 0.0,
-                roic = nexusFallback["roic"] as? Double ?: 0.0,
-                roa = nexusFallback["roa"] as? Double ?: 0.0,
-                divLiqPatrimonio = nexusFallback["divLiqPatrimonio"] as? Double ?: 0.0,
-                debtEbitda = nexusFallback["debtEbitda"] as? Double ?: 0.0,
-                divLiqEbit = nexusFallback["divLiqEbit"] as? Double ?: 0.0,
-                divBrutaPatrimonio = nexusFallback["divBrutaPatrimonio"] as? Double ?: 0.0,
-                patrimonioAtivos = nexusFallback["patrimonioAtivos"] as? Double ?: 0.0,
-                passivosAtivos = nexusFallback["passivosAtivos"] as? Double ?: 0.0,
-                liquidezCorrente = nexusFallback["liquidezCorrente"] as? Double ?: 0.0,
-                cagrRevenue5y = nexusFallback["cagrRevenue5y"] as? Double ?: 0.0,
-                cagrProfit5y = nexusFallback["cagrProfit5y"] as? Double ?: 0.0,
-                payout = nexusFallback["payout"] as? Double ?: 0.0,
+                grossMargin = numericFallback["grossMargin"] ?: 0.0,
+                ebitMargin = numericFallback["ebitMargin"] ?: 0.0,
+                ebitdaMargin = numericFallback["ebitdaMargin"] ?: 0.0,
+                evEbitda = numericFallback["evEbitda"] ?: 0.0,
+                evEbit = numericFallback["evEbit"] ?: 0.0,
+                priceEbitda = numericFallback["priceEbitda"] ?: 0.0,
+                priceEbit = numericFallback["priceEbit"] ?: 0.0,
+                priceAsset = numericFallback["priceAsset"] ?: 0.0,
+                priceCapGiro = numericFallback["priceCapGiro"] ?: 0.0,
+                priceAtivoCircLiq = numericFallback["priceAtivoCircLiq"] ?: 0.0,
+                giroAtivos = numericFallback["giroAtivos"] ?: 0.0,
+                roic = numericFallback["roic"] ?: 0.0,
+                roa = numericFallback["roa"] ?: 0.0,
+                divLiqPatrimonio = numericFallback["divLiqPatrimonio"] ?: 0.0,
+                debtEbitda = numericFallback["debtEbitda"] ?: 0.0,
+                divLiqEbit = numericFallback["divLiqEbit"] ?: 0.0,
+                divBrutaPatrimonio = numericFallback["divBrutaPatrimonio"] ?: 0.0,
+                patrimonioAtivos = numericFallback["patrimonioAtivos"] ?: 0.0,
+                passivosAtivos = numericFallback["passivosAtivos"] ?: 0.0,
+                liquidezCorrente = numericFallback["liquidezCorrente"] ?: 0.0,
+                cagrRevenue5y = numericFallback["cagrRevenue5y"] ?: 0.0,
+                cagrProfit5y = numericFallback["cagrProfit5y"] ?: 0.0,
+                payout = numericFallback["payout"] ?: 0.0,
 
                 // FII
-                fiiTotalHolders = nexusFallback["fiiTotalHolders"] as? String ?: "",
-                fiiIssuedShares = nexusFallback["fiiIssuedShares"] as? String ?: "",
-                fiiAdminFee = nexusFallback["fiiAdminFee"] as? String ?: "",
-                fiiFundType = nexusFallback["fiiFundType"] as? String ?: "",
-                fiiMandate = nexusFallback["fiiMandate"] as? String ?: "",
-                fiiTargetAudience = nexusFallback["fiiTargetAudience"] as? String ?: "",
-                fiiManagementType = nexusFallback["fiiManagementType"] as? String ?: "",
-                fiiDuration = nexusFallback["fiiDuration"] as? String ?: "",
-                fiiSegment = nexusFallback["fiiSegment"] as? String ?: "",
-                magicNumber = if (isFii && lastDividend > 0.0 && price > 0.0) kotlin.math.ceil(price / lastDividend) else 0.0,
+                fiiTotalHolders = textFallback["fiiTotalHolders"] ?: "",
+                fiiIssuedShares = textFallback["fiiIssuedShares"] ?: "",
+                fiiAdminFee = textFallback["fiiAdminFee"] ?: "",
+                fiiFundType = textFallback["fiiFundType"] ?: "",
+                fiiMandate = textFallback["fiiMandate"] ?: "",
+                fiiTargetAudience = textFallback["fiiTargetAudience"] ?: "",
+                fiiManagementType = textFallback["fiiManagementType"] ?: "",
+                fiiDuration = textFallback["fiiDuration"] ?: "",
+                fiiSegment = textFallback["fiiSegment"] ?: "",
+                magicNumber = if (isFii && lastDividend > 0.0 && price > 0.0) kotlin.math.ceil(price / lastDividend) else numericFallback["magicNumber"] ?: 0.0,
 
                 // Textos
-                cnpj = nexusFallback["cnpj"] as? String ?: "",
-                listSegment = nexusFallback["listSegment"] as? String ?: "",
-                foundationYear = nexusFallback["foundationYear"] as? String ?: "",
-                listingYear = nexusFallback["listingYear"] as? String ?: "",
-                employeesCount = nexusFallback["employeesCount"] as? String ?: "",
-                totalPapers = nexusFallback["totalPapers"] as? String ?: "",
+                cnpj = textFallback["cnpj"] ?: "",
+                listSegment = textFallback["listSegment"] ?: "",
+                foundationYear = textFallback["foundationYear"] ?: "",
+                listingYear = textFallback["listingYear"] ?: "",
+                employeesCount = textFallback["employeesCount"] ?: "",
+                totalPapers = textFallback["totalPapers"] ?: "",
 
                 // Balanço Monetário
-                firmValue = nexusFallback["firmValue"] as? Double ?: 0.0,
-                netWorth = nexusFallback["netWorth"] as? Double ?: 0.0,
-                totalAssets = nexusFallback["totalAssets"] as? Double ?: 0.0,
-                currentAssets = nexusFallback["currentAssets"] as? Double ?: 0.0,
-                grossDebt = nexusFallback["grossDebt"] as? Double ?: 0.0,
-                netDebt = nexusFallback["netDebt"] as? Double ?: 0.0,
-                availability = nexusFallback["availability"] as? Double ?: 0.0,
-                freeFloat = nexusFallback["freeFloat"] as? Double ?: 0.0,
-                tagAlong = nexusFallback["tagAlong"] as? Double ?: 0.0
+                firmValue = numericFallback["firmValue"] ?: 0.0,
+                netWorth = numericFallback["netWorth"] ?: 0.0,
+                totalAssets = numericFallback["totalAssets"] ?: 0.0,
+                currentAssets = numericFallback["currentAssets"] ?: 0.0,
+                grossDebt = numericFallback["grossDebt"] ?: 0.0,
+                netDebt = numericFallback["netDebt"] ?: 0.0,
+                availability = numericFallback["availability"] ?: 0.0,
+                freeFloat = numericFallback["freeFloat"] ?: 0.0,
+                tagAlong = numericFallback["tagAlong"] ?: 0.0
             )
             val enriched = enrichAssetDetails(result)
             putInCache(cacheKey, enriched, 5) // Cache for 5 mins
@@ -622,223 +667,78 @@ object B3NetworkService {
         var subSector = ""
         var name = base.name
 
+        // Define local mocks/defaults ONLY if base value is zero/empty
         if (isFii) {
             when (t) {
                 "MXRF11" -> {
-                    name = "Maxi Renda FII"
+                    if (name.isEmpty() || name == t) name = "Maxi Renda FII"
                     fiiSegment = "Papel (Recebíveis Imobiliários)"
-                    fiiVacancy = 0.0
-                    fiiPropertyCount = 0
-                    assetDescription = "Maior fundo imobiliário brasileiro do mercado em quantidade de cotistas. Foco principal em investir em CRIs (Certificados de Recebíveis Imobiliários), Letras Hipotecárias e Debêntures, gerando dividendos mensais previsíveis e isentos de IR."
+                    assetDescription = "Maior fundo imobiliário brasileiro do mercado em quantidade de cotistas. Foco principal em investir em CRIs, gerando dividendos mensais previsíveis."
                     subSector = "Títulos e Valores Imobiliários"
                 }
                 "HGLG11" -> {
-                    name = "CSHG Logística FII"
+                    if (name.isEmpty() || name == t) name = "CSHG Logística FII"
                     fiiSegment = "Lajes e Galpões Logísticos (Tijolo)"
-                    fiiVacancy = 3.2
                     fiiPropertyCount = 21
-                    assetDescription = "Um dos fundos de logística mais tradicionais do mercado. Investe em galpões industriais e centros logísticos classe A, localizados nos principais eixos rodoviários do país, com contratos de longo prazo com inquilinos sólidos."
+                    assetDescription = "Um dos fundos de logística mais tradicionais do mercado. Investe em galpões industriais e centros logísticos classe A."
                     subSector = "Imóveis Industriais e Logísticos"
-                }
-                "HGRU11" -> {
-                    name = "CSHG Renda Urbana FII"
-                    fiiSegment = "Renda Urbana (Varejo & Educação)"
-                    fiiVacancy = 1.4
-                    fiiPropertyCount = 18
-                    assetDescription = "Investe em imóveis institucionais e de varejo urbano de alta resiliência, como supermercados, lojas de departamento e faculdades renomadas. Foco em contratos atípicos estáveis de longo prazo."
-                    subSector = "Renda Urbana"
-                }
-                "XPLG11" -> {
-                    name = "XP Log FII"
-                    fiiSegment = "Lajes e Galpões Logísticos (Tijolo)"
-                    fiiVacancy = 4.8
-                    fiiPropertyCount = 16
-                    assetDescription = "Fundo imobiliário gerido pela XP Vista Asset que atua na aquisição e exploração de grandes galpões logísticos e centros de distribuição. Tem como locatários grandes gigantes do e-commerce como o Mercado Livre."
-                    subSector = "Imóveis Industriais e Logísticos"
-                }
-                "KNRI11" -> {
-                    name = "Kinea Renda Imobiliária FII"
-                    fiiSegment = "Híbrido (Corporativo & Logística)"
-                    fiiVacancy = 6.1
-                    fiiPropertyCount = 19
-                    assetDescription = "Fundo híbrido gerido pela Kinea (Grupo Itaú) com excelente diversificação em edifícios corporativos premium em São Paulo/Rio e grandes galpões logísticos, mantendo vacância saudável e histórico maduro de retornos."
-                    subSector = "Híbrido"
                 }
                 "VISC11" -> {
-                    name = "Vinci Shopping Centers FII"
+                    if (name.isEmpty() || name == t) name = "Vinci Shopping Centers FII"
                     fiiSegment = "Shoppings (Tijolo)"
-                    fiiVacancy = 5.2
                     fiiPropertyCount = 20
-                    assetDescription = "Destina-se ao investimento em shopping centers maduros e consolidados em várias regiões do Brasil. Beneficia-se diretamente do reaquecimento econômico, crescimento populacional urbano e do consumo físico de lazer."
+                    assetDescription = "Destina-se ao investimento em shopping centers maduros e consolidados em várias regiões do Brasil."
                     subSector = "Varejo e Lazer"
-                }
-                "XPML11" -> {
-                    name = "XP Malls FII"
-                    fiiSegment = "Shoppings (Tijolo)"
-                    fiiVacancy = 3.8
-                    fiiPropertyCount = 17
-                    assetDescription = "Fundo gerido pela XP Asset que busca gerar renda de aluguel por meio de investimentos em participações de shoppings de referência (como Cidade Jardim, Catarina Outlet, etc.). Alta resiliência comercial e consumo."
-                    subSector = "Varejo e Lazer"
-                }
-                "BCFF11" -> {
-                    name = "BTG Pactual Fundo de Fundos"
-                    fiiSegment = "Fundo de Fundos (FOF)"
-                    fiiVacancy = 0.0
-                    fiiPropertyCount = 0
-                    assetDescription = "Fundo de fundos gerido pelo BTG Pactual que investe em uma carteira altamente diversificada de cotas de outros FIIs. Permite ao investidor diluir riscos sistêmicos de tijolo e papel em um único ativo."
-                    subSector = "Gestão Ativa"
-                }
-                "CPTS11" -> {
-                    name = "Capitânia Securities II FII"
-                    fiiSegment = "Papel (Recebíveis Imobiliários)"
-                    fiiVacancy = 0.0
-                    fiiPropertyCount = 0
-                    assetDescription = "Fundo de papel voltado ao investimento em CRIs com carteira high grade de risco moderado-baixo. Atua de maneira dinâmica no mercado secundário para turbinar retornos isentos aos seus cotistas."
-                    subSector = "Títulos e Valores Imobiliários"
                 }
                 else -> {
                     fiiSegment = "Fundo Imobiliário"
-                    fiiVacancy = 0.0
-                    fiiPropertyCount = 0
                     assetDescription = "Fundo Imobiliário listado na B3."
-                    subSector = "Fundo de Investimento Imobiliário"
                 }
             }
         } else {
-            // É uma ação
             when (t) {
                 "PETR4", "PETR3" -> {
-                    name = "Petrobras S.A."
+                    if (name.isEmpty() || name == t) name = "Petrobras S.A."
                     subSector = "Petróleo, Gás e Biocombustíveis"
                     debtEbitda = 0.78
                     payout = 50.0
                     cagrRevenue5y = 11.2
                     grossMargin = 49.5
-                    assetDescription = "Líder indiscutível da exploração de óleo e gás no Brasil, impulsionada pelo alto potencial produtivo de suas bacias do pré-sal. Possui baixíssimo custo de extração (lifting cost) e margens operacionais invejáveis."
+                    assetDescription = "Líder da exploração de óleo e gás no Brasil, impulsionada pelo pré-sal."
                 }
                 "VALE3" -> {
-                    name = "Vale S.A."
+                    if (name.isEmpty() || name == t) name = "Vale S.A."
                     subSector = "Mineração e Siderurgia"
                     debtEbitda = 0.35
                     payout = 60.0
                     cagrRevenue5y = 6.8
                     grossMargin = 42.0
-                    assetDescription = "Uma das maiores mineradoras de ferro do mundo. Destaque para a altíssima qualidade de seu minério de ferro de Carajás, o que garante prêmio de preço nos mercados globais (especialmente China). Baixo nível de alavancagem."
-                }
-                "ITUB4", "ITUB3" -> {
-                    name = "Itaú Unibanco Holding"
-                    subSector = "Bancos e Serviços Financeiros"
-                    debtEbitda = 0.0
-                    payout = 45.0
-                    cagrRevenue5y = 8.5
-                    grossMargin = 0.0
-                    assetDescription = "Maior banco privado de atacado e varejo da América Latina. Histórico consistente de ROE acima de 20%, excelente blindagem patrimonial através de controle rigoroso de inadimplência e carteira corporativa sólida."
-                }
-                "BBAS3" -> {
-                    name = "Banco do Brasil S.A."
-                    subSector = "Bancos e Serviços Financeiros"
-                    debtEbitda = 0.0
-                    payout = 40.0
-                    cagrRevenue5y = 10.8
-                    grossMargin = 0.0
-                    assetDescription = "Maior player financeiro público sob controle estatal, líder histórico no financiamento ao agronegócio brasileiro (carteira hiper-resiliente). Frequentemente negociado com múltiplos descontados em relação ao seu valor contábil."
+                    assetDescription = "Uma das maiores mineradoras de ferro do mundo."
                 }
                 "WEGE3" -> {
-                    name = "WEG S.A."
+                    if (name.isEmpty() || name == t) name = "WEG S.A."
                     subSector = "Bens Industriais / Motores"
-                    debtEbitda = -0.42 // Caixa Líquido
+                    debtEbitda = -0.42
                     payout = 52.0
                     cagrRevenue5y = 15.6
                     grossMargin = 31.8
-                    assetDescription = "Multinacional ultraeficiente em motores elétricos, automação industrial, tintas e energia renovável. Destaque por sua governança brilhante, retorno recorrente sobre capital aplicado (ROIC) próximo a 30% e caixa líquido robusto."
-                }
-                "TAEE11", "TAEE3", "TAEE4" -> {
-                    name = "Taesa S.A."
-                    subSector = "Energia Elétrica"
-                    debtEbitda = 3.6
-                    payout = 90.0
-                    cagrRevenue5y = 8.2
-                    grossMargin = 82.5
-                    assetDescription = "Uma das maiores transmissoras privadas de energia elétrica do Brasil. Negócio altamente regulado por concessões de longo prazo indexadas ao IGP-M ou IPCA, o que gera fluxo de caixa praticamente à prova de recessões e altos dividendos."
-                }
-                "TRPL4" -> {
-                    name = "CTEEP S.A. (ISA CTEEP)"
-                    subSector = "Energia Elétrica"
-                    debtEbitda = 2.45
-                    payout = 80.0
-                    cagrRevenue5y = 6.1
-                    grossMargin = 74.0
-                    assetDescription = "Transmissora de energia elétrica em escala continental de alta eficiência operacional. Focada no reajuste inflacionário anual de suas receitas (RAP), mantém histórico robusto de segurança para buy&hold."
-                }
-                "ABEV3" -> {
-                    name = "Ambev S.A."
-                    subSector = "Bebidas"
-                    debtEbitda = -0.52 // Caixa Líquido
-                    payout = 70.0
-                    cagrRevenue5y = 4.8
-                    grossMargin = 52.4
-                    assetDescription = "Líder no segmento cervejeiro brasileiro e latino-americano. Detém marcas massivas globais (Skol, Brahma, Stella Artois, etc). Possui fluxo operacional de caixa exemplar e não depende de dívidas de mercado."
-                }
-                "MGLU3" -> {
-                    name = "Magazine Luiza S.A."
-                    subSector = "Consumo Ciclo / E-commerce"
-                    debtEbitda = 3.8
-                    payout = 0.0
-                    cagrRevenue5y = 12.0
-                    grossMargin = 26.5
-                    assetDescription = "Consolidado gigante do varejo físico e multicanal digital. Sofre grande volatilidade ligada a flutuações da taxa Selic básica de juros e demanda por bens de consumo não duráveis."
-                }
-                "BBDC4", "BBDC3" -> {
-                    name = "Banco Bradesco"
-                    subSector = "Bancos e Serviços Financeiros"
-                    debtEbitda = 0.0
-                    payout = 42.0
-                    cagrRevenue5y = 3.5
-                    grossMargin = 0.0
-                    assetDescription = "Grande conglomerado bancário privado nacional, forte penetração em empréstimos de varejo corporativos e gigante segmento de previdência e saúde e seguros Bradesco Bradesco Seguros."
-                }
-                "SANB11" -> {
-                    name = "Banco Santander Brasil"
-                    subSector = "Bancos e Serviços Financeiros"
-                    debtEbitda = 0.0
-                    payout = 48.0
-                    cagrRevenue5y = 5.2
-                    grossMargin = 0.0
-                    assetDescription = "Subsidiária do grupo bancário espanhol Santander, com forte operação em crédito imobiliário de varejo e financiamento auto."
-                }
-                "EGIE3" -> {
-                    name = "Engie Brasil Energia"
-                    subSector = "Energia Elétrica"
-                    debtEbitda = 2.1
-                    payout = 85.0
-                    cagrRevenue5y = 7.9
-                    grossMargin = 51.0
-                    assetDescription = "Uma das maiores geradoras privadas de energia elétrica, investindo fortemente em usinas eólicas e solares de alta previsibilidade produtiva e excelente índice ESG."
-                }
-                else -> {
-                    debtEbitda = 0.0
-                    payout = 0.0
-                    cagrRevenue5y = 0.0
-                    grossMargin = 0.0
-                    assetDescription = "Companhia Aberta listada na B3."
-                    subSector = "Outros"
+                    assetDescription = "Multinacional em motores elétricos e automação industrial."
                 }
             }
         }
 
-        val finalName = if (base.name.isEmpty() || base.name == base.ticker) name else base.name
-
+        // Preserve real data from base if it exists
         return base.copy(
-            name = finalName,
-            debtEbitda = debtEbitda,
-            payout = payout,
-            cagrRevenue5y = cagrRevenue5y,
-            grossMargin = grossMargin,
-            fiiVacancy = fiiVacancy,
-            fiiPropertyCount = fiiPropertyCount,
-            fiiSegment = fiiSegment,
-            assetDescription = assetDescription,
-            subSector = subSector
+            name = if (base.name.isNotEmpty() && base.name != t) base.name else name,
+            debtEbitda = if (base.debtEbitda != 0.0) base.debtEbitda else debtEbitda,
+            payout = if (base.payout != 0.0) base.payout else payout,
+            cagrRevenue5y = if (base.cagrRevenue5y != 0.0) base.cagrRevenue5y else cagrRevenue5y,
+            grossMargin = if (base.grossMargin != 0.0) base.grossMargin else grossMargin,
+            fiiVacancy = if (base.fiiVacancy != 0.0) base.fiiVacancy else fiiVacancy,
+            fiiPropertyCount = if (base.fiiPropertyCount != 0) base.fiiPropertyCount else fiiPropertyCount,
+            fiiSegment = base.fiiSegment.ifBlank { fiiSegment },
+            assetDescription = base.assetDescription.ifBlank { assetDescription },
+            subSector = base.subSector.ifBlank { subSector }
         )
     }
 }

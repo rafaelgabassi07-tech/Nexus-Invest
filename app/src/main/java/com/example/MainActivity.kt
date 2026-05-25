@@ -1,6 +1,7 @@
 package com.example
 
 import android.os.Bundle
+import android.view.WindowManager
 import kotlinx.coroutines.launch
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -73,20 +74,6 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        
-        // request highest possible refresh rate (e.g. 90Hz, 120Hz) for ultra-fluid 60+ FPS navigation via field reflection
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-            try {
-                val params = window.attributes
-                val minField = params.javaClass.getField("preferredMinDisplayRefreshRate")
-                val maxField = params.javaClass.getField("preferredMaxDisplayRefreshRate")
-                minField.set(params, 120f)
-                maxField.set(params, 120f)
-                window.attributes = params
-            } catch (e: Exception) {
-                // Safe fallback for devices/emulators not containing these fields in LayoutParams
-            }
-        }
         
         // Initialize local database database context dependencies manually (simple injection)
         val database = AppDatabase.getDatabase(this)

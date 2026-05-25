@@ -41,6 +41,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ui.B3UIUtils
 import com.example.network.B3AssetData
 import com.example.network.ChartPoint
 import com.example.network.NewsItem
@@ -577,48 +578,49 @@ fun AnalysisScreen(
                             Spacer(modifier = Modifier.height(20.dp))
 
                             val metrics = mutableListOf<Triple<String, String, String>>()
-                            metrics.add(Triple("Dividend Yield", "${String.format(java.util.Locale.US, "%.2f", asset.dy)}%", "Retorno em proventos"))
-                            metrics.add(Triple("P/VP", String.format(java.util.Locale.US, "%.2f", asset.pvp), "Preço / Valor Patrimonial"))
-                            metrics.add(Triple(if (isFii) "Últ. Provento" else "P/L", if (isFii) "R$ ${String.format(java.util.Locale.US, "%.2f", asset.lastDividend)}" else String.format(java.util.Locale.US, "%.2f", asset.pl), if (isFii) "Baseado na última distr." else "Preço / Lucro anual"))
-                            metrics.add(Triple("VPA", "R$ ${String.format(java.util.Locale.US, "%.2f", asset.vpa)}", "Valor Justo Contábil"))
+
+                            metrics.add(Triple("Dividend Yield", B3UIUtils.formatValue(asset.dy, suffix = "%"), "Retorno em proventos"))
+                            metrics.add(Triple("P/VP", B3UIUtils.formatValue(asset.pvp), "Preço / Valor Patrimonial"))
+                            metrics.add(Triple(if (isFii) "Últ. Provento" else "P/L", if (isFii) B3UIUtils.formatValue(asset.lastDividend, prefix = "R$ ") else B3UIUtils.formatValue(asset.pl), if (isFii) "Baseado na última distr." else "Preço / Lucro anual"))
+                            metrics.add(Triple("VPA", B3UIUtils.formatValue(asset.vpa, prefix = "R$ "), "Valor Justo Contábil"))
                             
                             if (isFii) {
-                                metrics.add(Triple("Vacância", "${String.format(java.util.Locale.US, "%.1f", asset.fiiVacancy)}%", "Proporção de área vaga nos imóveis"))
-                                metrics.add(Triple("Liquidez Diária", if (asset.dailyLiquidity > 1_000_000) String.format(java.util.Locale.US, "%.1fM", asset.dailyLiquidity / 1_000_000) else String.format(java.util.Locale.US, "%.0f", asset.dailyLiquidity), "Volume financeiro mensal"))
-                                metrics.add(Triple("Segmento", asset.fiiSegment.ifEmpty { "Outros" }, "Tipo de operação do FII"))
-                                metrics.add(Triple("Número de Imóveis", if (asset.fiiPropertyCount == 0) "N/A" else "${asset.fiiPropertyCount} prop.", "Ativos físicos"))
+                                metrics.add(Triple("Vacância", B3UIUtils.formatValue(asset.fiiVacancy, suffix = "%", precision = 1), "Proporção de área vaga nos imóveis"))
+                                metrics.add(Triple("Liquidez Diária", B3UIUtils.formatLargeNumber(asset.dailyLiquidity).replace("R$ ", ""), "Volume financeiro mensal"))
+                                metrics.add(Triple("Segmento", B3UIUtils.formatText(asset.fiiSegment, "Outros"), "Tipo de operação do FII"))
+                                metrics.add(Triple("Número de Imóveis", if (asset.fiiPropertyCount == 0) "--" else "${asset.fiiPropertyCount} prop.", "Ativos físicos"))
                                 metrics.add(Triple("P/VP Máximo Alvo", "1.00", "Parâmetro do mercado de tijolo"))
                                 if (asset.magicNumber > 0) {
-                                    metrics.add(Triple("Magic Number", String.format(java.util.Locale.US, "%.0f cotas", asset.magicNumber), "Para comprar 1 cota c/ div."))
+                                    metrics.add(Triple("Magic Number", "${asset.magicNumber.toInt()} cotas", "Para comprar 1 cota c/ div."))
                                 }
                             } else {
-                                metrics.add(Triple("LPA", "R$ ${String.format(java.util.Locale.US, "%.2f", asset.lpa)}", "Lucro líquido por ação anual"))
-                                metrics.add(Triple("P/Receita (PSR)", String.format(java.util.Locale.US, "%.2f", asset.priceToSales), "Preço / Receita Líquida"))
-                                metrics.add(Triple("Margem Líquida", "${String.format(java.util.Locale.US, "%.2f", asset.margins)}%", "Eficiência líquida"))
-                                metrics.add(Triple("Margem Bruta", "${String.format(java.util.Locale.US, "%.2f", asset.grossMargin)}%", "Eficiência bruta"))
-                                metrics.add(Triple("Margem Ebit", "${String.format(java.util.Locale.US, "%.2f", asset.ebitMargin)}%", "Eficiência Ebit"))
-                                metrics.add(Triple("Margem Ebitda", "${String.format(java.util.Locale.US, "%.2f", asset.ebitdaMargin)}%", "Eficiência Ebtida"))
-                                metrics.add(Triple("EV/Ebitda", String.format(java.util.Locale.US, "%.2f", asset.evEbitda), "Valor da Firma / Ebitda"))
-                                metrics.add(Triple("EV/Ebit", String.format(java.util.Locale.US, "%.2f", asset.evEbit), "Valor da Firma / Ebit"))
-                                metrics.add(Triple("P/Ebitda", String.format(java.util.Locale.US, "%.2f", asset.priceEbitda), "Preço / Ebitda"))
-                                metrics.add(Triple("P/Ebit", String.format(java.util.Locale.US, "%.2f", asset.priceEbit), "Preço / Ebit"))
-                                metrics.add(Triple("P/Ativo", String.format(java.util.Locale.US, "%.2f", asset.priceAsset), "Preço / Ativo Total"))
-                                metrics.add(Triple("P/Cap.Giro", String.format(java.util.Locale.US, "%.2f", asset.priceCapGiro), "Preço / Capital de Giro"))
-                                metrics.add(Triple("P/Ativo Circ. Liq.", String.format(java.util.Locale.US, "%.2f", asset.priceAtivoCircLiq), "Preço / Ativo Circ. Líq."))
-                                metrics.add(Triple("Giro Ativos", String.format(java.util.Locale.US, "%.2f", asset.giroAtivos), "Giro de Ativos"))
-                                metrics.add(Triple("ROE", "${String.format(java.util.Locale.US, "%.2f", asset.roe)}%", "Retorno s/ Patrimônio Líq."))
-                                metrics.add(Triple("ROIC", "${String.format(java.util.Locale.US, "%.2f", asset.roic)}%", "Retorno s/ Capital Invest."))
-                                metrics.add(Triple("ROA", "${String.format(java.util.Locale.US, "%.2f", asset.roa)}%", "Retorno s/ Ativos"))
-                                metrics.add(Triple("Dív. Líq / Patrimônio", String.format(java.util.Locale.US, "%.2f", asset.divLiqPatrimonio), "Dívida Líquida / Patrimônio"))
-                                metrics.add(Triple("Dív. Líq / EBITDA", String.format(java.util.Locale.US, "%.2f", asset.debtEbitda), "Dívida Líquida / EBITDA"))
-                                metrics.add(Triple("Dívida Líq / Ebit", String.format(java.util.Locale.US, "%.2f", asset.divLiqEbit), "Dívida Líq. / EBIT"))
-                                metrics.add(Triple("Dívida Bruta / Patrim.", String.format(java.util.Locale.US, "%.2f", asset.divBrutaPatrimonio), "Dívida Bruta / Patrimônio"))
-                                metrics.add(Triple("Patrimônio / Ativos", String.format(java.util.Locale.US, "%.2f", asset.patrimonioAtivos), "Patrimônio / Ativos"))
-                                metrics.add(Triple("Passivos / Ativos", String.format(java.util.Locale.US, "%.2f", asset.passivosAtivos), "Passivos / Ativos"))
-                                metrics.add(Triple("Liquidez Corrente", String.format(java.util.Locale.US, "%.2f", asset.liquidezCorrente), "Liquidez Corrente"))
-                                metrics.add(Triple("CAGR Receitas (5a)", "${String.format(java.util.Locale.US, "%.2f", asset.cagrRevenue5y)}%", "Cresc. Receita Anual"))
-                                metrics.add(Triple("CAGR Lucros (5a)", "${String.format(java.util.Locale.US, "%.2f", asset.cagrProfit5y)}%", "Cresc. Lucro Anual"))
-                                metrics.add(Triple("Payout", "${String.format(java.util.Locale.US, "%.2f", asset.payout)}%", "Lucro distribuído"))
+                                metrics.add(Triple("LPA", B3UIUtils.formatValue(asset.lpa, prefix = "R$ "), "Lucro líquido por ação anual"))
+                                metrics.add(Triple("P/Receita (PSR)", B3UIUtils.formatValue(asset.priceToSales), "Preço / Receita Líquida"))
+                                metrics.add(Triple("Margem Líquida", B3UIUtils.formatValue(asset.margins, suffix = "%"), "Eficiência líquida"))
+                                metrics.add(Triple("Margem Bruta", B3UIUtils.formatValue(asset.grossMargin, suffix = "%"), "Eficiência bruta"))
+                                metrics.add(Triple("Margem Ebit", B3UIUtils.formatValue(asset.ebitMargin, suffix = "%"), "Eficiência Ebit"))
+                                metrics.add(Triple("Margem Ebitda", B3UIUtils.formatValue(asset.ebitdaMargin, suffix = "%"), "Eficiência Ebtida"))
+                                metrics.add(Triple("EV/Ebitda", B3UIUtils.formatValue(asset.evEbitda), "Valor da Firma / Ebitda"))
+                                metrics.add(Triple("EV/Ebit", B3UIUtils.formatValue(asset.evEbit), "Valor da Firma / Ebit"))
+                                metrics.add(Triple("P/Ebitda", B3UIUtils.formatValue(asset.priceEbitda), "Preço / Ebitda"))
+                                metrics.add(Triple("P/Ebit", B3UIUtils.formatValue(asset.priceEbit), "Preço / Ebit"))
+                                metrics.add(Triple("P/Ativo", B3UIUtils.formatValue(asset.priceAsset), "Preço / Ativo Total"))
+                                metrics.add(Triple("P/Cap.Giro", B3UIUtils.formatValue(asset.priceCapGiro), "Preço / Capital de Giro"))
+                                metrics.add(Triple("P/Ativo Circ. Liq.", B3UIUtils.formatValue(asset.priceAtivoCircLiq), "Preço / Ativo Circ. Líq."))
+                                metrics.add(Triple("Giro Ativos", B3UIUtils.formatValue(asset.giroAtivos), "Giro de Ativos"))
+                                metrics.add(Triple("ROE", B3UIUtils.formatValue(asset.roe, suffix = "%"), "Retorno s/ Patrimônio Líq."))
+                                metrics.add(Triple("ROIC", B3UIUtils.formatValue(asset.roic, suffix = "%"), "Retorno s/ Capital Invest."))
+                                metrics.add(Triple("ROA", B3UIUtils.formatValue(asset.roa, suffix = "%"), "Retorno s/ Ativos"))
+                                metrics.add(Triple("Dív. Líq / Patrimônio", B3UIUtils.formatValue(asset.divLiqPatrimonio), "Dívida Líquida / Patrimônio"))
+                                metrics.add(Triple("Dív. Líq / EBITDA", B3UIUtils.formatValue(asset.debtEbitda), "Dívida Líquida / EBITDA"))
+                                metrics.add(Triple("Dívida Líq / Ebit", B3UIUtils.formatValue(asset.divLiqEbit), "Dívida Líq. / EBIT"))
+                                metrics.add(Triple("Dívida Bruta / Patrim.", B3UIUtils.formatValue(asset.divBrutaPatrimonio), "Dívida Bruta / Patrimônio"))
+                                metrics.add(Triple("Patrimônio / Ativos", B3UIUtils.formatValue(asset.patrimonioAtivos), "Patrimônio / Ativos"))
+                                metrics.add(Triple("Passivos / Ativos", B3UIUtils.formatValue(asset.passivosAtivos), "Passivos / Ativos"))
+                                metrics.add(Triple("Liquidez Corrente", B3UIUtils.formatValue(asset.liquidezCorrente), "Liquidez Corrente"))
+                                metrics.add(Triple("CAGR Receitas (5a)", B3UIUtils.formatValue(asset.cagrRevenue5y, suffix = "%"), "Cresc. Receita Anual"))
+                                metrics.add(Triple("CAGR Lucros (5a)", B3UIUtils.formatValue(asset.cagrProfit5y, suffix = "%"), "Cresc. Lucro Anual"))
+                                metrics.add(Triple("Payout", B3UIUtils.formatValue(asset.payout, suffix = "%"), "Lucro distribuído"))
                             }
 
                             Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
