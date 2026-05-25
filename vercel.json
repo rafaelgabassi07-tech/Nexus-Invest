@@ -1,69 +1,19 @@
 {
-  "cleanUrls": true,
-  "rewrites": [
-    {
-      "source": "/api/sync",
-      "destination": "/api/sync.js"
-    },
-    {
-      "source": "/api/scrape",
-      "destination": "/api/scrape.js"
-    },
-    {
-      "source": "/api/asset",
-      "destination": "/api/asset.ts"
-    },
-    {
-      "source": "/api/assets",
-      "destination": "/api/assets.ts"
-    },
-    {
-      "source": "/api/engine",
-      "destination": "/api/engine.js"
-    }
-  ],
-  "headers": [
-    {
-      "source": "/update.json",
-      "headers": [
-        {
-          "key": "Access-Control-Allow-Origin",
-          "value": "*"
-        },
-        {
-          "key": "Cache-Control",
-          "value": "no-cache, no-store, must-revalidate"
-        },
-        {
-          "key": "Pragma",
-          "value": "no-cache"
-        },
-        {
-          "key": "Expires",
-          "value": "0"
-        }
-      ]
-    },
-    {
-      "source": "/api/(.*)",
-      "headers": [
-        {
-          "key": "Access-Control-Allow-Credentials",
-          "value": "true"
-        },
-        {
-          "key": "Access-Control-Allow-Origin",
-          "value": "*"
-        },
-        {
-          "key": "Access-Control-Allow-Methods",
-          "value": "GET,OPTIONS,PATCH,DELETE,POST,PUT"
-        },
-        {
-          "key": "Access-Control-Allow-Headers",
-          "value": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, X-Cache-Version"
-        }
-      ]
-    }
-  ]
+"cleanUrls": true,
+"rewrites": [
+{
+"source": "/api/asset",
+"destination": "/api/asset.ts"
+}
+],
+"headers": [
+{
+"source": "/api/(.*)",
+"headers": [
+{ "key": "Access-Control-Allow-Origin", "value": "*" },
+{ "key": "Access-Control-Allow-Methods", "value": "GET,OPTIONS,POST" },
+{ "key": "Access-Control-Allow-Headers", "value": "Content-Type, X-Cache-Version" }
+]
+}
+]
 }
