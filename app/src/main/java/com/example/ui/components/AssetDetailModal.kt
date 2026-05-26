@@ -822,98 +822,152 @@ fun AssetDetailModal(
                             items(sortedTransactions, key = { it.id }) { tx ->
                                 val isSale = tx.isSell
                                 val itemColor = if (isSale) DangerRed else GoldPrimary
-                                
+                                val currentPriceToUse = realData?.price ?: asset.currentPrice
+
+                                val txTotalValue = tx.quantity * tx.purchasePrice
+                                val isPurchase = !isSale
+
+                                val currentTxValue = if (isPurchase) currentPriceToUse * tx.quantity else 0.0
+                                val profitAbs = if (isPurchase) currentTxValue - txTotalValue else 0.0
+                                val profitPct = if (isPurchase && txTotalValue > 0) (profitAbs / txTotalValue) * 100.0 else 0.0
+                                val isProfit = profitAbs >= 0
+
                                 Card(
                                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                                     shape = RoundedCornerShape(16.dp),
                                     border = BorderStroke(1.2.dp, BorderColor.copy(alpha = 0.12f)),
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp)
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp)
                                 ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(12.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Box(
+                                    Column {
+                                        Row(
                                             modifier = Modifier
-                                                .size(40.dp)
-                                                .background(itemColor.copy(alpha = 0.1f), CircleShape),
-                                            contentAlignment = Alignment.Center
+                                                .fillMaxWidth()
+                                                .padding(16.dp),
+                                            verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Icon(
-                                                imageVector = if (isSale) Icons.AutoMirrored.Outlined.TrendingDown else Icons.AutoMirrored.Outlined.TrendingUp,
-                                                contentDescription = null,
-                                                tint = itemColor,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                        }
-                                        
-                                        Spacer(modifier = Modifier.width(16.dp))
-
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(
-                                                    text = if (isSale) "ORDEM DE VENDA" else "ORDEM DE COMPRA",
-                                                    color = itemColor,
-                                                    fontWeight = FontWeight.Black,
-                                                    fontSize = 10.sp,
-                                                    letterSpacing = 0.5.sp
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(40.dp)
+                                                    .background(itemColor.copy(alpha = 0.1f), CircleShape),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = if (isSale) Icons.AutoMirrored.Outlined.TrendingDown else Icons.AutoMirrored.Outlined.TrendingUp,
+                                                    contentDescription = null,
+                                                    tint = itemColor,
+                                                    modifier = Modifier.size(20.dp)
                                                 )
-                                                Spacer(modifier = Modifier.width(8.dp))
+                                            }
+                                            
+                                            Spacer(modifier = Modifier.width(16.dp))
+
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text(
+                                                        text = if (isSale) "VENDA" else "COMPRA",
+                                                        color = itemColor,
+                                                        fontWeight = FontWeight.Black,
+                                                        fontSize = 11.sp,
+                                                        letterSpacing = 0.5.sp
+                                                    )
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Text(
+                                                        text = java.text.SimpleDateFormat("dd/MM/yy", java.util.Locale.getDefault()).format(java.util.Date(tx.date)),
+                                                        color = TextSecondary,
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                }
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                val fmtQty = if (tx.quantity % 1.0 == 0.0) tx.quantity.toInt().toString() else String.format("%.2f", tx.quantity)
                                                 Text(
-                                                    text = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.getDefault()).format(java.util.Date(tx.date)),
+                                                    text = "$fmtQty cotas",
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                    fontSize = 14.sp,
+                                                    fontWeight = FontWeight.Black
+                                                )
+                                                Text(
+                                                    text = "R$ ${String.format("%.2f", tx.purchasePrice)} /cota",
                                                     color = TextSecondary,
-                                                    fontSize = 10.sp
-                                                )
-                                            }
-                                            Spacer(modifier = Modifier.height(4.dp))
-                                            val fmtQty = if (tx.quantity % 1.0 == 0.0) tx.quantity.toInt().toString() else String.format("%.2f", tx.quantity)
-                                            Text(
-                                                text = "$fmtQty cotas por R$ ${String.format("%.2f", tx.purchasePrice)}",
-                                                color = MaterialTheme.colorScheme.onSurface,
-                                                fontSize = 14.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
-
-                                        Column(horizontalAlignment = Alignment.End) {
-                                            Text(text = "VALOR TOTAL", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                                            Text(
-                                                text = "R$ ${String.format("%.2f", tx.quantity * tx.purchasePrice)}",
-                                                fontWeight = FontWeight.Black,
-                                                color = MaterialTheme.colorScheme.onSurface,
-                                                fontSize = 14.sp
-                                            )
-                                        }
-                                        
-                                        Row(modifier = Modifier.padding(start = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            IconButton(
-                                                onClick = { onEditTransaction(tx) },
-                                                modifier = Modifier
-                                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f), CircleShape)
-                                                    .size(32.dp)
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Outlined.Edit,
-                                                    contentDescription = "Editar",
-                                                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
-                                                    modifier = Modifier.size(16.dp)
+                                                    fontSize = 11.sp
                                                 )
                                             }
 
-                                            IconButton(
-                                                onClick = { onDeleteTransaction(tx) },
-                                                modifier = Modifier
-                                                    .background(Color.Red.copy(alpha = 0.08f), CircleShape)
-                                                    .size(32.dp)
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Outlined.Delete,
-                                                    contentDescription = "Deletar",
-                                                    tint = DangerRed.copy(alpha = 0.8f),
-                                                    modifier = Modifier.size(16.dp)
+                                            Column(horizontalAlignment = Alignment.End) {
+                                                Text(text = "VALOR TOTAL", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                                Text(
+                                                    text = "R$ ${String.format("%.2f", txTotalValue)}",
+                                                    fontWeight = FontWeight.Black,
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                    fontSize = 14.sp
                                                 )
+                                                
+                                                Row(modifier = Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                    IconButton(
+                                                        onClick = { onEditTransaction(tx) },
+                                                        modifier = Modifier
+                                                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f), CircleShape)
+                                                            .size(28.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Outlined.Edit,
+                                                            contentDescription = "Editar",
+                                                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+                                                            modifier = Modifier.size(14.dp)
+                                                        )
+                                                    }
+
+                                                    IconButton(
+                                                        onClick = { onDeleteTransaction(tx) },
+                                                        modifier = Modifier
+                                                            .background(Color.Red.copy(alpha = 0.08f), CircleShape)
+                                                            .size(28.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Outlined.Delete,
+                                                            contentDescription = "Deletar",
+                                                            tint = DangerRed.copy(alpha = 0.8f),
+                                                            modifier = Modifier.size(14.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        if (isPurchase && txTotalValue > 0) {
+                                            HorizontalDivider(color = BorderColor.copy(alpha = 0.08f), thickness = 1.dp)
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.02f))
+                                                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text("STATUS DO APORTE", fontSize = 10.sp, fontWeight = FontWeight.Black, color = TextSecondary, letterSpacing = 0.5.sp)
+                                                val pColor = if (isProfit) SuccessGreen else DangerRed
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text(
+                                                        text = "${if (isProfit) "+" else ""}R$ ${String.format("%.2f", profitAbs)}",
+                                                        color = pColor,
+                                                        fontSize = 12.sp,
+                                                        fontWeight = FontWeight.Black
+                                                    )
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .background(pColor.copy(alpha = 0.1f), RoundedCornerShape(4.dp))
+                                                            .border(1.dp, pColor.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
+                                                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = "${if (isProfit) "+" else ""}${String.format("%.1f", profitPct)}%",
+                                                            color = pColor,
+                                                            fontSize = 10.sp,
+                                                            fontWeight = FontWeight.Bold
+                                                        )
+                                                    }
+                                                }
                                             }
                                         }
                                     }

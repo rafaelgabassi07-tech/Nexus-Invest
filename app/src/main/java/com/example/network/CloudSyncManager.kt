@@ -24,7 +24,7 @@ import kotlinx.coroutines.withContext
 
 /**
  * CloudSyncManager handles secure operations to back up and restore investment portfolios (Transactions)
- * to a cloud Supabase PostgreSQL database, and integrates with serverless Vercel endpoints.
+ * to a cloud Supabase PostgreSQL database.
  * Includes complete implementation of client-side Zero-Knowledge AES-256-GCM encryption.
  */
 object CloudSyncManager {
@@ -33,7 +33,6 @@ object CloudSyncManager {
     // Retrieve environment variables through BuildConfig injected via AI Studio secrets
     val supabaseUrl: String = try { BuildConfig.SUPABASE_URL } catch (e: Exception) { "" }
     val supabaseKey: String = try { BuildConfig.SUPABASE_ANON_KEY } catch (e: Exception) { "" }
-    val vercelUrl: String = try { BuildConfig.VERCEL_BACKEND_URL } catch (e: Exception) { "" }
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -45,15 +44,10 @@ object CloudSyncManager {
      * Helper to verify if cloud configurations are active.
      */
     fun isCloudConfigured(): Boolean {
-        val hasSupabaseDirect = supabaseUrl.isNotEmpty() && 
+        return supabaseUrl.isNotEmpty() && 
                supabaseKey.isNotEmpty() && 
                !supabaseUrl.contains("your-project") && 
                !supabaseKey.contains("YOUR")
-        return hasSupabaseDirect || isVercelConfigured()
-    }
-
-    fun isVercelConfigured(): Boolean {
-        return vercelUrl.isNotEmpty() && !vercelUrl.contains("your-backend")
     }
 
     /**
@@ -61,79 +55,34 @@ object CloudSyncManager {
      */
     suspend fun testSupabaseConnection(): Result<String> = withContext(Dispatchers.IO) {
         if (!isCloudConfigured()) {
-            return@withContext Result.failure(Exception("Nenhum serviço de nuvem (Supabase ou Vercel) está configurado. Adicione suas chaves no painel de Segredos."))
+            return@withContext Result.failure(Exception("Nenhum serviço de nuvem (Supabase) está configurado. Adicione suas chaves no painel de Segredos."))
         }
         
-        val hasSupabaseDirect = supabaseUrl.isNotEmpty() && !supabaseUrl.contains("your-project")
-        if (hasSupabaseDirect) {
-            // Query metadata from REST API to verify credentials
-            val request = Request.Builder()
-                .url("$supabaseUrl/rest/v1/")
-                .addHeader("apikey", supabaseKey)
-                .addHeader("Authorization", "Bearer $supabaseKey")
-                .get()
-                .build()
-                
-            try {
-                client.newCall(request).execute().use { response ->
-                    if (response.isSuccessful || response.code == 404 || response.code == 200) {
-                        Result.success("Conexão direta estabelecida com sucesso com o Supabase!")
-                    } else {
-                        Result.failure(Exception("Supabase retornou erro HTTP: ${response.code} (Verifique as credenciais)"))
-                    }
-                }
-            } catch (e: Exception) {
-                Result.failure(Exception("Falha na conexão de rede: ${e.message}"))
-            }
-        } else {
-            // Test Vercel Proxy Connection Check
-            val request = Request.Builder()
-                .url("$vercelUrl/api/sync")
-                .get()
-                .build()
-                
-            try {
-                client.newCall(request).execute().use { response ->
-                    if (response.isSuccessful) {
-                        Result.success("Conexão via ponte segura Vercel ativa com sucesso!")
-                    } else {
-                        Result.failure(Exception("Ponte Vercel retornou erro: HTTP ${response.code}"))
-                    }
-                }
-            } catch (e: Exception) {
-                Result.failure(Exception("Falha ao se comunicar com a ponte Vercel: ${e.message}"))
-            }
-        }
-    }
-
-    suspend fun testVercelConnection(): Result<String> = withContext(Dispatchers.IO) {
-        if (!isVercelConfigured()) {
-            return@withContext Result.failure(Exception("Vercel Backend não configurado. Configure VERCEL_BACKEND_URL."))
-        }
-
-        // Send a simple ping or GET request to Vercel
+        // Query metadata from REST API to verify credentials
         val request = Request.Builder()
-            .url(vercelUrl)
+            .url("$supabaseUrl/rest/v1/")
+            .addHeader("apikey", supabaseKey)
+            .addHeader("Authorization", "Bearer $supabaseKey")
             .get()
             .build()
-
+            
         try {
             client.newCall(request).execute().use { response ->
-                if (response.isSuccessful || response.code == 404) {
-                    Result.success("Vercel Backend ativo e acessível (Status ${response.code})")
+                if (response.isSuccessful || response.code == 404 || response.code == 200) {
+                    Result.success("Conexão direta estabelecida com sucesso com o Supabase!")
                 } else {
-                    Result.failure(Exception("Vercel retornou erro: ${response.code}"))
+                    Result.failure(Exception("Supabase retornou erro HTTP: ${response.code} (Verifique as credenciais)"))
                 }
             }
         } catch (e: Exception) {
-            Result.failure(Exception("Falha ao comunicar com Vercel: ${e.message}"))
+            Result.failure(Exception("Falha na conexão de rede: ${e.message}"))
         }
     }
 
     /**
      * Backup all transactions in JSON format.
      * Integrates Client-Side AES-256-GCM encryption if passPhrase is provided.
-     * Routes through standard Supabase direct call, or secure Vercel proxy.
+     * Routes through standard Supabase direct call.
      */
     suspend fun backupData(
         userId: String,
@@ -184,35 +133,21 @@ object CloudSyncManager {
             val mediaType = "application/json; charset=utf-8".toMediaTypeOrNull()
             val requestBody = jsonBody.toString().toRequestBody(mediaType)
 
-            val hasSupabaseDirect = supabaseUrl.isNotEmpty() && !supabaseUrl.contains("your-project")
-            val request = if (hasSupabaseDirect) {
-                // Supabase Direct Upsert
-                Request.Builder()
-                    .url("$supabaseUrl/rest/v1/valorae_sync_backups")
-                    .addHeader("apikey", supabaseKey)
-                    .addHeader("Authorization", "Bearer $supabaseKey")
-                    .addHeader("Content-Type", "application/json")
-                    .addHeader("Prefer", "resolution=merge-duplicates,return=representation")
-                    .post(requestBody)
-                    .build()
-            } else {
-                // Secure Vercel Bridge
-                Request.Builder()
-                    .url("$vercelUrl/api/sync")
-                    .addHeader("Content-Type", "application/json")
-                    .post(requestBody)
-                    .build()
-            }
+            // Supabase Direct Upsert
+            val request = Request.Builder()
+                .url("$supabaseUrl/rest/v1/valorae_sync_backups")
+                .addHeader("apikey", supabaseKey)
+                .addHeader("Authorization", "Bearer $supabaseKey")
+                .addHeader("Content-Type", "application/json")
+                .addHeader("Prefer", "resolution=merge-duplicates,return=representation")
+                .post(requestBody)
+                .build()
 
             client.newCall(request).execute().use { response ->
                 if (response.isSuccessful) {
                     Result.success("Backup sincronizado na nuvem com sucesso!")
                 } else if (response.code == 404 || response.code == 400) {
-                    if (request.url.toString().contains("supabase")) {
-                        Result.failure(Exception("Tabela 'valorae_sync_backups' não localizada no seu Supabase. Verifique se executou os scripts de migração SQL."))
-                    } else {
-                        Result.failure(Exception("Erro na rota de API da Vercel (Status: ${response.code}). Verifique sua implantação Serverless."))
-                    }
+                    Result.failure(Exception("Tabela 'valorae_sync_backups' não localizada no seu Supabase. Verifique se executou os scripts de migração SQL."))
                 } else {
                     Result.failure(Exception("Erro ao salvar: ${response.code} - ${response.message}"))
                 }
@@ -234,22 +169,13 @@ object CloudSyncManager {
             return@withContext Result.failure(Exception("Nenhum serviço de nuvem está configurado."))
         }
 
-        val hasSupabaseDirect = supabaseUrl.isNotEmpty() && !supabaseUrl.contains("your-project")
-        val request = if (hasSupabaseDirect) {
-            // Direct call
-            Request.Builder()
-                .url("$supabaseUrl/rest/v1/valorae_sync_backups?user_id=eq.$userId")
-                .addHeader("apikey", supabaseKey)
-                .addHeader("Authorization", "Bearer $supabaseKey")
-                .get()
-                .build()
-        } else {
-            // Secure Vercel Proxy route
-            Request.Builder()
-                .url("$vercelUrl/api/sync?user_id=$userId")
-                .get()
-                .build()
-        }
+        // Direct call
+        val request = Request.Builder()
+            .url("$supabaseUrl/rest/v1/valorae_sync_backups?user_id=eq.$userId")
+            .addHeader("apikey", supabaseKey)
+            .addHeader("Authorization", "Bearer $supabaseKey")
+            .get()
+            .build()
 
         try {
             client.newCall(request).execute().use { response ->
@@ -263,7 +189,6 @@ object CloudSyncManager {
                     return@withContext Result.failure(Exception("Nenhum backup encontrado para o usuário id '$userId'."))
                 }
 
-                // If record array is returned, read first row. Standard for Supabase or custom Vercel API.
                 val record = jsonArray.getJSONObject(0)
                 val payload = record.getString("payload")
                 val isEncrypted = record.optBoolean("encrypted", false)
@@ -312,59 +237,6 @@ object CloudSyncManager {
     }
 
     /**
-     * Vercel serverless calculations proxy support.
-     * Securely sends analytical and transactional payload to Vercel to compute taxation or financial reports.
-     */
-    suspend fun computeTaxationViaVercel(
-        transactions: List<Transaction>,
-        month: String // YYYY-MM格式
-    ): Result<String> = withContext(Dispatchers.IO) {
-        if (!isVercelConfigured()) {
-            return@withContext Result.failure(Exception("Vercel Backend não configurado."))
-        }
-
-        try {
-            val transactionsArray = JSONArray()
-            transactions.forEach { trans ->
-                val obj = JSONObject().apply {
-                    put("ticker", trans.ticker)
-                    put("quantity", trans.quantity)
-                    put("price", trans.purchasePrice)
-                    put("isSell", trans.isSell)
-                    put("type", trans.type)
-                    put("date", trans.date)
-                }
-                transactionsArray.put(obj)
-            }
-
-            val requestJson = JSONObject().apply {
-                put("month", month)
-                put("transactions", transactionsArray)
-            }
-
-            val mediaType = "application/json; charset=utf-8".toMediaTypeOrNull()
-            val requestBody = requestJson.toString().toRequestBody(mediaType)
-
-            val request = Request.Builder()
-                .url("$vercelUrl/api/tax-calculator")
-                .addHeader("Content-Type", "application/json")
-                .post(requestBody)
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val resultStr = response.body?.string() ?: "{}"
-                    Result.success(resultStr)
-                } else {
-                    Result.failure(Exception("Vercel Calculadora retornou erro: ${response.code}"))
-                }
-            }
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    /**
      * Zero-Knowledge AES-256-GCM symmetric encryption helper class.
      */
     object CryptoHelper {
@@ -405,3 +277,4 @@ object CloudSyncManager {
         }
     }
 }
+

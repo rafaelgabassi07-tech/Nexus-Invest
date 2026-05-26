@@ -1422,30 +1422,7 @@ private fun HelpGuidePage() {
             description = "Utilize a seção 'Atualizações' para baixar o APK mais recente. Você não perde seus dados ao atualizar, mas recomendamos sempre gerar um backup antes de grandes migrações de versão."
         )
 
-        Text(
-            text = "EXTENSÕES E DESENVOLVIMENTO",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.Black,
-            modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
-        )
-
-        HelpItem(
-            icon = Icons.Outlined.Code,
-            title = "Download Nexus Engine JS",
-            description = "Baixe a versão mais recente do motor de inteligência (nexus-engine.js) para auditoria ou uso em proxies customizados. Clique para baixar.",
-            onClick = {
-                val baseUrl = BuildConfig.VERCEL_BACKEND_URL.trimEnd('/')
-                if (baseUrl.isNotEmpty() && !baseUrl.contains("your-backend")) {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("$baseUrl/api/engine"))
-                    context.startActivity(intent)
-                } else {
-                    android.widget.Toast.makeText(context, "URL de Backend não configurada no Painel de Segredos!", android.widget.Toast.LENGTH_SHORT).show()
-                }
-            }
-        )
-        
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(8.dp))
         
         Surface(
             color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
@@ -2229,7 +2206,7 @@ private fun DataBackupPage(viewModel: com.example.viewmodel.PortfolioViewModel) 
             }
         }
 
-        // Card Cloud Sync: Integração Supabase & Vercel
+        // Card Cloud Sync: Integração Supabase
         Surface(
             color = MaterialTheme.colorScheme.surface,
             shape = RoundedCornerShape(24.dp),
@@ -2240,9 +2217,7 @@ private fun DataBackupPage(viewModel: com.example.viewmodel.PortfolioViewModel) 
             var cryptoPassphrase by remember { mutableStateOf(prefs.getString("crypto_passphrase", "") ?: "") }
             var passphraseVisible by remember { mutableStateOf(false) }
             var connectionStatusSupabase by remember { mutableStateOf("Não verificado") }
-            var connectionStatusVercel by remember { mutableStateOf("Não verificado") }
             var isTestingSupabase by remember { mutableStateOf(false) }
-            var isTestingVercel by remember { mutableStateOf(false) }
             var isBackingUp by remember { mutableStateOf(false) }
             var isRestoring by remember { mutableStateOf(false) }
 
@@ -2274,7 +2249,7 @@ private fun DataBackupPage(viewModel: com.example.viewmodel.PortfolioViewModel) 
                 }
 
                 Text(
-                    text = "Suporte unificado ao Supabase (Banco de Dados em Nuvem) e ao Vercel (Cálculos de Impostos no Servidor). Seu portfólio seguro em qualquer lugar com criptografia ponta-a-ponta.",
+                    text = "Suporte unificado ao Supabase (Banco de Dados em Nuvem). Seu portfólio seguro em qualquer lugar com criptografia ponta-a-ponta.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -2286,7 +2261,6 @@ private fun DataBackupPage(viewModel: com.example.viewmodel.PortfolioViewModel) 
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     val isSupaConfigured = com.example.network.CloudSyncManager.isCloudConfigured()
-                    val isVercelConfigured = com.example.network.CloudSyncManager.isVercelConfigured()
 
                     Box(
                         modifier = Modifier
@@ -2308,30 +2282,6 @@ private fun DataBackupPage(viewModel: com.example.viewmodel.PortfolioViewModel) 
                                 if (isSupaConfigured) "Integrado (.env Ativo)" else "Pendente (Configurações)",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = if (isSupaConfigured) SuccessGreen else MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .background(
-                                if (isVercelConfigured) SuccessGreen.copy(alpha = 0.08f) else MaterialTheme.colorScheme.error.copy(alpha = 0.08f),
-                                RoundedCornerShape(12.dp)
-                            )
-                            .border(
-                                1.dp,
-                                if (isVercelConfigured) SuccessGreen.copy(alpha = 0.2f) else MaterialTheme.colorScheme.error.copy(alpha = 0.2f),
-                                RoundedCornerShape(12.dp)
-                            )
-                            .padding(8.dp)
-                    ) {
-                        Column {
-                            Text("Vercel API", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                            Text(
-                                if (isVercelConfigured) "Integrado (.env Ativo)" else "Pendente (Configurações)",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (isVercelConfigured) SuccessGreen else MaterialTheme.colorScheme.error
                             )
                         }
                     }
@@ -2416,38 +2366,6 @@ private fun DataBackupPage(viewModel: com.example.viewmodel.PortfolioViewModel) 
                             Icon(Icons.Filled.NetworkCheck, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("Testar Supabase", style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-
-                    OutlinedButton(
-                        modifier = Modifier.weight(1f),
-                        onClick = {
-                            if (isTestingVercel) return@OutlinedButton
-                            isTestingVercel = true
-                            scope.launch {
-                                val result = com.example.network.CloudSyncManager.testVercelConnection()
-                                result.fold(
-                                    onSuccess = { msg ->
-                                        connectionStatusVercel = "Ativo"
-                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                    },
-                                    onFailure = { err ->
-                                        connectionStatusVercel = "Erro"
-                                        Toast.makeText(context, err.message, Toast.LENGTH_LONG).show()
-                                    }
-                                )
-                                isTestingVercel = false
-                            }
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        contentPadding = PaddingValues(vertical = 12.dp)
-                    ) {
-                        if (isTestingVercel) {
-                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        } else {
-                            Icon(Icons.Filled.NetworkCheck, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Testar Vercel", style = MaterialTheme.typography.labelSmall)
                         }
                     }
                 }

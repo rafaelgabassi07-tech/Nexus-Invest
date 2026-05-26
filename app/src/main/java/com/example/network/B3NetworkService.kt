@@ -181,7 +181,7 @@ object B3NetworkService {
 
 
     /**
-     * Fetch asset indicators using Yahoo Finance API with Nexus scraping fallback
+     * Fetch asset indicators using Yahoo Finance API
      */
     fun fetchAssetData(ticker: String, bypassCache: Boolean = false): B3AssetData? {
         val cacheKey = "asset_data_$ticker"
@@ -333,52 +333,9 @@ object B3NetworkService {
                 }
             }
 
-            // 3. Fallback and Enrich (Scraping from Nexus Proxy)
-            val numericFallback = mutableMapOf<String, Double>()
-            val textFallback = mutableMapOf<String, String>()
-
-            try {
-                kotlinx.coroutines.runBlocking {
-                    fun parseNumberOrNull(value: String): Double? {
-                        var str = value
-                            .replace("R$", "")
-                            .replace("%", "")
-                            .replace("Bilhões", "")
-                            .replace("Bilhão", "")
-                            .replace("Milhões", "")
-                            .replace("Milhão", "")
-                            .replace("B", "") // common short suffixes
-                            .replace("M", "")
-                            .trim()
-
-                        if (str.isBlank() || str == "-" || str == "N/A" || str.equals("undefined", true) || str.equals("n.d.", true)) return null
-                        if (str.contains(",")) str = str.replace(".", "").replace(",", ".")
-                        return str.toDoubleOrNull()
-                    }
-
-                    val result = NexusProxyClient().buscarDadosAtivo(ticker)
-                    if (result != null) {
-                        val textKeys = setOf(
-                            "cnpj", "listSegment", "foundationYear", "listingYear", "employeesCount", 
-                            "totalPapers", "fiiTotalHolders", "fiiIssuedShares", "fiiAdminFee", 
-                            "fiiFundType", "fiiMandate", "fiiTargetAudience", "fiiManagementType", 
-                            "fiiDuration", "fiiSegment", "nextEarningsDate", "assetDescription", "subSector", "name"
-                        )
-                        for ((key, value) in result.results) {
-                            if (value.isNotEmpty()) {
-                                if (textKeys.contains(key)) {
-                                    textFallback[key] = value
-                                } else {
-                                    val num = parseNumberOrNull(value)
-                                    if (num != null) numericFallback[key] = num
-                                }
-                            }
-                        }
-                    }
-                }
-            } catch(e: Exception) {
-                Log.e("B3NetworkService", "Nexus Error: ${e.message}")
-            }
+            // Scraping fallbacks removed as requested (deep clean)
+            val numericFallback = emptyMap<String, Double>()
+            val textFallback = emptyMap<String, String>()
 
             // Sync from fallbacks if Yahoo is missing (0.0 or empty)
             if (price == 0.0) price = numericFallback["price"] ?: 0.0
