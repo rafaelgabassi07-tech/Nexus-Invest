@@ -6,6 +6,27 @@ plugins {
   alias(libs.plugins.secrets)
 }
 
+fun valoraeConfigValue(key: String, fallback: String = ""): String {
+  val fromProject = (project.findProperty(key) as? String)?.trim().orEmpty()
+  if (fromProject.isNotBlank()) return fromProject
+
+  val fromEnv = System.getenv(key)?.trim().orEmpty()
+  if (fromEnv.isNotBlank()) return fromEnv
+
+  val envFiles = listOf(rootProject.file(".env"), rootProject.file(".env.example"))
+  for (file in envFiles) {
+    if (!file.exists()) continue
+    val line = file.readLines().firstOrNull { raw ->
+      val trimmed = raw.trim()
+      trimmed.startsWith("$key=") && !trimmed.startsWith("#")
+    }
+    val value = line?.substringAfter('=')?.trim()?.trim('\"', '\'')
+    if (!value.isNullOrBlank()) return value
+  }
+
+  return fallback
+}
+
 android {
   namespace = "com.example"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
@@ -14,10 +35,24 @@ android {
     applicationId = "com.aistudio.valorae.nbqpyl"
     minSdk = 24
     targetSdk = 36
-    versionCode = 5
-    versionName = "1.1.0"
+    versionCode = 7
+    versionName = "1.1.4"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+    // Custom configurations exposed via BuildConfig.
+    // Prioridade: gradle.properties > variáveis do ambiente/Studio > .env > .env.example > URL pública atual.
+    val fallbackProxyUrl = "https://servidor-valorae.vercel.app"
+    val valoraeUrl = valoraeConfigValue(
+      "VALORAE_PROXY_BASE_URL",
+      valoraeConfigValue("VERCEL_BACKEND_URL", fallbackProxyUrl)
+    ).trimEnd('/')
+    val valoraeClientId = valoraeConfigValue("VALORAE_PROXY_CLIENT_ID", "valorae-investidor-portfolio")
+    val valoraeFallbackEnabled = valoraeConfigValue("VALORAE_DIRECT_FALLBACK_ENABLED", "false")
+
+    buildConfigField("String", "VALORAE_PROXY_BASE_URL", "\"$valoraeUrl\"")
+    buildConfigField("String", "VALORAE_PROXY_CLIENT_ID", "\"$valoraeClientId\"")
+    buildConfigField("String", "VALORAE_DIRECT_FALLBACK_ENABLED", "\"$valoraeFallbackEnabled\"")
   }
 
   signingConfigs {
@@ -63,6 +98,9 @@ android {
 secrets {
   propertiesFileName = ".env"
   defaultPropertiesFileName = ".env.example"
+  ignoreList.add("VALORAE_PROXY_BASE_URL")
+  ignoreList.add("VALORAE_PROXY_CLIENT_ID")
+  ignoreList.add("VALORAE_DIRECT_FALLBACK_ENABLED")
 }
 
 // Some unused dependencies are commented out below instead of being removed.

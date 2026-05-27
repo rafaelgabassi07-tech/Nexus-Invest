@@ -46,6 +46,8 @@ import com.example.network.B3AssetData
 import com.example.network.ChartPoint
 import com.example.network.NewsItem
 import com.example.ui.components.HistoricalPriceLineChart
+import com.example.ui.components.CustomBarChart
+import com.example.ui.components.PieChart
 import com.example.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -62,6 +64,8 @@ fun AnalysisScreen(
     isSearching: Boolean,
     favoriteTickers: List<String> = emptyList(),
     onToggleFavorite: (String) -> Unit = {},
+    assetChartBundles: Map<String, com.example.network.AssetChartBundle> = emptyMap(),
+    isLoadingChartBundle: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val focusManager = LocalFocusManager.current
@@ -560,6 +564,38 @@ fun AnalysisScreen(
                         }
                     }
 
+                    AssetVisualProxyCharts(asset = asset, isFii = isFii)
+
+                    // 3.5 Investidor10 Chart Bundle panel
+                    val tickerKey = asset.ticker.trim().uppercase()
+                    val bundle = assetChartBundles[tickerKey]
+                    
+                    if (isLoadingChartBundle) {
+                        Surface(
+                            color = DarkSurfaceElevated,
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.dp, BorderColor.copy(alpha = 0.05f)),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(24.dp).fillMaxWidth(),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                CircularProgressIndicator(color = GoldPrimary, strokeWidth = 3.dp)
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text("Carregando gráficos de análise...", color = TextSecondary, fontSize = 12.sp)
+                            }
+                        }
+                    } else if (bundle != null) {
+                        com.example.ui.components.AssetChartBundlePanel(
+                            bundle = bundle,
+                            isFii = isFii,
+                            currentRange = chartRange,
+                            onRangeChange = onRangeChange,
+                            modifier = Modifier.padding(vertical = 12.dp)
+                        )
+                    }
+
                     // 4. Metrics Indicators Grid (VALORAE inspired)
                     Surface(
                         color = DarkSurface,
@@ -846,7 +882,7 @@ fun AnalysisScreen(
                             
                             Spacer(modifier = Modifier.height(16.dp))
                             
-                            // Recommender Banner Mock
+                            // Consenso calculado a partir dos indicadores recebidos
                             val avgMargin = if (!isFii) (marginGraham + marginBazin)/2 else marginBazin
                             val recommendation = if (avgMargin > 15) "COMPRA RECOM. (FORTE)" else if (avgMargin > 5) "COMPRA (MODERADA)" else if (avgMargin > -5) "MANTER" else "ALERTA (ÁGIO)"
                             val recColor = if (avgMargin > 5) SuccessGreen else if (avgMargin > -5) GoldPrimary else DangerRed
@@ -867,9 +903,6 @@ fun AnalysisScreen(
                         }
                     }
                     
-                    Spacer(modifier = Modifier.height(16.dp))
-                    ExtendedAnalysisMocks(isFii = isFii)
-
                     Spacer(modifier = Modifier.height(24.dp))
                     
                     // News Section for the specific asset
@@ -945,6 +978,101 @@ fun AnalysisScreen(
         }
         
         Spacer(modifier = Modifier.height(24.dp))
+    }
+}
+
+@Composable
+fun AssetVisualProxyCharts(asset: B3AssetData, isFii: Boolean) {
+    val qualityScore = remember(asset) {
+        val profitability = listOf(asset.roe, asset.roic, asset.roa, asset.margins, asset.grossMargin).filter { it > 0.0 }.average().let { if (it.isNaN()) 0.0 else it }.coerceIn(0.0, 30.0) / 30.0 * 100.0
+        val income = (asset.dy.coerceIn(0.0, 12.0) / 12.0) * 100.0
+        val valuation = when {
+            isFii && asset.pvp > 0.0 -> (100.0 - kotlin.math.abs(asset.pvp - 1.0) * 70.0).coerceIn(0.0, 100.0)
+            !isFii && asset.pl > 0.0 -> (100.0 - kotlin.math.abs(asset.pl - 12.0) * 3.0).coerceIn(0.0, 100.0)
+            else -> 0.0
+        }
+        val leverage = when {
+            isFii -> (100.0 - asset.fiiVacancy.coerceIn(0.0, 40.0) * 2.0).coerceIn(0.0, 100.0)
+            asset.debtEbitda != 0.0 -> (100.0 - asset.debtEbitda.coerceIn(0.0, 6.0) * 12.0).coerceIn(0.0, 100.0)
+            else -> 0.0
+        }
+        listOf(profitability, income, valuation, leverage).filter { it > 0.0 }.average().let { if (it.isNaN()) 0.0 else it }.coerceIn(0.0, 100.0)
+    }
+    val barValues = remember(asset) {
+        listOf(
+            asset.dy.coerceIn(0.0, 20.0).toFloat(),
+            asset.roe.coerceIn(0.0, 40.0).toFloat(),
+            asset.roic.coerceIn(0.0, 40.0).toFloat(),
+            asset.margins.coerceIn(0.0, 40.0).toFloat(),
+            asset.payout.coerceIn(0.0, 100.0).toFloat()
+        )
+    }
+    val donutData = remember(asset, qualityScore) {
+        val filled = qualityScore.toFloat().coerceIn(0f, 100f)
+        listOf("Score" to filled, "A medir" to (100f - filled).coerceAtLeast(0f))
+    }
+
+    Surface(
+        color = DarkSurfaceElevated,
+        shape = RoundedCornerShape(18.dp),
+        border = BorderStroke(1.dp, BorderColor.copy(alpha = 0.06f)),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "PAINEL VISUAL DO ATIVO",
+                        color = GoldPrimary,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 1.sp
+                    )
+                    Text(
+                        text = "Gráficos derivados dos dados recebidos pelo Valorae Proxy",
+                        color = TextSecondary,
+                        fontSize = 10.sp
+                    )
+                }
+                Text(
+                    text = "${String.format("%.0f", qualityScore)} pts",
+                    color = if (qualityScore >= 70.0) SuccessGreen else if (qualityScore >= 45.0) GoldPrimary else DangerRed,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Black
+                )
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(modifier = Modifier.weight(0.9f).height(150.dp), contentAlignment = Alignment.Center) {
+                    PieChart(
+                        data = donutData,
+                        colors = listOf(GoldPrimary, BorderColor.copy(alpha = 0.18f)),
+                        centerText = "VALORAE",
+                        centerSubtext = "Score",
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+                Column(modifier = Modifier.weight(1.1f)) {
+                    Text("Indicadores-chave", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    CustomBarChart(
+                        values = barValues,
+                        modifier = Modifier.fillMaxWidth().height(130.dp),
+                        barColor = GoldPrimary
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = if (barValues.any { it > 0f }) "Barras: DY, ROE, ROIC, margem e payout quando disponíveis." else "O Proxy ainda não retornou indicadores suficientes para preencher todos os gráficos.",
+                color = TextSecondary,
+                fontSize = 10.sp
+            )
+        }
     }
 }
 
@@ -1028,6 +1156,3 @@ fun IndicatorItem(
     }
 }
 
-@Composable
-fun ExtendedAnalysisMocks(isFii: Boolean) {
-}

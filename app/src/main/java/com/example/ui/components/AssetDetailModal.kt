@@ -53,7 +53,7 @@ fun AssetDetailModal(
     isSearching: Boolean,
     onDismiss: () -> Unit
 ) {
-    val isFii = asset.type == "FII"
+    val isFii = asset.type.equals("FII", ignoreCase = true)
     val lineColor = GoldPrimary
     
     // Asynchronously fetch live fundamental data (B3AssetData)
@@ -237,6 +237,44 @@ fun AssetDetailModal(
                             }
                         }
 
+                        // 1.05 Diagnóstico de dados do Valorae Proxy
+                        if (realData != null) {
+                            item {
+                                val filledFields = listOf(
+                                    realData.price, realData.dy, realData.pvp, realData.vpa, realData.lastDividend,
+                                    realData.marketCap, realData.roe, realData.roic, realData.margins,
+                                    realData.dailyLiquidity, realData.high52, realData.low52
+                                ).count { it > 0.0 } + listOf(
+                                    realData.name, realData.cnpj, realData.assetDescription, realData.subSector,
+                                    realData.fiiSegment, realData.fiiTotalHolders, realData.fiiIssuedShares
+                                ).count { it.isNotBlank() }
+                                val completeness = ((filledFields / 19.0) * 100.0).coerceIn(0.0, 100.0)
+                                Surface(
+                                    color = GoldPrimary.copy(alpha = 0.06f),
+                                    shape = RoundedCornerShape(20.dp),
+                                    border = BorderStroke(1.dp, GoldPrimary.copy(alpha = 0.16f)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text("DADOS RECEBIDOS PELO PROXY", color = GoldPrimary, fontWeight = FontWeight.Black, fontSize = 10.sp, letterSpacing = 0.8.sp)
+                                            Text("${String.format("%.0f", completeness)}%", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Black, fontSize = 12.sp)
+                                        }
+                                        Text(
+                                            text = "Fonte: ${realData.source}. Campos ausentes permanecem vazios para evitar dados simulados.",
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontSize = 11.sp,
+                                            lineHeight = 15.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
                         // 1.1 Perfil Operacional card (if available)
                         if (realData != null && realData.assetDescription.isNotEmpty()) {
                             item {
@@ -381,18 +419,43 @@ fun AssetDetailModal(
                                         metrics.add(Triple("VPA", B3UIUtils.formatValue(realData.vpa, prefix = "R$ "), "Valor Justo Contábil"))
                                         
                                         if (isFii) {
-                                            metrics.add(Triple("Vacância", B3UIUtils.formatValue(realData.fiiVacancy, suffix = "%", precision = 1), "Área corporativa vaga"))
+                                            metrics.add(Triple("Vacância", B3UIUtils.formatValue(realData.fiiVacancy, suffix = "%", precision = 1), "Proporção de área vaga nos imóveis"))
                                             metrics.add(Triple("Liquidez Diária", B3UIUtils.formatLargeNumber(realData.dailyLiquidity).replace("R$ ", ""), "Volume financeiro mensal"))
-                                            metrics.add(Triple("Segmento", B3UIUtils.formatText(realData.fiiSegment, "Outros"), "Tipo de operação"))
+                                            metrics.add(Triple("Segmento", B3UIUtils.formatText(realData.fiiSegment, "Outros"), "Tipo de operação do FII"))
+                                            metrics.add(Triple("Número de Imóveis", if (realData.fiiPropertyCount == 0) "--" else "${realData.fiiPropertyCount} prop.", "Ativos físicos"))
+                                            metrics.add(Triple("P/VP Máximo Alvo", "1.00", "Parâmetro do mercado de tijolo"))
                                             if (realData.magicNumber > 0) {
-                                                metrics.add(Triple("Magic Number", "${realData.magicNumber.toInt()} cotas", "Auto-compra com dividendos"))
+                                                metrics.add(Triple("Magic Number", "${realData.magicNumber.toInt()} cotas", "Para comprar 1 cota c/ div."))
                                             }
-                                        } else {
-                                            metrics.add(Triple("LPA", B3UIUtils.formatValue(realData.lpa, prefix = "R$ "), "Lucro líquido por ação"))
-                                            metrics.add(Triple("Margem Líquida", B3UIUtils.formatValue(realData.margins, suffix = "%"), "Eficiência líquida"))
-                                            metrics.add(Triple("ROE", B3UIUtils.formatValue(realData.roe, suffix = "%"), "Retorno s/ Patr. Líq."))
-                                            metrics.add(Triple("ROIC", B3UIUtils.formatValue(realData.roic, suffix = "%"), "Retorno s/ Capital Invest."))
-                                        }
+                                         } else {
+                                             metrics.add(Triple("LPA", B3UIUtils.formatValue(realData.lpa, prefix = "R$ "), "Lucro líquido por ação anual"))
+                                             metrics.add(Triple("P/Receita (PSR)", B3UIUtils.formatValue(realData.priceToSales), "Preço / Receita Líquida"))
+                                             metrics.add(Triple("Margem Líquida", B3UIUtils.formatValue(realData.margins, suffix = "%"), "Eficiência líquida"))
+                                             metrics.add(Triple("Margem Bruta", B3UIUtils.formatValue(realData.grossMargin, suffix = "%"), "Eficiência bruta"))
+                                             metrics.add(Triple("Margem Ebit", B3UIUtils.formatValue(realData.ebitMargin, suffix = "%"), "Eficiência Ebit"))
+                                             metrics.add(Triple("Margem Ebitda", B3UIUtils.formatValue(realData.ebitdaMargin, suffix = "%"), "Eficiência Ebtida"))
+                                             metrics.add(Triple("EV/Ebitda", B3UIUtils.formatValue(realData.evEbitda), "Valor da Firma / Ebitda"))
+                                             metrics.add(Triple("EV/Ebit", B3UIUtils.formatValue(realData.evEbit), "Valor da Firma / Ebit"))
+                                             metrics.add(Triple("P/Ebitda", B3UIUtils.formatValue(realData.priceEbitda), "Preço / Ebitda"))
+                                             metrics.add(Triple("P/Ebit", B3UIUtils.formatValue(realData.priceEbit), "Preço / Ebit"))
+                                             metrics.add(Triple("P/Ativo", B3UIUtils.formatValue(realData.priceAsset), "Preço / Ativo Total"))
+                                             metrics.add(Triple("P/Cap.Giro", B3UIUtils.formatValue(realData.priceCapGiro), "Preço / Capital de Giro"))
+                                             metrics.add(Triple("P/Ativo Circ. Liq.", B3UIUtils.formatValue(realData.priceAtivoCircLiq), "Preço / Ativo Circ. Líq."))
+                                             metrics.add(Triple("Giro Ativos", B3UIUtils.formatValue(realData.giroAtivos), "Giro de Ativos"))
+                                             metrics.add(Triple("ROE", B3UIUtils.formatValue(realData.roe, suffix = "%"), "Retorno s/ Patrimônio Líq."))
+                                             metrics.add(Triple("ROIC", B3UIUtils.formatValue(realData.roic, suffix = "%"), "Retorno s/ Capital Invest."))
+                                             metrics.add(Triple("ROA", B3UIUtils.formatValue(realData.roa, suffix = "%"), "Retorno s/ Ativos"))
+                                             metrics.add(Triple("Dív. Líq / Patrimônio", B3UIUtils.formatValue(realData.divLiqPatrimonio), "Dívida Líquida / Patrimônio"))
+                                             metrics.add(Triple("Dív. Líq / EBITDA", B3UIUtils.formatValue(realData.debtEbitda), "Dívida Líquida / EBITDA"))
+                                             metrics.add(Triple("Dívida Líq / Ebit", B3UIUtils.formatValue(realData.divLiqEbit), "Dívida Líq. / EBIT"))
+                                             metrics.add(Triple("Dívida Bruta / Patrim.", B3UIUtils.formatValue(realData.divBrutaPatrimonio), "Dívida Bruta / Patrimônio"))
+                                             metrics.add(Triple("Patrimônio / Ativos", B3UIUtils.formatValue(realData.patrimonioAtivos), "Patrimônio / Ativos"))
+                                             metrics.add(Triple("Passivos / Ativos", B3UIUtils.formatValue(realData.passivosAtivos), "Passivos / Ativos"))
+                                             metrics.add(Triple("Liquidez Corrente", B3UIUtils.formatValue(realData.liquidezCorrente), "Liquidez Corrente"))
+                                             metrics.add(Triple("CAGR Receitas (5a)", B3UIUtils.formatValue(realData.cagrRevenue5y, suffix = "%"), "Cresc. Receita Anual"))
+                                             metrics.add(Triple("CAGR Lucros (5a)", B3UIUtils.formatValue(realData.cagrProfit5y, suffix = "%"), "Cresc. Lucro Anual"))
+                                             metrics.add(Triple("Payout", B3UIUtils.formatValue(realData.payout, suffix = "%"), "Lucro distribuído"))
+                                         }
                                     } else {
                                         // Fallback to local asset stats
                                         metrics.add(Triple("Dividend Yield", B3UIUtils.formatValue(asset.dividendYield, suffix = "%"), "Últimos 12 meses"))

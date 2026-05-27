@@ -170,6 +170,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     val assetNews by viewModel.searchQueryNews.collectAsStateWithLifecycle()
                     val isSearchingAsset by viewModel.isSearchingAsset.collectAsStateWithLifecycle()
                     val chartRange by viewModel.searchQueryRange.collectAsStateWithLifecycle()
+                    val assetChartBundles by viewModel.assetChartBundles.collectAsStateWithLifecycle()
+                    val isLoadingChartBundle by viewModel.isLoadingChartBundle.collectAsStateWithLifecycle()
                     val notificationsList by viewModel.notifications.collectAsStateWithLifecycle()
 
                     val favoriteTickers by themePreferences.favoriteTickers.collectAsStateWithLifecycle(emptyList())
@@ -634,6 +636,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                     2 -> {
                                         AnalysisScreen(
                                             tickerInput = tickerInput,
+                                             assetChartBundles = assetChartBundles,
+                                             isLoadingChartBundle = isLoadingChartBundle,
                                             onTickerInputChanges = { viewModel.searchTickerInput.value = it },
                                             onSearchClick = { ticker -> viewModel.searchAndAnalyzeAsset(ticker) },
                                             searchResult = searchResult,

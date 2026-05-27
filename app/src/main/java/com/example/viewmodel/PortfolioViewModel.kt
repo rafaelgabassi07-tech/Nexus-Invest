@@ -36,6 +36,16 @@ data class PortfolioSummary(
     val totalFiisCurrent: Double = 0.0
 )
 
+data class PortfolioAnalyticsState(
+    val isLoading: Boolean = false,
+    val analysis: PortfolioProxyAnalysis? = null,
+    val portfolioHistory: List<PortfolioHistoryPoint> = emptyList(),
+    val ipcaSeries: List<IpcaPoint> = emptyList(),
+    val dividendEvents: List<DividendEvent> = emptyList(),
+    val source: String = "Aguardando carteira",
+    val lastUpdated: Long = 0L
+)
+
 data class DarfMonthSummary(
     val monthLabel: String, // "MM/YYYY"
     val monthIdx: Int,      // for sorting
@@ -387,6 +397,15 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
     private val _searchQueryRange = MutableStateFlow("1y")
     val searchQueryRange: StateFlow<String> = _searchQueryRange.asStateFlow()
 
+    private val _assetChartBundles = MutableStateFlow<Map<String, AssetChartBundle>>(emptyMap())
+    val assetChartBundles: StateFlow<Map<String, AssetChartBundle>> = _assetChartBundles.asStateFlow()
+
+    private val _isLoadingChartBundle = MutableStateFlow(false)
+    val isLoadingChartBundle: StateFlow<Boolean> = _isLoadingChartBundle.asStateFlow()
+
+    private val _portfolioAnalytics = MutableStateFlow(PortfolioAnalyticsState())
+    val portfolioAnalytics: StateFlow<PortfolioAnalyticsState> = _portfolioAnalytics.asStateFlow()
+
     init {
         // Automatically fetch prices for loaded tickers when room updates, but with debouncing
         viewModelScope.launch {
@@ -403,6 +422,19 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
         
         // Initial news feed load
         fetchGlobalNews()
+
+        viewModelScope.launch {
+            @OptIn(kotlinx.coroutines.FlowPreview::class)
+            combine(assetSummaries, transactions) { summaries, txs -> summaries to txs }
+                .debounce(1800)
+                .collect { (summaries, txs) ->
+                    if (summaries.isNotEmpty()) {
+                        refreshPortfolioAnalytics(summaries, txs)
+                    } else {
+                        _portfolioAnalytics.value = PortfolioAnalyticsState(source = "Aguardando carteira")
+                    }
+                }
+        }
     }
 
     fun insertTransaction(
@@ -478,6 +510,9 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
                 triggerBatchedPriceFetch(distinctTickers, showSecondaryLoading = true)
             }
             fetchGlobalNews()
+            if (assetSummaries.value.isNotEmpty()) {
+                refreshPortfolioAnalytics(assetSummaries.value, transactions.value, force = true)
+            }
             _isRefreshing.value = false
         }
     }
@@ -488,16 +523,17 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
             val currentCache = _cachedAssetData.value
             val updatedMap = java.util.concurrent.ConcurrentHashMap<String, B3AssetData>(currentCache)
             
-            tickers.map { ticker ->
-                async {
-                    if (showSecondaryLoading || !currentCache.containsKey(ticker)) {
-                        val data = B3NetworkService.fetchAssetData(ticker, bypassCache = showSecondaryLoading)
-                        if (data != null) {
-                            updatedMap[ticker] = data
-                        }
-                    }
+            val tickersToFetch = tickers
+                .map { it.trim().uppercase() }
+                .distinct()
+                .filter { showSecondaryLoading || !currentCache.containsKey(it) }
+
+            if (tickersToFetch.isNotEmpty()) {
+                val batch = B3NetworkService.fetchAssetsData(tickersToFetch, bypassCache = showSecondaryLoading)
+                batch.forEach { (ticker, data) ->
+                    updatedMap[ticker] = data
                 }
-            }.awaitAll()
+            }
             
             _cachedAssetData.value = updatedMap.toMap()
         }
@@ -514,6 +550,26 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
             }
             _newsFeed.value = news
             _isLoadingNews.value = false
+        }
+    }
+
+    fun loadAssetChartBundle(ticker: String, range: String = "1Y") {
+        val clean = ticker.trim().uppercase(java.util.Locale.ROOT)
+        if (clean.isEmpty()) return
+        viewModelScope.launch {
+            _isLoadingChartBundle.value = true
+            try {
+                val bundle = withContext(Dispatchers.IO) {
+                    B3NetworkService.fetchAssetChartBundle(clean, range)
+                }
+                val current = _assetChartBundles.value.toMutableMap()
+                current[clean] = bundle
+                _assetChartBundles.value = current
+            } catch (e: Exception) {
+                android.util.Log.e("PortfolioViewModel", "Error loading asset chart bundle", e)
+            } finally {
+                _isLoadingChartBundle.value = false
+            }
         }
     }
 
@@ -541,6 +597,7 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
                     _searchQueryHistory.value = historyDeferred.await()
                     _searchQueryNews.value = newsDeferred.await()
                 }
+                loadAssetChartBundle(clean, "1Y")
             }
             
             _isSearchingAsset.value = false
@@ -556,6 +613,208 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
                 B3NetworkService.fetchHistoricalChart(ticker, range)
             }
             _searchQueryHistory.value = history
+            loadAssetChartBundle(ticker, range)
+        }
+    }
+
+    fun refreshPortfolioAnalytics(force: Boolean = true) {
+        val summaries = assetSummaries.value
+        val txs = transactions.value
+        if (summaries.isEmpty()) {
+            _portfolioAnalytics.value = PortfolioAnalyticsState(source = "Aguardando carteira")
+            return
+        }
+        viewModelScope.launch {
+            refreshPortfolioAnalytics(summaries, txs, force = force)
+        }
+    }
+
+    private suspend fun refreshPortfolioAnalytics(
+        summaries: List<AssetSummary>,
+        txs: List<Transaction>,
+        force: Boolean = false
+    ) {
+        if (!force && _portfolioAnalytics.value.isLoading) return
+        _portfolioAnalytics.value = _portfolioAnalytics.value.copy(isLoading = true)
+        val positions = summaries.map { summary ->
+            PortfolioProxyPosition(
+                ticker = summary.ticker,
+                quantity = summary.sharesCount,
+                averagePrice = summary.averageCost,
+                type = summary.type,
+                currentPrice = summary.currentPrice,
+                totalInvested = summary.totalInvested
+            )
+        }.filter { it.quantity > 0.0 }
+
+        val result = withContext(Dispatchers.IO) {
+            coroutineScope {
+                val analysisDeferred = async { B3NetworkService.fetchPortfolioAnalysis(positions) }
+                val historyDeferred = async { B3NetworkService.fetchPortfolioHistory(positions, "1Y") }
+                val ipcaDeferred = async { B3NetworkService.fetchIpcaSeries(12) }
+                val dividendsDeferred = async { B3NetworkService.fetchNextDividends(positions) }
+
+                val remoteAnalysis = runCatching { analysisDeferred.await() }.getOrNull()
+                val remoteHistory = runCatching { historyDeferred.await() }.getOrDefault(emptyList())
+                val remoteIpca = runCatching { ipcaDeferred.await() }.getOrDefault(emptyList())
+                val remoteDividends = runCatching { dividendsDeferred.await() }.getOrDefault(emptyList())
+
+                PortfolioAnalyticsState(
+                    isLoading = false,
+                    analysis = remoteAnalysis ?: buildLocalPortfolioAnalysis(summaries),
+                    portfolioHistory = remoteHistory.ifEmpty { buildLocalPortfolioHistory(txs, summaries) },
+                    ipcaSeries = remoteIpca.ifEmpty { buildIpcaFallbackSeries(12) },
+                    dividendEvents = remoteDividends.ifEmpty { buildLocalDividendEvents(summaries) },
+                    source = if (remoteAnalysis != null || remoteHistory.isNotEmpty() || remoteIpca.isNotEmpty() || remoteDividends.isNotEmpty()) "Valorae Proxy + carteira local" else "Carteira local + indicadores disponíveis",
+                    lastUpdated = System.currentTimeMillis()
+                )
+            }
+        }
+        _portfolioAnalytics.value = result
+    }
+
+    private fun buildLocalPortfolioAnalysis(summaries: List<AssetSummary>): PortfolioProxyAnalysis {
+        val total = summaries.sumOf { it.totalCurrentValue }.coerceAtLeast(0.0)
+        val totalInvested = summaries.sumOf { it.totalInvested }.coerceAtLeast(0.0)
+        val top = summaries.maxByOrNull { it.totalCurrentValue }
+        val topWeight = if (total > 0.0 && top != null) top.totalCurrentValue / total * 100.0 else 0.0
+        val avgDy = if (total > 0.0) summaries.sumOf { it.totalCurrentValue * it.dividendYield } / total else 0.0
+        val returnPct = if (totalInvested > 0.0) (total - totalInvested) / totalInvested * 100.0 else 0.0
+        val classAlloc = summaries.groupBy { if (it.type.uppercase() == "FII") "FIIs" else "Ações" }
+            .mapValues { (_, list) -> if (total > 0.0) list.sumOf { it.totalCurrentValue } / total * 100.0 else 0.0 }
+            .toList()
+            .filter { it.second > 0.0 }
+        val sectorAlloc = summaries.groupBy { if (it.type.uppercase() == "FII") "Fundos Imobiliários" else "Ações B3" }
+            .mapValues { (_, list) -> if (total > 0.0) list.sumOf { it.totalCurrentValue } / total * 100.0 else 0.0 }
+            .toList()
+            .filter { it.second > 0.0 }
+        val concentrationPenalty = when {
+            topWeight > 60.0 -> 22.0
+            topWeight > 40.0 -> 12.0
+            else -> 4.0
+        }
+        val score = (70.0 + returnPct.coerceIn(-20.0, 20.0) / 2.0 + avgDy.coerceIn(0.0, 12.0) - concentrationPenalty).coerceIn(0.0, 100.0)
+        val warnings = mutableListOf<String>()
+        if (topWeight > 40.0 && top != null) warnings.add("Concentração relevante em ${top.ticker}: ${String.format("%.1f", topWeight)}% da carteira.")
+        if (avgDy <= 0.0) warnings.add("Dividend Yield médio ainda não disponível para a carteira.")
+        return PortfolioProxyAnalysis(
+            score = score,
+            riskLabel = when {
+                topWeight > 60.0 -> "Alto por concentração"
+                topWeight > 40.0 -> "Moderado"
+                else -> "Controlado"
+            },
+            diversificationLabel = when {
+                summaries.size >= 10 && topWeight < 25.0 -> "Bem diversificada"
+                summaries.size >= 5 && topWeight < 40.0 -> "Diversificação moderada"
+                else -> "Concentração elevada"
+            },
+            concentrationPercent = topWeight,
+            topHolding = top?.ticker ?: "",
+            monthlyDividendEstimate = total * (avgDy / 100.0) / 12.0,
+            annualDividendEstimate = total * (avgDy / 100.0),
+            dataQuality = 75.0,
+            allocationByClass = classAlloc,
+            allocationBySector = sectorAlloc,
+            warnings = warnings,
+            source = "Calculado pela carteira local"
+        )
+    }
+
+    private fun buildLocalDividendEvents(summaries: List<AssetSummary>): List<DividendEvent> {
+        return summaries.mapNotNull { summary ->
+            val estimated = summary.lastDividend * summary.sharesCount
+            if (estimated <= 0.0 && summary.nextEarningsDate.isBlank()) return@mapNotNull null
+            DividendEvent(
+                ticker = summary.ticker,
+                dateCom = summary.nextEarningsDate,
+                paymentDate = "",
+                valuePerShare = summary.lastDividend,
+                quantity = summary.sharesCount,
+                estimatedAmount = estimated.coerceAtLeast(0.0),
+                status = if (summary.nextEarningsDate.isBlank()) "Estimado sem data confirmada" else "Data COM informada",
+                source = "Carteira local"
+            )
+        }.sortedByDescending { it.estimatedAmount }
+    }
+
+    private fun buildLocalPortfolioHistory(txs: List<Transaction>, summaries: List<AssetSummary>): List<PortfolioHistoryPoint> {
+        if (txs.isEmpty()) return emptyList()
+        val first = txs.minOfOrNull { it.date } ?: return emptyList()
+        val now = System.currentTimeMillis()
+        val start = java.util.Calendar.getInstance().apply {
+            timeInMillis = first
+            set(java.util.Calendar.DAY_OF_MONTH, 1)
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val end = java.util.Calendar.getInstance().apply { timeInMillis = now }
+        val currentPriceByTicker = summaries.associateBy({ it.ticker.uppercase() }, { it.currentPrice })
+        val out = mutableListOf<PortfolioHistoryPoint>()
+        val cursor = start.clone() as java.util.Calendar
+        var guard = 0
+        while (!cursor.after(end) && guard < 60) {
+            val monthEnd = (cursor.clone() as java.util.Calendar).apply {
+                set(java.util.Calendar.DAY_OF_MONTH, getActualMaximum(java.util.Calendar.DAY_OF_MONTH))
+                set(java.util.Calendar.HOUR_OF_DAY, 23)
+                set(java.util.Calendar.MINUTE, 59)
+                set(java.util.Calendar.SECOND, 59)
+            }.timeInMillis
+            var invested = 0.0
+            val quantities = linkedMapOf<String, Double>()
+            txs.filter { it.date <= monthEnd }.sortedBy { it.date }.forEach { tx ->
+                val key = tx.ticker.uppercase()
+                if (tx.isSell) {
+                    quantities[key] = (quantities[key] ?: 0.0) - tx.quantity
+                    invested -= tx.quantity * tx.purchasePrice
+                } else {
+                    quantities[key] = (quantities[key] ?: 0.0) + tx.quantity
+                    invested += tx.quantity * tx.purchasePrice
+                }
+            }
+            invested = invested.coerceAtLeast(0.0)
+            val markedValue = quantities.entries.sumOf { (ticker, qty) ->
+                val price = currentPriceByTicker[ticker] ?: summaries.firstOrNull { it.ticker.uppercase() == ticker }?.averageCost ?: 0.0
+                qty.coerceAtLeast(0.0) * price
+            }
+            if (invested > 0.0 || markedValue > 0.0) {
+                val ret = if (invested > 0.0) (markedValue - invested) / invested * 100.0 else 0.0
+                out.add(
+                    PortfolioHistoryPoint(
+                        timestamp = cursor.timeInMillis / 1000L,
+                        dateLabel = java.text.SimpleDateFormat("MM/yy", java.util.Locale.getDefault()).format(cursor.time),
+                        totalValue = markedValue,
+                        investedValue = invested,
+                        returnPercent = ret,
+                        source = "Carteira local"
+                    )
+                )
+            }
+            cursor.add(java.util.Calendar.MONTH, 1)
+            guard++
+        }
+        return out.takeLast(24)
+    }
+
+    private fun buildIpcaFallbackSeries(months: Int): List<IpcaPoint> {
+        // Fallback transparente: usado apenas quando o Proxy ainda não entrega IPCA.
+        // Mantém a tela funcional sem apresentar a estimativa como dado oficial.
+        val annualEstimate = 5.5
+        val cal = java.util.Calendar.getInstance()
+        return List(months.coerceIn(1, 60)) { index ->
+            val monthOffset = months - index - 1
+            val c = cal.clone() as java.util.Calendar
+            c.add(java.util.Calendar.MONTH, -monthOffset)
+            val accumulated = annualEstimate * ((index + 1).toDouble() / months.toDouble())
+            IpcaPoint(
+                timestamp = c.timeInMillis / 1000L,
+                dateLabel = java.text.SimpleDateFormat("MM/yy", java.util.Locale.getDefault()).format(c.time),
+                accumulatedPercent = accumulated,
+                monthlyPercent = annualEstimate / 12.0,
+                source = "Estimativa local transparente"
+            )
         }
     }
 
