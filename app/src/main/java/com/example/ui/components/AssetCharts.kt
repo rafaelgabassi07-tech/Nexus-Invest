@@ -48,28 +48,18 @@ fun AssetChartBundlePanel(
     onRangeChange: ((String) -> Unit)? = null,
     currentRange: String = "1Y"
 ) {
-    var selectedCategoryTab by remember { mutableStateOf(0) }
-    val categories = if (isFii) {
-        listOf("Geral", "Dividendos", "Patrimônio", "Comparativo")
-    } else {
-        listOf("Análise", "Dividendos", "Comparativo", "DRE", "Negócio")
-    }
-
     Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(DarkSurfaceElevated)
-            .padding(16.dp)
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column {
                 Text(
-                    text = "Gráficos Investidor10",
+                    text = "Gráficos Avançados",
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
                     color = GoldPrimary
@@ -108,67 +98,25 @@ fun AssetChartBundlePanel(
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
-
         if (onRangeChange != null) {
             BundleRangeSelector(
                 currentRange = currentRange,
                 onRangeSelected = onRangeChange,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
             )
-            Spacer(modifier = Modifier.height(12.dp))
         }
 
-        LazyRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(bottom = 8.dp)
-        ) {
-            items(categories.size) { idx ->
-                val title = categories[idx]
-                val isSelected = selectedCategoryTab == idx
-                Surface(
-                    color = if (isSelected) GoldPrimary.copy(alpha = 0.15f) else Color.Transparent,
-                    shape = RoundedCornerShape(20.dp),
-                    border = BorderStroke(
-                        1.dp,
-                        if (isSelected) GoldPrimary else BorderColor.copy(alpha = 0.2f)
-                    ),
-                    modifier = Modifier.clickable { selectedCategoryTab = idx }
-                ) {
-                    Text(
-                        text = title,
-                        color = if (isSelected) GoldPrimary else TextSecondary,
-                        fontSize = 13.sp,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Content Screens depending on selections
-        Crossfade(targetState = selectedCategoryTab, label = "tabs") { index ->
-            if (isFii) {
-                when (index) {
-                    0 -> FiiGeneralTab(bundle)
-                    1 -> FiiDividendTab(bundle)
-                    2 -> FiiPatrimonialTab(bundle)
-                    3 -> FiiComparisonTab(bundle)
-                    else -> FiiGeneralTab(bundle)
-                }
-            } else {
-                when (index) {
-                    0 -> StockAnalysisTab(bundle)
-                    1 -> StockDividendTab(bundle)
-                    2 -> StockComparisonTab(bundle)
-                    3 -> StockDreTab(bundle)
-                    4 -> StockBusinessTab(bundle)
-                    else -> StockAnalysisTab(bundle)
-                }
-            }
+        if (isFii) {
+            FiiGeneralTab(bundle)
+            FiiDividendTab(bundle)
+            FiiPatrimonialTab(bundle)
+            FiiComparisonTab(bundle)
+        } else {
+            StockAnalysisTab(bundle)
+            StockDividendTab(bundle)
+            StockComparisonTab(bundle)
+            StockDreTab(bundle)
+            StockBusinessTab(bundle)
         }
     }
 }
@@ -208,83 +156,52 @@ fun StockAnalysisTab(bundle: AssetChartBundle) {
 
 @Composable
 fun StockDividendTab(bundle: AssetChartBundle) {
-    var subTabIdx by remember { mutableStateOf(0) }
     Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            val tabs = listOf("Graficos", "Agenda / Ledger")
-            tabs.forEachIndexed { idx, title ->
-                val isSelected = subTabIdx == idx
-                Surface(
-                    color = if (isSelected) GoldPrimary.copy(alpha = 0.15f) else Color.Transparent,
-                    shape = RoundedCornerShape(20.dp),
-                    border = BorderStroke(
-                        1.dp,
-                        if (isSelected) GoldPrimary else BorderColor.copy(alpha = 0.2f)
-                    ),
-                    modifier = Modifier.weight(1f).clickable { subTabIdx = idx }
-                ) {
-                    Text(
-                        text = title,
-                        color = if (isSelected) GoldPrimary else TextSecondary,
-                        fontSize = 12.sp,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(vertical = 8.dp)
-                    )
-                }
+        FilteredChartCard(title = "Proventos por Ano", filterOptions = listOf("3A", "5A", "10A", "MAX"), defaultFilter = "10A") { filter ->
+            val filterYears = filter.replace("A", "").toIntOrNull() ?: Int.MAX_VALUE
+            val filteredPoints = bundle.dividendYearly.takeLast(filterYears)
+            if (filteredPoints.isNotEmpty()) {
+                AssetDividendPaidChart(
+                    points = filteredPoints,
+                    label = "Ano",
+                    modifier = Modifier.height(150.dp)
+                )
+            } else {
+                EmptyChartState("Sem dividendos pagos", "Nenhum histórico de ano encontrado.")
             }
         }
 
-        if (subTabIdx == 0) {
-            FilteredChartCard(title = "Proventos por Ano", filterOptions = listOf("3A", "5A", "10A", "MAX"), defaultFilter = "10A") { filter ->
-                val filterYears = filter.replace("A", "").toIntOrNull() ?: Int.MAX_VALUE
-                val filteredPoints = bundle.dividendYearly.takeLast(filterYears)
-                if (filteredPoints.isNotEmpty()) {
-                    AssetDividendPaidChart(
-                        points = filteredPoints,
-                        label = "Ano",
-                        modifier = Modifier.height(150.dp)
-                    )
-                } else {
-                    EmptyChartState("Sem dividendos pagos", "Nenhum histórico de ano encontrado.")
-                }
+        FilteredChartCard(title = "Histórico de Dividend Yield", filterOptions = listOf("3A", "5A", "10A", "MAX"), defaultFilter = "10A") { filter ->
+            val filterYears = filter.replace("A", "").toIntOrNull() ?: Int.MAX_VALUE
+            val filteredPoints = bundle.dividendYieldHistory.takeLast(filterYears)
+            if (filteredPoints.isNotEmpty()) {
+                AssetDividendYieldChart(
+                    points = filteredPoints,
+                    modifier = Modifier.height(150.dp)
+                )
+            } else {
+                EmptyChartState("Sem Dividend Yield", "Não foi gerada a estimativa de yield por ano.")
             }
+        }
 
-            FilteredChartCard(title = "Histórico de Dividend Yield", filterOptions = listOf("3A", "5A", "10A", "MAX"), defaultFilter = "10A") { filter ->
-                val filterYears = filter.replace("A", "").toIntOrNull() ?: Int.MAX_VALUE
-                val filteredPoints = bundle.dividendYieldHistory.takeLast(filterYears)
-                if (filteredPoints.isNotEmpty()) {
-                    AssetDividendYieldChart(
-                        points = filteredPoints,
-                        modifier = Modifier.height(150.dp)
-                    )
-                } else {
-                    EmptyChartState("Sem Dividend Yield", "Não foi gerada a estimativa de yield por ano.")
-                }
+        ChartCardContainer(title = "Sazonalidade Mensal (Últimos 24m)") {
+            if (bundle.dividendMonthly.isNotEmpty()) {
+                AssetDividendPaidChart(
+                    points = bundle.dividendMonthly,
+                    label = "Mês",
+                    modifier = Modifier.height(150.dp),
+                    barColor = GoldPale
+                )
+            } else {
+                EmptyChartState("Sem distribuição mensal", "Distribuições mensais recentes indisponíveis.")
             }
+        }
 
-            ChartCardContainer(title = "Sazonalidade Mensal (Últimos 24m)") {
-                if (bundle.dividendMonthly.isNotEmpty()) {
-                    AssetDividendPaidChart(
-                        points = bundle.dividendMonthly,
-                        label = "Mês",
-                        modifier = Modifier.height(150.dp),
-                        barColor = GoldPale
-                    )
-                } else {
-                    EmptyChartState("Sem distribuição mensal", "Distribuições mensais recentes indisponíveis.")
-                }
-            }
-        } else {
-            ChartCardContainer(title = "Eventos de Distribuição") {
-                if (bundle.dividendEvents.isNotEmpty()) {
-                    DividendLedgerTable(bundle.dividendEvents)
-                } else {
-                    EmptyChartState("Sem eventos", "Nenhum evento registrado de dividendo.")
-                }
+        ChartCardContainer(title = "Eventos de Distribuição") {
+            if (bundle.dividendEvents.isNotEmpty()) {
+                DividendLedgerTable(bundle.dividendEvents)
+            } else {
+                EmptyChartState("Sem eventos", "Nenhum evento registrado de dividendo.")
             }
         }
     }
@@ -452,84 +369,53 @@ fun FiiGeneralTab(bundle: AssetChartBundle) {
 
 @Composable
 fun FiiDividendTab(bundle: AssetChartBundle) {
-    var subTabIdx by remember { mutableStateOf(0) }
     Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            val tabs = listOf("Performance", "Agenda Proventos")
-            tabs.forEachIndexed { idx, title ->
-                val isSelected = subTabIdx == idx
-                Surface(
-                    color = if (isSelected) GoldPrimary.copy(alpha = 0.15f) else Color.Transparent,
-                    shape = RoundedCornerShape(20.dp),
-                    border = BorderStroke(
-                        1.dp,
-                        if (isSelected) GoldPrimary else BorderColor.copy(alpha = 0.2f)
-                    ),
-                    modifier = Modifier.weight(1f).clickable { subTabIdx = idx }
-                ) {
-                    Text(
-                        text = title,
-                        color = if (isSelected) GoldPrimary else TextSecondary,
-                        fontSize = 12.sp,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(vertical = 8.dp)
-                    )
-                }
+        FilteredChartCard(title = "Rendimentos Pagos por Ano", filterOptions = listOf("3A", "5A", "10A", "MAX"), defaultFilter = "10A") { filter ->
+            val filterYears = filter.replace("A", "").toIntOrNull() ?: Int.MAX_VALUE
+            val filteredPoints = bundle.dividendYearly.takeLast(filterYears)
+            if (filteredPoints.isNotEmpty()) {
+                AssetDividendPaidChart(
+                    points = filteredPoints,
+                    label = "Ano",
+                    modifier = Modifier.height(150.dp),
+                    barColor = GoldPrimary
+                )
+            } else {
+                EmptyChartState("Sem dividendos", "Série anual ausente.")
             }
         }
 
-        if (subTabIdx == 0) {
-            FilteredChartCard(title = "Rendimentos Pagos por Ano", filterOptions = listOf("3A", "5A", "10A", "MAX"), defaultFilter = "10A") { filter ->
-                val filterYears = filter.replace("A", "").toIntOrNull() ?: Int.MAX_VALUE
-                val filteredPoints = bundle.dividendYearly.takeLast(filterYears)
-                if (filteredPoints.isNotEmpty()) {
-                    AssetDividendPaidChart(
-                        points = filteredPoints,
-                        label = "Ano",
-                        modifier = Modifier.height(150.dp),
-                        barColor = GoldPrimary
-                    )
-                } else {
-                    EmptyChartState("Sem dividendos", "Série anual ausente.")
-                }
+        FilteredChartCard(title = "Histórico de Dividend Yield", filterOptions = listOf("3A", "5A", "10A", "MAX"), defaultFilter = "10A") { filter ->
+            val filterYears = filter.replace("A", "").toIntOrNull() ?: Int.MAX_VALUE
+            val filteredPoints = bundle.dividendYieldHistory.takeLast(filterYears)
+            if (filteredPoints.isNotEmpty()) {
+                AssetDividendYieldChart(
+                    points = filteredPoints,
+                    modifier = Modifier.height(150.dp)
+                )
+            } else {
+                EmptyChartState("Sem DY histórico", "DY anual ausente.")
             }
+        }
 
-            FilteredChartCard(title = "Histórico de Dividend Yield", filterOptions = listOf("3A", "5A", "10A", "MAX"), defaultFilter = "10A") { filter ->
-                val filterYears = filter.replace("A", "").toIntOrNull() ?: Int.MAX_VALUE
-                val filteredPoints = bundle.dividendYieldHistory.takeLast(filterYears)
-                if (filteredPoints.isNotEmpty()) {
-                    AssetDividendYieldChart(
-                        points = filteredPoints,
-                        modifier = Modifier.height(150.dp)
-                    )
-                } else {
-                    EmptyChartState("Sem DY histórico", "DY anual ausente.")
-                }
+        ChartCardContainer(title = "Sazonalidade Mensal (Últimos 24m)") {
+            if (bundle.dividendMonthly.isNotEmpty()) {
+                AssetDividendPaidChart(
+                    points = bundle.dividendMonthly,
+                    label = "Mês",
+                    modifier = Modifier.height(150.dp),
+                    barColor = GoldPale
+                )
+            } else {
+                EmptyChartState("Sem mensalidade", "Distribuições mensais recentes indisponíveis.")
             }
+        }
 
-            ChartCardContainer(title = "Sazonalidade Mensal (Últimos 24m)") {
-                if (bundle.dividendMonthly.isNotEmpty()) {
-                    AssetDividendPaidChart(
-                        points = bundle.dividendMonthly,
-                        label = "Mês",
-                        modifier = Modifier.height(150.dp),
-                        barColor = GoldPale
-                    )
-                } else {
-                    EmptyChartState("Sem mensalidade", "Distribuições mensais recentes indisponíveis.")
-                }
-            }
-        } else {
-            ChartCardContainer(title = "Acontecimentos e Proventos") {
-                if (bundle.dividendEvents.isNotEmpty()) {
-                    DividendLedgerTable(bundle.dividendEvents)
-                } else {
-                    EmptyChartState("Sem eventos", "Nenhuma distribuição anterior listada.")
-                }
+        ChartCardContainer(title = "Acontecimentos e Proventos") {
+            if (bundle.dividendEvents.isNotEmpty()) {
+                DividendLedgerTable(bundle.dividendEvents)
+            } else {
+                EmptyChartState("Sem eventos", "Nenhuma distribuição anterior listada.")
             }
         }
     }

@@ -151,7 +151,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
                 if (!isAppUnlocked) {
                     LockScreen(
-                        biometricEnabled = biometricEnabled,
+                        biometricEnabled = biometricEnabledState.value,
                         onUnlock = { isAppUnlocked = true }
                     )
                 } else {
@@ -729,9 +729,8 @@ fun LockScreen(
 
             try {
                 biometricPrompt.authenticate(promptInfo)
-            } catch (e: Exception) {
-                // If device lacks secure lock entirely
-                onUnlock()
+            } catch (e: Throwable) {
+                // If device lacks secure lock entirely or it failed to show
             }
         } else {
             // Unlocked if somehow it's not enabled but lock screen shows
@@ -741,6 +740,7 @@ fun LockScreen(
 
     LaunchedEffect(biometricEnabled) {
         if (biometricEnabled == true) {
+            kotlinx.coroutines.delay(300)
             authenticateDevice()
         } else if (biometricEnabled == false) {
             onUnlock()
@@ -794,17 +794,25 @@ fun LockScreen(
             )
 
             Spacer(modifier = Modifier.height(48.dp))
-            Box(modifier = Modifier.height(56.dp)) {
+            
+            Box(modifier = Modifier.height(56.dp), contentAlignment = Alignment.Center) {
                 if (biometricEnabled == true) {
-                    Button(
-                        onClick = { authenticateDevice() },
-                        modifier = Modifier.fillMaxWidth().height(56.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = GoldPrimary, contentColor = Color.Black),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Text("ACESSAR PORTFÓLIO", fontWeight = FontWeight.Black, letterSpacing = 1.sp)
+                    // Try again button only shown if they dismissed the prompt implicitly, usually they'd see the prompt.
+                    // But to look like a loading screen, we just show an indicator, or a subtle clickable text.
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(
+                            color = GoldPrimary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "Toque para autenticar",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White.copy(alpha = 0.3f),
+                            modifier = Modifier.clickable { authenticateDevice() }
+                        )
                     }
-                } else if (biometricEnabled == null) {
+                } else {
                     CircularProgressIndicator(
                         color = GoldPrimary,
                         modifier = Modifier.size(24.dp)
