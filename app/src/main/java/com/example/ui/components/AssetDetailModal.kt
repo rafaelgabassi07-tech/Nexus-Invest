@@ -6,7 +6,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,6 +37,7 @@ import com.example.data.Transaction
 import com.example.network.ChartPoint
 import com.example.network.B3NetworkService
 import com.example.network.B3AssetData
+import com.example.network.AssetChartBundle
 import com.example.ui.theme.*
 import com.example.viewmodel.AssetSummary
 import com.example.ui.B3UIUtils
@@ -44,6 +48,10 @@ import kotlinx.coroutines.withContext
 @Composable
 fun AssetDetailModal(
     asset: AssetSummary,
+    initialAssetData: B3AssetData? = null,
+    initialChartBundle: AssetChartBundle? = null,
+    isLoadingInitialChartBundle: Boolean = false,
+    onLoadChartBundle: (String, String) -> Unit = { _, _ -> },
     chartPoints: List<ChartPoint>,
     chartRange: String,
     onRangeChange: (String) -> Unit,
@@ -53,34 +61,112 @@ fun AssetDetailModal(
     isSearching: Boolean,
     onDismiss: () -> Unit
 ) {
-    val isFii = asset.type.equals("FII", ignoreCase = true)
+    val tickerKey = remember(asset.ticker) { asset.ticker.trim().uppercase() }
+    val fallbackAssetData = remember(tickerKey, asset) { asset.toFallbackB3AssetData() }
+
+    // Reuse the same state that powers the Analysis page when available.
+    // If the proxy is slow, degraded or returns PARTIAL, keep a safe local fallback
+    // from the portfolio summary so Detalhes do Ativo never opens blank.
+    var assetData by remember(tickerKey) { mutableStateOf(initialAssetData ?: fallbackAssetData) }
+    var isLoadingData by remember(tickerKey) { mutableStateOf(initialAssetData == null) }
+
+    // Local historical chart points. Prefer a ticker-specific AssetChartBundle over
+    // generic search history, because the generic Analysis chart can belong to another asset.
+    var localChartPoints by remember(tickerKey) { mutableStateOf(initialChartBundle?.priceHistory?.ifEmpty { chartPoints } ?: chartPoints) }
+    var localChartRange by remember(tickerKey) { mutableStateOf(chartRange.ifBlank { "1y" }) }
+    var lastResolvedChartRange by remember(tickerKey) {
+        mutableStateOf(
+            if (initialChartBundle?.priceHistory?.isNotEmpty() == true || chartPoints.isNotEmpty()) {
+                chartRange.ifBlank { "1y" }
+            } else {
+                ""
+            }
+        )
+    }
+    var isFetchingChart by remember(tickerKey) { mutableStateOf(localChartPoints.isEmpty()) }
+
+    var chartBundle by remember(tickerKey) { mutableStateOf(initialChartBundle) }
+    var isLoadingChartBundle by remember(tickerKey) { mutableStateOf(isLoadingInitialChartBundle && initialChartBundle == null) }
+
+    val isFii = assetData.isFii || asset.type.equals("FII", ignoreCase = true) || B3NetworkService.inferIsFii(asset.ticker)
     val lineColor = GoldPrimary
-    
-    // Asynchronously fetch live fundamental data (B3AssetData)
-    var assetData by remember { mutableStateOf<B3AssetData?>(null) }
-    var isLoadingData by remember { mutableStateOf(true) }
-    
-    // Local historical chart points to avoid using global state from parent that might be stale
-    var localChartPoints by remember { mutableStateOf<List<ChartPoint>>(emptyList()) }
-    var localChartRange by remember { mutableStateOf(chartRange) }
-    var isFetchingChart by remember { mutableStateOf(false) }
-    
-    LaunchedEffect(asset.ticker, localChartRange) {
-        isLoadingData = true
-        isFetchingChart = true
-        withContext(Dispatchers.IO) {
-            try {
-                // Fetch fundamental indicators
-                assetData = B3NetworkService.fetchAssetData(asset.ticker)
-                // Fetch local historical points for the chart
-                localChartPoints = B3NetworkService.fetchHistoricalChart(asset.ticker, localChartRange)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            } finally {
-                isLoadingData = false
+
+    LaunchedEffect(tickerKey, initialAssetData) {
+        assetData = initialAssetData ?: assetData.takeIf { it.hasUsefulProxyData() } ?: fallbackAssetData
+        isLoadingData = initialAssetData == null && !assetData.hasUsefulProxyData()
+    }
+
+    LaunchedEffect(tickerKey, initialChartBundle) {
+        if (initialChartBundle != null) {
+            chartBundle = initialChartBundle
+            isLoadingChartBundle = false
+            if (initialChartBundle.priceHistory.isNotEmpty()) {
+                localChartPoints = initialChartBundle.priceHistory
+                lastResolvedChartRange = localChartRange
                 isFetchingChart = false
             }
         }
+    }
+
+    LaunchedEffect(tickerKey, chartPoints) {
+        if (chartPoints.isNotEmpty() && localChartPoints.isEmpty()) {
+            localChartPoints = chartPoints
+            lastResolvedChartRange = localChartRange
+            isFetchingChart = false
+        }
+    }
+
+    LaunchedEffect(tickerKey, chartRange) {
+        // O período global da tela de Análise pode pertencer a outro ticker.
+        // Sincronize apenas na primeira abertura, antes do Detalhes resolver histórico próprio.
+        if (lastResolvedChartRange.isBlank() && localChartPoints.isEmpty() && chartRange.isNotBlank()) {
+            localChartRange = chartRange
+        }
+    }
+
+    LaunchedEffect(tickerKey, localChartRange) {
+        val chartRangeChanged = lastResolvedChartRange.isBlank() || !lastResolvedChartRange.equals(localChartRange, ignoreCase = true)
+        val needsAssetRefresh = !assetData.hasUsefulProxyData()
+        val needsHistoryRefresh = localChartPoints.isEmpty() || chartRangeChanged
+        val needsBundleRefresh = chartBundle == null || chartRangeChanged
+
+        isLoadingData = needsAssetRefresh
+        isFetchingChart = needsHistoryRefresh
+        isLoadingChartBundle = needsBundleRefresh || isLoadingInitialChartBundle
+        if (needsBundleRefresh) {
+            onLoadChartBundle(tickerKey, localChartRange)
+        }
+
+        val shouldFetchBundleLocally = needsBundleRefresh && (chartBundle == null || localChartPoints.isEmpty())
+        val result = withContext(Dispatchers.IO) {
+            val fetchedAsset = if (needsAssetRefresh) runCatching { B3NetworkService.fetchAssetData(tickerKey) }.getOrNull() else null
+            val fetchedHistory = if (needsHistoryRefresh) runCatching { B3NetworkService.fetchHistoricalChart(tickerKey, localChartRange) }.getOrDefault(emptyList()) else emptyList()
+            val fetchedBundle = if (shouldFetchBundleLocally) runCatching { B3NetworkService.fetchAssetChartBundle(tickerKey, localChartRange) }.getOrNull() else null
+            Triple(fetchedAsset, fetchedHistory, fetchedBundle)
+        }
+
+        val (fetchedAsset, fetchedHistory, fetchedBundle) = result
+        if (fetchedAsset != null) {
+            assetData = fetchedAsset.mergeWithFallback(fallbackAssetData)
+        } else if (!assetData.hasUsefulProxyData()) {
+            assetData = fallbackAssetData
+        }
+        if (fetchedHistory.isNotEmpty()) {
+            localChartPoints = fetchedHistory
+        }
+        if (fetchedBundle != null) {
+            chartBundle = fetchedBundle
+            if (fetchedBundle.priceHistory.isNotEmpty()) {
+                localChartPoints = fetchedBundle.priceHistory
+            }
+        }
+        val receivedFreshHistory = fetchedHistory.isNotEmpty() || fetchedBundle?.priceHistory?.isNotEmpty() == true
+        if (!chartRangeChanged || receivedFreshHistory) {
+            lastResolvedChartRange = localChartRange
+        }
+        isLoadingData = false
+        isFetchingChart = false
+        isLoadingChartBundle = false
     }
 
     // Calculate Yield on Cost (YOC)
@@ -144,15 +230,38 @@ fun AssetDetailModal(
                     Spacer(modifier = Modifier.width(40.dp)) // Equal balance offset
                 }
 
-                if (isLoadingData) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(color = GoldPrimary, strokeWidth = 3.dp)
-                    }
-                } else {
+                run {
                     val realData = assetData
+
+                    var mainTabIdx by remember { mutableStateOf(0) }
+                    val mainTabs = listOf("Resumo & Gráficos", "Indicadores & Perfil", "Minha Custódia", "Transações")
+                    
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(mainTabs.size) { idx ->
+                            val title = mainTabs[idx]
+                            val isSelected = mainTabIdx == idx
+                            Surface(
+                                color = if (isSelected) GoldPrimary.copy(alpha = 0.15f) else Color.Transparent,
+                                shape = RoundedCornerShape(20.dp),
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isSelected) GoldPrimary else BorderColor.copy(alpha = 0.2f)
+                                ),
+                                modifier = Modifier.clickable { mainTabIdx = idx }
+                            ) {
+                                Text(
+                                    text = title,
+                                    color = if (isSelected) GoldPrimary else TextSecondary,
+                                    fontSize = 13.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                                )
+                            }
+                        }
+                    }
 
                     // Main Scrollable body with LazyColumn for high performance
                     LazyColumn(
@@ -162,6 +271,31 @@ fun AssetDetailModal(
                         contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
+                        if (isLoadingData) {
+                            item {
+                                Surface(
+                                    color = GoldPrimary.copy(alpha = 0.08f),
+                                    shape = RoundedCornerShape(16.dp),
+                                    border = BorderStroke(1.dp, GoldPrimary.copy(alpha = 0.18f)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(14.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        CircularProgressIndicator(color = GoldPrimary, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Text(
+                                            text = "Atualizando dados do Proxy para $tickerKey...",
+                                            color = TextSecondary,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
                         // 1. Core Badge & Corporate Identifier card
                         item {
                             Surface(
@@ -238,6 +372,7 @@ fun AssetDetailModal(
                         }
 
                         // 1.05 Diagnóstico de dados do Valorae Proxy
+                        if (mainTabIdx == 1) {
                         if (realData != null) {
                             item {
                                 val filledFields = listOf(
@@ -327,7 +462,10 @@ fun AssetDetailModal(
                             }
                         }
 
+                        } // End mainTabIdx == 1
+
                         // 1.2 Oscilação 52 Semanas (if available)
+                        if (mainTabIdx == 0) {
                         if (realData != null && realData.high52 > 0.0 && realData.low52 > 0.0) {
                             item {
                                 Surface(
@@ -392,7 +530,10 @@ fun AssetDetailModal(
                             }
                         }
 
+                        } // End Tab 0
+
                         // 1.3 Indicadores Fundamentalistas Grid
+                        if (mainTabIdx == 1) {
                         item {
                             Surface(
                                 color = DarkSurface,
@@ -463,6 +604,28 @@ fun AssetDetailModal(
                                         metrics.add(Triple("VPA", "--", "Valor Patrimonial por Ação (Est.)"))
                                         metrics.add(Triple("Últ. Provento", B3UIUtils.formatValue(asset.lastDividend, prefix = "R$ "), "Última distribuição paga"))
                                     }
+
+                                    // Completa o grid com indicadores vindos do bundle avançado.
+                                    // Alguns campos do Investidor10/Proxy chegam somente no pacote de gráficos
+                                    // e não no B3AssetData resumido; sem este merge a aba Detalhes parecia incompleta.
+                                    val existingMetricLabels = metrics.map { it.first.lowercase() }.toMutableSet()
+                                    chartBundle?.indicatorCards
+                                        ?.filter { it.label.isNotBlank() && (it.display.isNotBlank() || it.value.isFinite()) }
+                                        ?.forEach { point ->
+                                            val key = point.label.lowercase()
+                                            if (!existingMetricLabels.contains(key)) {
+                                                val valueText = point.display.ifBlank {
+                                                    when (point.unit) {
+                                                        "%" -> B3UIUtils.formatValue(point.value, suffix = "%")
+                                                        "BRL" -> B3UIUtils.formatValue(point.value, prefix = "R$ ")
+                                                        "number" -> B3UIUtils.formatLargeNumber(point.value).replace("R$ ", "")
+                                                        else -> B3UIUtils.formatValue(point.value)
+                                                    }
+                                                }
+                                                metrics.add(Triple(point.label, valueText, "Dado normalizado pelo Valorae Proxy/Investidor10"))
+                                                existingMetricLabels.add(key)
+                                            }
+                                        }
 
                                     Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
                                         metrics.chunked(2).forEachIndexed { index, rowItems ->
@@ -618,7 +781,10 @@ fun AssetDetailModal(
                             }
                         }
 
+                        } // End Tab 1
+
                         // 3. Interactive Chart
+                        if (mainTabIdx == 0) {
                         item {
                             Surface(
                                 color = MaterialTheme.colorScheme.surface,
@@ -640,9 +806,13 @@ fun AssetDetailModal(
                                         )
 
                                         // Selector range pills
-                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                            listOf("1d", "5d", "1mo", "1y", "5y").forEach { range ->
-                                                val isSelected = range == localChartRange
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                            modifier = Modifier.horizontalScroll(rememberScrollState())
+                                        ) {
+                                            listOf("1D", "5D", "1M", "6M", "YTD", "1Y", "5Y", "MAX").forEach { rawRange ->
+                                                val range = rawRange.lowercase()
+                                                val isSelected = range == localChartRange.lowercase()
                                                 Box(
                                                     modifier = Modifier
                                                         .clip(RoundedCornerShape(8.dp))
@@ -652,8 +822,8 @@ fun AssetDetailModal(
                                                             color = if (isSelected) Color.Transparent else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
                                                             shape = RoundedCornerShape(8.dp)
                                                         )
-                                                        .clickable { 
-                                                            localChartRange = range
+                                                        .clickable {
+                                                            localChartRange = rawRange
                                                         }
                                                         .padding(horizontal = 6.dp, vertical = 3.dp)
                                                 ) {
@@ -701,6 +871,64 @@ fun AssetDetailModal(
                             }
                         }
 
+                        } // end of Interactive Chart constraint
+
+                        // 1.5 Investidor10 Chart Bundle panel
+                        if (mainTabIdx == 0) { // Gráficos Avançados
+                        item {
+                            val bundle = chartBundle
+                            if (isLoadingChartBundle) {
+                                Surface(
+                                    color = DarkSurfaceElevated,
+                                    shape = RoundedCornerShape(16.dp),
+                                    border = BorderStroke(1.dp, BorderColor.copy(alpha = 0.05f)),
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(24.dp).fillMaxWidth(),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        CircularProgressIndicator(color = GoldPrimary, strokeWidth = 3.dp)
+                                        Spacer(modifier = Modifier.height(12.dp))
+                                        Text("Carregando gráficos de análise...", color = TextSecondary, fontSize = 12.sp)
+                                    }
+                                }
+                            } else if (bundle != null) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                AssetChartBundlePanel(
+                                    bundle = bundle,
+                                    isFii = isFii,
+                                    currentRange = localChartRange,
+                                    onRangeChange = { selectedRange ->
+                                        localChartRange = selectedRange
+                                        onRangeChange(selectedRange)
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                            } else {
+                                Surface(
+                                    color = DarkSurfaceElevated,
+                                    shape = RoundedCornerShape(16.dp),
+                                    border = BorderStroke(1.dp, BorderColor.copy(alpha = 0.08f)),
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(20.dp).fillMaxWidth(),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Icon(Icons.Outlined.Info, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(24.dp))
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text("Dados avançados ainda não disponíveis", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        Text("O resumo do ativo continua disponível; tente atualizar ou trocar o período.", color = TextSecondary, fontSize = 11.sp, textAlign = TextAlign.Center)
+                                    }
+                                }
+                            }
+                        }
+
+                        } // end of mainTabIdx == 0
+
+                        if (mainTabIdx == 2) { // Detalhes da Posição
                         // 2. Personal Holdings Dashboard summary
                         item {
                             Text(
@@ -846,197 +1074,195 @@ fun AssetDetailModal(
                             }
                         }
 
+                        } // end of mainTabIdx == 2
+
+                        if (mainTabIdx == 3) { // Transações
                         // 4. Detailed Purchase Logs
                         item {
+                            Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "HISTÓRICO DE COMPRAS DETALHADO",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                letterSpacing = 1.sp,
-                                modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 16.dp, bottom = 2.dp)
+                                text = "HISTÓRICO DE TRANSAÇÕES",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(start = 8.dp, end = 8.dp, top = 24.dp, bottom = 12.dp)
                             )
                         }
 
                         if (transactions.isEmpty()) {
                             item {
-                                Card(
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                    shape = RoundedCornerShape(20.dp),
-                                    border = BorderStroke(1.2.dp, BorderColor.copy(alpha = 0.12f)),
+                                Surface(
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                    shape = RoundedCornerShape(16.dp),
                                     modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp)
                                 ) {
                                     Column(
-                                        modifier = Modifier.padding(24.dp).fillMaxWidth(),
+                                        modifier = Modifier.padding(32.dp).fillMaxWidth(),
                                         horizontalAlignment = Alignment.CenterHorizontally
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Outlined.Inventory2,
+                                            imageVector = Icons.Outlined.Info,
                                             contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
-                                            modifier = Modifier.size(36.dp)
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                            modifier = Modifier.size(48.dp)
                                         )
-                                        Spacer(modifier = Modifier.height(12.dp))
-                                        Text("Nenhuma transação cadastrada", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        Text(
+                                            "Nenhuma transação registrada.", 
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant, 
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
                                     }
                                 }
                             }
                         } else {
                             items(sortedTransactions, key = { it.id }) { tx ->
                                 val isSale = tx.isSell
-                                val itemColor = if (isSale) DangerRed else GoldPrimary
-                                val currentPriceToUse = realData?.price ?: asset.currentPrice
-
-                                val txTotalValue = tx.quantity * tx.purchasePrice
                                 val isPurchase = !isSale
-
+                                val itemColor = if (isSale) DangerRed else SuccessGreen
+                                val bgColor = itemColor.copy(alpha = 0.05f)
+                                
+                                val currentPriceToUse = realData?.price ?: asset.currentPrice
+                                val txTotalValue = tx.quantity * tx.purchasePrice
+                                
                                 val currentTxValue = if (isPurchase) currentPriceToUse * tx.quantity else 0.0
                                 val profitAbs = if (isPurchase) currentTxValue - txTotalValue else 0.0
                                 val profitPct = if (isPurchase && txTotalValue > 0) (profitAbs / txTotalValue) * 100.0 else 0.0
                                 val isProfit = profitAbs >= 0
 
-                                Card(
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                Surface(
+                                    color = MaterialTheme.colorScheme.surface,
                                     shape = RoundedCornerShape(16.dp),
-                                    border = BorderStroke(1.2.dp, BorderColor.copy(alpha = 0.12f)),
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp)
+                                    border = BorderStroke(1.dp, BorderColor.copy(alpha = 0.2f)),
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp)
                                 ) {
                                     Column {
+                                        // Main Header Row
                                         Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(16.dp),
+                                            modifier = Modifier.fillMaxWidth().padding(16.dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
+                                            // Icon
                                             Box(
                                                 modifier = Modifier
-                                                    .size(40.dp)
-                                                    .background(itemColor.copy(alpha = 0.1f), CircleShape),
+                                                    .size(48.dp)
+                                                    .background(bgColor, RoundedCornerShape(12.dp)),
                                                 contentAlignment = Alignment.Center
                                             ) {
                                                 Icon(
                                                     imageVector = if (isSale) Icons.AutoMirrored.Outlined.TrendingDown else Icons.AutoMirrored.Outlined.TrendingUp,
                                                     contentDescription = null,
                                                     tint = itemColor,
-                                                    modifier = Modifier.size(20.dp)
+                                                    modifier = Modifier.size(24.dp)
                                                 )
                                             }
                                             
                                             Spacer(modifier = Modifier.width(16.dp))
-
+                                            
+                                            // Titles and Qty
                                             Column(modifier = Modifier.weight(1f)) {
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    Text(
-                                                        text = if (isSale) "VENDA" else "COMPRA",
-                                                        color = itemColor,
-                                                        fontWeight = FontWeight.Black,
-                                                        fontSize = 11.sp,
-                                                        letterSpacing = 0.5.sp
-                                                    )
+                                                    Surface(
+                                                        color = itemColor.copy(alpha = 0.1f),
+                                                        shape = RoundedCornerShape(4.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = if (isSale) "VENDA" else "COMPRA",
+                                                            color = itemColor,
+                                                            fontWeight = FontWeight.Bold,
+                                                            fontSize = 10.sp,
+                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        )
+                                                    }
                                                     Spacer(modifier = Modifier.width(8.dp))
                                                     Text(
-                                                        text = java.text.SimpleDateFormat("dd/MM/yy", java.util.Locale.getDefault()).format(java.util.Date(tx.date)),
+                                                        text = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.getDefault()).format(java.util.Date(tx.date)),
                                                         color = TextSecondary,
-                                                        fontSize = 10.sp,
-                                                        fontWeight = FontWeight.Bold
+                                                        fontSize = 12.sp,
+                                                        fontWeight = FontWeight.Medium
                                                     )
                                                 }
-                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Spacer(modifier = Modifier.height(8.dp))
                                                 val fmtQty = if (tx.quantity % 1.0 == 0.0) tx.quantity.toInt().toString() else String.format("%.2f", tx.quantity)
                                                 Text(
                                                     text = "$fmtQty cotas",
                                                     color = MaterialTheme.colorScheme.onSurface,
-                                                    fontSize = 14.sp,
-                                                    fontWeight = FontWeight.Black
+                                                    fontSize = 15.sp,
+                                                    fontWeight = FontWeight.Bold
                                                 )
+                                            }
+                                            
+                                            // Price & Total
+                                            Column(horizontalAlignment = Alignment.End) {
+                                                Text(
+                                                    text = "R$ ${String.format("%.2f", txTotalValue)}",
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                    fontSize = 15.sp
+                                                )
+                                                Spacer(modifier = Modifier.height(4.dp))
                                                 Text(
                                                     text = "R$ ${String.format("%.2f", tx.purchasePrice)} /cota",
                                                     color = TextSecondary,
-                                                    fontSize = 11.sp
+                                                    fontSize = 12.sp
                                                 )
-                                            }
-
-                                            Column(horizontalAlignment = Alignment.End) {
-                                                Text(text = "VALOR TOTAL", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                                Text(
-                                                    text = "R$ ${String.format("%.2f", txTotalValue)}",
-                                                    fontWeight = FontWeight.Black,
-                                                    color = MaterialTheme.colorScheme.onSurface,
-                                                    fontSize = 14.sp
-                                                )
-                                                
-                                                Row(modifier = Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                    IconButton(
-                                                        onClick = { onEditTransaction(tx) },
-                                                        modifier = Modifier
-                                                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f), CircleShape)
-                                                            .size(28.dp)
-                                                    ) {
-                                                        Icon(
-                                                            imageVector = Icons.Outlined.Edit,
-                                                            contentDescription = "Editar",
-                                                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
-                                                            modifier = Modifier.size(14.dp)
-                                                        )
-                                                    }
-
-                                                    IconButton(
-                                                        onClick = { onDeleteTransaction(tx) },
-                                                        modifier = Modifier
-                                                            .background(Color.Red.copy(alpha = 0.08f), CircleShape)
-                                                            .size(28.dp)
-                                                    ) {
-                                                        Icon(
-                                                            imageVector = Icons.Outlined.Delete,
-                                                            contentDescription = "Deletar",
-                                                            tint = DangerRed.copy(alpha = 0.8f),
-                                                            modifier = Modifier.size(14.dp)
-                                                        )
-                                                    }
-                                                }
                                             }
                                         }
 
-                                        if (isPurchase && txTotalValue > 0) {
-                                            HorizontalDivider(color = BorderColor.copy(alpha = 0.08f), thickness = 1.dp)
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.02f))
-                                                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Text("STATUS DO APORTE", fontSize = 10.sp, fontWeight = FontWeight.Black, color = TextSecondary, letterSpacing = 0.5.sp)
-                                                val pColor = if (isProfit) SuccessGreen else DangerRed
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    Text(
-                                                        text = "${if (isProfit) "+" else ""}R$ ${String.format("%.2f", profitAbs)}",
-                                                        color = pColor,
-                                                        fontSize = 12.sp,
-                                                        fontWeight = FontWeight.Black
+                                        // Expanded detail or bottom row
+                                        HorizontalDivider(color = BorderColor.copy(alpha = 0.1f), thickness = 1.dp)
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f))
+                                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                if (isPurchase && txTotalValue > 0) {
+                                                    val pColor = if (isProfit) SuccessGreen else DangerRed
+                                                    val icon = if (isProfit) Icons.AutoMirrored.Outlined.TrendingUp else Icons.AutoMirrored.Outlined.TrendingDown
+                                                    Icon(
+                                                        imageVector = icon,
+                                                        contentDescription = null,
+                                                        tint = pColor,
+                                                        modifier = Modifier.size(16.dp)
                                                     )
                                                     Spacer(modifier = Modifier.width(6.dp))
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .background(pColor.copy(alpha = 0.1f), RoundedCornerShape(4.dp))
-                                                            .border(1.dp, pColor.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
-                                                            .padding(horizontal = 4.dp, vertical = 2.dp)
-                                                    ) {
-                                                        Text(
-                                                            text = "${if (isProfit) "+" else ""}${String.format("%.1f", profitPct)}%",
-                                                            color = pColor,
-                                                            fontSize = 10.sp,
-                                                            fontWeight = FontWeight.Bold
-                                                        )
-                                                    }
+                                                    Text(
+                                                        text = "${if (isProfit) "+" else ""}R$ ${String.format("%.2f", profitAbs)} (${String.format("%.2f", profitPct)}%)",
+                                                        color = pColor,
+                                                        fontSize = 13.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                } else {
+                                                    Text("Status indisponível", color = TextSecondary, fontSize = 13.sp)
                                                 }
+                                            }
+                                            
+                                            // Action buttons
+                                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                                Icon(
+                                                    imageVector = Icons.Outlined.Edit,
+                                                    contentDescription = "Editar",
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(20.dp).clickable { onEditTransaction(tx) }
+                                                )
+                                                Icon(
+                                                    imageVector = Icons.Outlined.Delete,
+                                                    contentDescription = "Deletar",
+                                                    tint = DangerRed,
+                                                    modifier = Modifier.size(20.dp).clickable { onDeleteTransaction(tx) }
+                                                )
                                             }
                                         }
                                     }
                                 }
                             }
                         }
+                        } // end mainTabIdx == 3
 
                         item {
                             Spacer(modifier = Modifier.navigationBarsPadding().height(56.dp))
@@ -1081,4 +1307,35 @@ fun IndicatorItemFromAnalysis(
             )
         }
     }
+}
+
+private fun AssetSummary.toFallbackB3AssetData(): B3AssetData {
+    val inferredFii = type.equals("FII", ignoreCase = true) || B3NetworkService.inferIsFii(ticker)
+    return B3AssetData(
+        ticker = ticker.trim().uppercase(),
+        name = ticker.trim().uppercase(),
+        price = currentPrice.takeIf { it > 0.0 } ?: averageCost,
+        changePercent = dailyChangePercent,
+        dy = dividendYield,
+        lastDividend = lastDividend,
+        isFii = inferredFii,
+        source = "Carteira local + aguardando Proxy"
+    )
+}
+
+private fun B3AssetData.hasUsefulProxyData(): Boolean {
+    return price > 0.0 || dy > 0.0 || pvp > 0.0 || pl > 0.0 || marketCap > 0.0 ||
+        assetDescription.isNotBlank() || cnpj.isNotBlank() || name.isNotBlank()
+}
+
+private fun B3AssetData.mergeWithFallback(fallback: B3AssetData): B3AssetData {
+    return copy(
+        name = name.ifBlank { fallback.name },
+        price = if (price > 0.0) price else fallback.price,
+        changePercent = if (changePercent != 0.0) changePercent else fallback.changePercent,
+        dy = if (dy > 0.0) dy else fallback.dy,
+        lastDividend = if (lastDividend > 0.0) lastDividend else fallback.lastDividend,
+        isFii = isFii || fallback.isFii,
+        source = if (source.isNotBlank()) source else fallback.source
+    )
 }

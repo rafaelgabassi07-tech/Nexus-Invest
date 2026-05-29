@@ -1,3 +1,5 @@
+import java.util.Base64
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
@@ -27,9 +29,46 @@ fun valoraeConfigValue(key: String, fallback: String = ""): String {
   return fallback
 }
 
+
+fun safeValoraeProxyUrl(raw: String, fallback: String): String {
+  val value = raw.trim().trimEnd('/')
+  val lower = value.lowercase()
+  return if (
+    value.isBlank() ||
+    !value.startsWith("http") ||
+    lower.contains("valorae-proxy.vercel.app") ||
+    lower.contains("your-backend") ||
+    lower.contains("seu-dominio") ||
+    lower.contains("localhost")
+  ) {
+    fallback
+  } else {
+    value
+  }
+}
+
+fun ensureDebugKeystore() {
+  val keystoreFile = rootProject.file("debug.keystore")
+  val base64File = rootProject.file("debug.keystore.base64")
+  if (!keystoreFile.exists() && base64File.exists()) {
+    try {
+      val bytes = Base64.getDecoder().decode(base64File.readText().trim())
+      keystoreFile.writeBytes(bytes)
+    } catch (e: Exception) {
+      // Ignorar caso falhe
+    }
+  }
+}
+ensureDebugKeystore()
+
+fun hasReleaseSigningMaterial(): Boolean {
+  val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
+  return file(keystorePath).exists() && !System.getenv("STORE_PASSWORD").isNullOrBlank()
+}
+
 android {
   namespace = "com.example"
-  compileSdk { version = release(36) { minorApiLevel = 1 } }
+  compileSdk = 36
 
   defaultConfig {
     applicationId = "com.aistudio.valorae.nbqpyl"
@@ -43,11 +82,14 @@ android {
     // Custom configurations exposed via BuildConfig.
     // Prioridade: gradle.properties > variáveis do ambiente/Studio > .env > .env.example > URL pública atual.
     val fallbackProxyUrl = "https://servidor-valorae.vercel.app"
-    val valoraeUrl = valoraeConfigValue(
-      "VALORAE_PROXY_BASE_URL",
-      valoraeConfigValue("VERCEL_BACKEND_URL", fallbackProxyUrl)
-    ).trimEnd('/')
-    val valoraeClientId = valoraeConfigValue("VALORAE_PROXY_CLIENT_ID", "valorae-investidor-portfolio")
+    val valoraeUrl = safeValoraeProxyUrl(
+      valoraeConfigValue(
+        "VALORAE_PROXY_BASE_URL",
+        valoraeConfigValue("VERCEL_BACKEND_URL", fallbackProxyUrl)
+      ),
+      fallbackProxyUrl
+    )
+    val valoraeClientId = valoraeConfigValue("VALORAE_PROXY_CLIENT_ID", "valorae-investidor-android")
     val valoraeFallbackEnabled = valoraeConfigValue("VALORAE_DIRECT_FALLBACK_ENABLED", "false")
 
     buildConfigField("String", "VALORAE_PROXY_BASE_URL", "\"$valoraeUrl\"")
@@ -76,7 +118,7 @@ android {
       isCrunchPngs = false
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      signingConfig = signingConfigs.getByName("release")
+      signingConfig = if (hasReleaseSigningMaterial()) signingConfigs.getByName("release") else signingConfigs.getByName("debugConfig")
     }
     debug {
       signingConfig = signingConfigs.getByName("debugConfig")
@@ -107,14 +149,9 @@ secrets {
 // This makes it easy to add them back in the future if needed.
 dependencies {
   implementation(platform(libs.androidx.compose.bom))
-  implementation(platform(libs.firebase.bom))
+  // implementation(platform(libs.firebase.bom)) // Não usado; manter removido para reduzir sync/build e APK.
   implementation(libs.androidx.biometric)
-  // implementation(libs.accompanist.permissions)
   implementation(libs.androidx.activity.compose)
-  // implementation(libs.androidx.camera.camera2)
-  // implementation(libs.androidx.camera.core)
-  // implementation(libs.androidx.camera.lifecycle)
-  // implementation(libs.androidx.camera.view)
   implementation(libs.androidx.compose.material.icons.core)
   implementation(libs.androidx.compose.material.icons.extended)
   implementation(libs.androidx.compose.material3)
@@ -126,23 +163,19 @@ dependencies {
   implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.lifecycle.viewmodel.compose)
-  // implementation(libs.androidx.navigation.compose)
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
-  // implementation(libs.coil.compose)
   implementation(libs.converter.moshi)
-  // implementation(libs.firebase.ai)
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
   implementation(libs.logging.interceptor)
   implementation(libs.moshi.kotlin)
   implementation(libs.okhttp)
-  // implementation(libs.play.services.location)
   implementation(libs.retrofit)
-  implementation(libs.jsoup)
-  implementation(libs.vico.compose)
-  implementation(libs.vico.compose.m3)
-  implementation(libs.vico.core)
+  // implementation(libs.jsoup) // Não usado no app; scraping direto no Android não deve ser feito.
+  // implementation(libs.vico.compose) // Gráficos atuais usam componentes Compose internos.
+  // implementation(libs.vico.compose.m3) // Gráficos atuais usam componentes Compose internos.
+  // implementation(libs.vico.core) // Gráficos atuais usam componentes Compose internos.
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)

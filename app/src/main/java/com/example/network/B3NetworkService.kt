@@ -4,21 +4,18 @@ import android.util.Log
 import com.example.BuildConfig
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.Headers
+import okhttp3.ConnectionPool
+import okhttp3.Dispatcher as OkHttpDispatcher
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import org.json.JSONArray
 import java.text.SimpleDateFormat
+import java.text.Normalizer
 import java.util.*
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.ConcurrentHashMap
 import java.util.regex.Pattern
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 
 data class B3AssetData(
     val ticker: String,
@@ -171,21 +168,19 @@ data class PortfolioProxyAnalysis(
 )
 
 object B3NetworkService {
+    private val httpDispatcher = OkHttpDispatcher().apply {
+        maxRequests = 12
+        maxRequestsPerHost = 8
+    }
+
     private val client = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(18, TimeUnit.SECONDS)
+        .callTimeout(24, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
+        .dispatcher(httpDispatcher)
+        .connectionPool(ConnectionPool(8, 5, TimeUnit.MINUTES))
         .build()
-
-    private val USER_AGENTS = listOf(
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.7; rv:133.0) Gecko/20100101 Firefox/133.0",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0"
-    )
-
-    private fun getRandomAgent() = USER_AGENTS.random()
 
     private class CacheEntry<T>(val data: T, val expiresAt: Long)
     private val memoryCache = ConcurrentHashMap<String, CacheEntry<Any>>()
@@ -209,12 +204,6 @@ object B3NetworkService {
             val now = System.currentTimeMillis()
             memoryCache.entries.removeIf { it.value.expiresAt < now }
         }
-    }
-
-    private fun getTickerWithSuffix(ticker: String): String {
-        val clean = ticker.trim().uppercase()
-        if (clean.startsWith("^") || clean.contains("=") || clean.endsWith(".SA")) return clean
-        return "$clean.SA"
     }
 
     private val ETFS_CONHECIDOS = setOf(
@@ -250,7 +239,7 @@ object B3NetworkService {
     }
 
     private fun isUsableProxyUrl(raw: String): Boolean {
-        val value = raw.trim()
+        val value = raw.trim().trimEnd('/')
         if (value.isBlank()) return false
         if (!value.startsWith("https://") && !value.startsWith("http://")) return false
         val lower = value.lowercase(Locale.ROOT)
@@ -259,13 +248,17 @@ object B3NetworkService {
             !lower.contains("seu-valorae") &&
             !lower.contains("your-valorae") &&
             !lower.contains("example.com") &&
-            !lower.contains("localhost")
+            !lower.contains("localhost") &&
+            // Host legado que causava telas vazias. Mesmo que venha do Studio/env,
+            // deve ser ignorado para preservar o contrato atual do Valorae Proxy.
+            !lower.contains("valorae-proxy.vercel.app")
     }
 
     private fun directFallbackEnabled(): Boolean {
-        return envString { BuildConfig.VALORAE_DIRECT_FALLBACK_ENABLED }
-            .lowercase(Locale.ROOT)
-            .let { it == "1" || it == "true" || it == "yes" || it == "sim" || it == "on" }
+        // Regra do app: não fazer scraping/chamadas diretas como fallback no Android.
+        // Todo dado externo deve vir pelo Valorae Proxy oficial para manter CORS,
+        // observabilidade, cache, normalização e contrato de campos estáveis.
+        return false
     }
 
     private fun proxyClientId(): String {
@@ -291,11 +284,28 @@ object B3NetworkService {
             "1mo", "1m", "m1", "30d" -> "1M"
             "3mo", "3m", "m3" -> "3M"
             "6mo", "6m", "m6" -> "6M"
+            "ytd", "ano" -> "YTD"
             "1y", "1a", "y1", "12m" -> "1Y"
+            "3y", "3a", "y3" -> "3Y"
             "5y", "5a", "y5" -> "5Y"
+            "10y", "10a", "y10" -> "10Y"
             "max", "tudo", "all" -> "MAX"
-            else -> range.trim().uppercase(Locale.ROOT)
+            else -> range.trim().uppercase(Locale.ROOT).ifBlank { "1Y" }
         }
+    }
+
+    private fun historyLimitForRange(normalizedRange: String): String {
+        val limit = when (normalizedRange.uppercase(Locale.ROOT)) {
+            "1D" -> 390
+            "5D" -> 500
+            "1M", "3M", "6M", "YTD", "1Y" -> 370
+            "3Y" -> 900
+            "5Y" -> 1500
+            "10Y" -> 3000
+            "MAX" -> 5000
+            else -> 370
+        }
+        return limit.toString()
     }
 
     private fun positionArray(positions: List<PortfolioProxyPosition>): JSONArray {
@@ -347,12 +357,10 @@ object B3NetworkService {
         return Request.Builder()
             .url(url)
             .addHeader("Accept", "application/json")
-            .addHeader("User-Agent", "VALORAE-Investidor-Portfolio/1.1.4 Android")
+            .addHeader("User-Agent", "VALORAE-Investidor-Portfolio/${BuildConfig.VERSION_NAME} Android")
             .addHeader("X-Valorae-Client-Id", proxyClientId())
-            .addHeader("X-Valorae-Client-Version", "21.5.13")
+            .addHeader("X-Valorae-Client-Version", BuildConfig.VERSION_NAME.ifBlank { "21.5.13" })
             .addHeader("X-Valorae-Environment", "production")
-            .addHeader("X-Valorae-App", "VALORAE")
-            .addHeader("X-Valorae-Consumer", "investidor-portfolio")
     }
 
     private fun getProxyJson(path: String, params: Map<String, String?> = emptyMap()): JSONObject? {
@@ -368,7 +376,12 @@ object B3NetworkService {
                 if (!response.isSuccessful) {
                     val errMsg = json?.optString("message") ?: json?.optString("error") ?: "HTTP ${response.code}"
                     Log.w("B3NetworkService", "Valorae Proxy GET failed: $path, errorMsg: $errMsg")
-                    return json
+                    return null
+                }
+                if (json?.optString("status", "")?.equals("ERROR", ignoreCase = true) == true || json?.has("error") == true) {
+                    val errMsg = json.optString("message", json.optString("error", "payload error"))
+                    Log.w("B3NetworkService", "Valorae Proxy GET payload error: $path, errorMsg: $errMsg")
+                    return null
                 }
                 json
             }
@@ -397,7 +410,12 @@ object B3NetworkService {
                 if (!response.isSuccessful) {
                     val errMsg = json?.optString("message") ?: json?.optString("error") ?: "HTTP ${response.code}"
                     Log.w("B3NetworkService", "Valorae Proxy POST failed: $path, errorMsg: $errMsg")
-                    return json
+                    return null
+                }
+                if (json?.optString("status", "")?.equals("ERROR", ignoreCase = true) == true || json?.has("error") == true) {
+                    val errMsg = json.optString("message", json.optString("error", "payload error"))
+                    Log.w("B3NetworkService", "Valorae Proxy POST payload error: $path, errorMsg: $errMsg")
+                    return null
                 }
                 json
             }
@@ -439,8 +457,26 @@ object B3NetworkService {
     }
 
     private fun normalizedValue(normalized: JSONObject?, key: String): Any? {
-        val field = normalized?.optJSONObject(key) ?: return null
-        return field.optAny("value") ?: field.optAny("display")
+        if (normalized == null || !normalized.has(key) || normalized.isNull(key)) return null
+        val field = normalized.optJSONObject(key)
+        return if (field != null) {
+            field.optAny("value")
+                ?: field.optAny("display")
+                ?: field.optAny("valor")
+                ?: field.optAny("raw")
+        } else {
+            normalized.optAny(key)
+        }
+    }
+
+    private fun normalizedDisplay(normalized: JSONObject?, key: String): String {
+        if (normalized == null || !normalized.has(key) || normalized.isNull(key)) return ""
+        val field = normalized.optJSONObject(key)
+        return if (field != null) {
+            firstText(field.optAny("display"), field.optAny("value"), field.optAny("valor"), field.optAny("raw"))
+        } else {
+            firstText(normalized.optAny(key))
+        }
     }
 
     private fun firstText(vararg values: Any?): String {
@@ -453,13 +489,21 @@ object B3NetworkService {
 
     private fun firstNumber(vararg values: Any?): Double {
         for (value in values) {
-            val n = parseLocaleFinancialNumber(value)
+            val n = when (value) {
+                is JSONObject -> parseLocaleFinancialNumber(
+                    value.optAny("value")
+                        ?: value.optAny("valor")
+                        ?: value.optAny("display")
+                        ?: value.optAny("raw")
+                )
+                else -> parseLocaleFinancialNumber(value)
+            }
             if (n != 0.0) return n
         }
         return 0.0
     }
 
-    private fun parseLocaleFinancialNumber(value: Any?): Double {
+    internal fun parseLocaleFinancialNumber(value: Any?): Double {
         if (value == null) return 0.0
         if (value is Number) {
             val d = value.toDouble()
@@ -505,32 +549,535 @@ object B3NetworkService {
         return arrays.firstOrNull { it != null && it.length() > 0 }
     }
 
+    private fun firstObject(vararg objects: JSONObject?): JSONObject? {
+        return objects.firstOrNull { it != null && it.length() > 0 }
+    }
+
+    /**
+     * Combina objetos JSON parciais preservando a precedência dos primeiros argumentos.
+     * O Proxy pode devolver parte dos campos em root.normalized e parte em results.normalized;
+     * usar apenas o primeiro objeto fazia muitos indicadores/gráficos desaparecerem na UI.
+     */
+    private fun mergedObject(vararg objects: JSONObject?): JSONObject? {
+        val out = JSONObject()
+        var hasAny = false
+        for (obj in objects.reversed()) {
+            if (obj == null || obj.length() == 0) continue
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                if (!obj.isNull(key)) {
+                    out.put(key, obj.opt(key))
+                    hasAny = true
+                }
+            }
+        }
+        return if (hasAny) out else null
+    }
+
+    private fun canonicalKey(raw: String): String {
+        return Normalizer.normalize(raw, Normalizer.Form.NFD)
+            .replace(Regex("\\p{M}+"), "")
+            .lowercase(Locale.ROOT)
+            .replace(Regex("[^a-z0-9]+"), "")
+    }
+
+    private fun JSONArray.toJsonObjectList(): List<JSONObject> {
+        val out = mutableListOf<JSONObject>()
+        for (i in 0 until length()) {
+            optJSONObject(i)?.let { out.add(it) }
+        }
+        return out
+    }
+
+    private fun keyValuesArray(section: JSONObject?): JSONArray? {
+        return firstArray(section?.optJSONArray("keyValues"), section?.optJSONArray("items"), section?.optJSONArray("values"))
+    }
+
+    private fun textSection(section: JSONObject?): String {
+        return firstText(section?.optAny("text"), section?.optAny("rawText"), section?.optAny("content"))
+    }
+
+    private fun parsePercentSeriesFromText(text: String, allowedNames: Set<String> = emptySet()): List<AssetComparisonSeries> {
+        if (text.isBlank()) return emptyList()
+        val knownNames = listOf(
+            "PETRÓLEO BRENT" to "BRENT",
+            "BRENT" to "BRENT",
+            "OURO" to "OURO",
+            "MILHO" to "MILHO",
+            "CAFÉ" to "CAFÉ",
+            "COBRE" to "COBRE",
+            "IBOV" to "IBOV",
+            "IBOVESPA" to "IBOV",
+            "IFIX" to "IFIX",
+            "CDI" to "CDI",
+            "IPCA" to "IPCA"
+        )
+        val normalizedText = text.uppercase(Locale.ROOT)
+        val out = mutableListOf<AssetComparisonSeries>()
+        for ((needle, label) in knownNames) {
+            if (allowedNames.isNotEmpty() && !allowedNames.contains(label)) continue
+            val idx = normalizedText.indexOf(needle)
+            if (idx < 0) continue
+            val tail = normalizedText.substring(idx, kotlin.math.min(normalizedText.length, idx + 80))
+            val match = Regex("(-?\\d{1,3}(?:[.,]\\d{1,2})?)\\s*%").find(tail)
+            val value = firstNumber(match?.groupValues?.getOrNull(1))
+            if (value != 0.0) {
+                out.add(AssetComparisonSeries(label, listOf(AssetComparisonPoint("Base", 0.0), AssetComparisonPoint("12M", value))))
+            }
+        }
+        return out.distinctBy { it.name }
+    }
+
+    private fun sanitizeSeriesName(raw: String, ticker: String): String {
+        val clean = raw.trim().uppercase(Locale.ROOT)
+            .replace("IBOVESPA", "IBOV")
+            .replace("^BVSP", "IBOV")
+            .replace("IFIX_PROXY", "IFIX")
+        return when {
+            clean.isBlank() || clean == "ATIVO" || clean == "TICKER" || clean == "ASSET" || clean == "COTA" || clean == "AÇÃO" -> ticker.uppercase(Locale.ROOT)
+            clean.contains("IBOV") -> "IBOV"
+            clean.contains("IFIX") -> "IFIX"
+            clean.contains("CDI") -> "CDI"
+            clean.contains("IPCA") -> "IPCA"
+            clean.contains("BRENT") -> "BRENT"
+            else -> clean.take(24)
+        }
+    }
+
+    private fun comparisonPointFromJson(point: JSONObject?, fallbackLabel: String): AssetComparisonPoint? {
+        if (point == null) return null
+        val label = firstText(
+            point.optAny("label"),
+            point.optAny("dateLabel"),
+            point.optAny("date"),
+            point.optAny("data"),
+            point.optAny("month"),
+            point.optAny("period"),
+            point.optAny("x"),
+            fallbackLabel
+        )
+        val value = firstNumber(
+            point.optAny("returnPercent"),
+            point.optAny("accumulatedPercent"),
+            point.optAny("accumulated"),
+            point.optAny("variationPercent"),
+            point.optAny("percent"),
+            point.optAny("percentage"),
+            point.optAny("valuePercent"),
+            point.optAny("value"),
+            point.optAny("valor"),
+            point.optAny("close"),
+            point.optAny("price"),
+            point.optAny("preco"),
+            point.optAny("y")
+        )
+        val ts = parseFlexibleDateMillis(firstText(point.optAny("timestamp"), point.optAny("time"), point.optAny("date"), point.optAny("data"), point.optAny("x")))
+        return if (label.isNotBlank() || ts > 0L || value != 0.0) {
+            AssetComparisonPoint(
+                label = if (label.isNotBlank()) label else fallbackLabel,
+                value = value,
+                dateMillis = ts
+            )
+        } else null
+    }
+
+    private fun comparisonSeriesFromArray(name: String, arr: JSONArray?, ticker: String): AssetComparisonSeries? {
+        if (arr == null || arr.length() == 0) return null
+        val points = mutableListOf<AssetComparisonPoint>()
+        for (i in 0 until arr.length()) {
+            when (val raw = arr.opt(i)) {
+                is JSONObject -> comparisonPointFromJson(raw, "P${i + 1}")?.let { points.add(it) }
+                is Number -> points.add(AssetComparisonPoint("P${i + 1}", raw.toDouble()))
+                is String -> {
+                    val n = firstNumber(raw)
+                    if (n != 0.0) points.add(AssetComparisonPoint("P${i + 1}", n))
+                }
+            }
+        }
+        val cleanPoints = points.filter { it.value.isFinite() }
+        return if (cleanPoints.size >= 2) AssetComparisonSeries(sanitizeSeriesName(name, ticker), cleanPoints) else null
+    }
+
+    private fun parseComparisonSeriesFromObject(source: JSONObject?, ticker: String): List<AssetComparisonSeries> {
+        if (source == null || source.length() == 0) return emptyList()
+        val out = linkedMapOf<String, AssetComparisonSeries>()
+
+        fun add(series: AssetComparisonSeries?) {
+            if (series == null || series.points.size < 2) return
+            val key = sanitizeSeriesName(series.name, ticker)
+            val cleaned = series.copy(name = key, points = series.points.filter { it.value.isFinite() })
+            if (cleaned.points.size >= 2 && (out[key]?.points?.size ?: 0) < cleaned.points.size) out[key] = cleaned
+        }
+
+        val containers = listOfNotNull(
+            source,
+            source.optJSONObject("data"),
+            source.optJSONObject("results"),
+            source.optJSONObject("comparison"),
+            source.optJSONObject("comparacao"),
+            source.optJSONObject("comparacaoIndices"),
+            source.optJSONObject("indexComparison"),
+            source.optJSONObject("indicesComparison"),
+            source.optJSONObject("rentabilidade"),
+            source.optJSONObject("rentabilidadeChart"),
+            source.optJSONObject("chart"),
+            source.optJSONObject("charts")
+        )
+
+        for (obj in containers) {
+            val namedKeys = listOf(
+                "ativo" to ticker,
+                "asset" to ticker,
+                "ticker" to ticker,
+                ticker.lowercase(Locale.ROOT) to ticker,
+                ticker.uppercase(Locale.ROOT) to ticker,
+                "ibov" to "IBOV",
+                "IBOV" to "IBOV",
+                "ibovespa" to "IBOV",
+                "ifix" to "IFIX",
+                "IFIX" to "IFIX",
+                "cdi" to "CDI",
+                "CDI" to "CDI",
+                "ipca" to "IPCA",
+                "IPCA" to "IPCA"
+            )
+            for ((key, name) in namedKeys) add(comparisonSeriesFromArray(name, obj.optJSONArray(key), ticker))
+
+            val seriesArr = firstArray(obj.optJSONArray("series"), obj.optJSONArray("items"), obj.optJSONArray("datasets"), obj.optJSONArray("comparisons"), obj.optJSONArray("indices"))
+            if (seriesArr != null) {
+                for (i in 0 until seriesArr.length()) {
+                    val item = seriesArr.optJSONObject(i) ?: continue
+                    val name = firstText(
+                        item.optAny("name"),
+                        item.optAny("label"),
+                        item.optAny("ticker"),
+                        item.optAny("symbol"),
+                        item.optAny("indice"),
+                        item.optAny("index"),
+                        "S${i + 1}"
+                    )
+                    val arr = firstArray(
+                        item.optJSONArray("points"),
+                        item.optJSONArray("data"),
+                        item.optJSONArray("series"),
+                        item.optJSONArray("history"),
+                        item.optJSONArray("prices"),
+                        item.optJSONArray("values"),
+                        item.optJSONArray("items")
+                    )
+                    add(comparisonSeriesFromArray(name, arr, ticker))
+                }
+            }
+
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                val arr = obj.optJSONArray(key)
+                if (arr != null) add(comparisonSeriesFromArray(key, arr, ticker))
+            }
+        }
+
+        if (out.isEmpty()) {
+            parsePercentSeriesFromText(textSection(source), setOf("IBOV", "IFIX", "CDI", "IPCA")).forEach { add(it) }
+        }
+        return out.values.mapNotNull { normalizeComparisonSeries(it, ticker) }
+    }
+
+    private fun returnSeriesFromPriceHistory(name: String, priceHistory: List<ChartPoint>): AssetComparisonSeries? {
+        val sorted = priceHistory.filter { it.close > 0.0 && it.close.isFinite() }.sortedBy { it.timestamp }
+        if (sorted.size < 2) return null
+        val base = sorted.first().close.takeIf { it > 0.0 } ?: return null
+        val points = sorted.map { point ->
+            val pct = ((point.close / base) - 1.0) * 100.0
+            AssetComparisonPoint(
+                label = point.dateLabel.ifBlank { "P" },
+                value = pct,
+                dateMillis = if (point.timestamp > 10_000_000_000L) point.timestamp else point.timestamp * 1000L
+            )
+        }
+        return AssetComparisonSeries(name, points)
+    }
+
+    private fun normalizeComparisonSeries(series: AssetComparisonSeries, ticker: String): AssetComparisonSeries? {
+        val name = sanitizeSeriesName(series.name, ticker)
+        val points = series.points
+            .filter { it.value.isFinite() }
+            .sortedWith(compareBy<AssetComparisonPoint> { if (it.dateMillis > 0L) it.dateMillis else Long.MAX_VALUE }.thenBy { it.label })
+        if (points.size < 2) return null
+
+        val first = points.first().value
+        val looksAlreadyReturnPercent = kotlin.math.abs(first) <= 0.0001 || points.any { kotlin.math.abs(it.value) <= 0.0001 }
+        val normalizedPoints = if (looksAlreadyReturnPercent || first == 0.0) {
+            points
+        } else {
+            // Alguns formatos do /api/compare ou de seções do Investidor10 entregam preço/nível bruto
+            // (ex.: PETR4=42, IBOV=130000). A UI de Comparação precisa retorno percentual
+            // normalizado no ponto inicial, não escala bruta de preço/índice.
+            points.map { point ->
+                point.copy(value = ((point.value / first) - 1.0) * 100.0)
+            }
+        }
+        val cleaned = normalizedPoints.filter { it.value.isFinite() }
+        return if (cleaned.size >= 2) AssetComparisonSeries(name, cleaned) else null
+    }
+
+    private fun mergeComparisonSeries(primary: List<AssetComparisonSeries>, fallback: List<AssetComparisonSeries>, ticker: String): List<AssetComparisonSeries> {
+        val out = linkedMapOf<String, AssetComparisonSeries>()
+        fun put(s: AssetComparisonSeries) {
+            val normalized = normalizeComparisonSeries(s, ticker) ?: return
+            val name = normalized.name
+            if ((out[name]?.points?.size ?: 0) < normalized.points.size) out[name] = normalized
+        }
+        primary.forEach(::put)
+        fallback.forEach(::put)
+        return out.values.toList()
+    }
+
+    private fun fetchProxyComparisonSeries(ticker: String, isFii: Boolean, range: String, assetHistory: List<ChartPoint>): List<AssetComparisonSeries> {
+        val normalizedRange = normalizeProxyRange(range)
+        val cacheKey = "index_compare_${ticker.uppercase(Locale.ROOT)}_${normalizedRange}_${if (isFii) "FII" else "ACAO"}"
+        getFromCache<List<AssetComparisonSeries>>(cacheKey)?.let { return it }
+
+        val indexList = if (isFii) listOf("IFIX", "CDI", "IPCA") else listOf("IBOV", "IFIX", "CDI", "IPCA")
+        val compareRoot = unwrapValoraePayload(
+            getProxyJson(
+                "/api/compare",
+                mapOf(
+                    "tickers" to (listOf(ticker) + indexList).joinToString(","),
+                    "range" to normalizedRange,
+                    "view" to "standard",
+                    "profile" to "fast"
+                )
+            )
+        )
+        val fromCompare = parseComparisonSeriesFromObject(compareRoot, ticker)
+        val built = mutableListOf<AssetComparisonSeries>()
+        returnSeriesFromPriceHistory(ticker, assetHistory)?.let { built.add(it) }
+
+        if (fromCompare.count { it.points.size >= 2 } < 2) {
+            val indexHistoryTargets = if (isFii) listOf("IFIX") else listOf("IBOV", "IFIX")
+            for (idx in indexHistoryTargets) {
+                val points = runCatching { fetchHistoricalChart(idx, normalizedRange) }.getOrDefault(emptyList())
+                returnSeriesFromPriceHistory(idx, points)?.let { built.add(it) }
+            }
+        }
+
+        if (fromCompare.none { it.name.equals("IPCA", true) }) {
+            val months = when (normalizedRange.uppercase(Locale.ROOT)) {
+                "1D", "5D", "1M" -> 1
+                "3M" -> 3
+                "6M" -> 6
+                "YTD", "1Y" -> 12
+                "3Y" -> 36
+                "5Y" -> 60
+                "10Y" -> 120
+                "MAX" -> 180
+                else -> 60
+            }
+            val ipca = fetchIpcaSeries(months)
+            if (ipca.size >= 2) {
+                built.add(AssetComparisonSeries("IPCA", ipca.map { AssetComparisonPoint(it.dateLabel, it.accumulatedPercent, dateMillis = it.timestamp * 1000L) }))
+            }
+        }
+
+        val merged = mergeComparisonSeries(fromCompare, built, ticker)
+        if (merged.isNotEmpty()) putInCache(cacheKey, merged, 10)
+        return merged
+    }
+
+    private fun parseBreakdownMap(source: JSONObject?): MutableMap<String, List<AssetBreakdownPoint>> {
+        val out = mutableMapOf<String, List<AssetBreakdownPoint>>()
+        if (source == null || source.length() == 0) return out
+        val years = source.keys()
+        while (years.hasNext()) {
+            val yr = years.next()
+            val list = mutableListOf<AssetBreakdownPoint>()
+            val arr = source.optJSONArray(yr)
+            if (arr != null) {
+                for (item in arr.toJsonObjectList()) {
+                    val name = firstText(item.optAny("name"), item.optAny("label"), item.optAny("region"), item.optAny("regiao"), item.optAny("business"), item.optAny("negocio"), item.optAny("segment"), item.optAny("segmento"))
+                    val value = firstNumber(item.optAny("valuePercent"), item.optAny("percent"), item.optAny("percentage"), item.optAny("share"), item.optAny("value"), item.optAny("valor"))
+                    val display = firstText(item.optAny("displayValue"), item.optAny("display"), item.optAny("revenue"), item.optAny("faturamento"))
+                    if (name.isNotBlank()) list.add(AssetBreakdownPoint(name, value, display, yr))
+                }
+            } else {
+                val obj = source.optJSONObject(yr)
+                if (obj != null) {
+                    val names = obj.keys()
+                    while (names.hasNext()) {
+                        val name = names.next()
+                        val nested = obj.optJSONObject(name)
+                        val value = if (nested != null) {
+                            firstNumber(nested.optAny("valuePercent"), nested.optAny("percent"), nested.optAny("percentage"), nested.optAny("share"), nested.optAny("value"), nested.optAny("valor"))
+                        } else {
+                            firstNumber(obj.optAny(name))
+                        }
+                        val display = firstText(nested?.optAny("displayValue"), nested?.optAny("display"), nested?.optAny("revenue"), nested?.optAny("faturamento"))
+                        if (name.isNotBlank()) list.add(AssetBreakdownPoint(name, value, display, yr))
+                    }
+                }
+            }
+            if (list.isNotEmpty()) out[yr] = list
+        }
+        return out
+    }
+
+    private fun appendDividendEventsFromArray(ticker: String, arr: JSONArray?, out: MutableList<DividendEvent>) {
+        if (arr == null) return
+        for (ev in arr.toJsonObjectList()) {
+            val type = firstText(ev.optAny("tipo"), ev.optAny("type"), ev.optAny("kind"), ev.optAny("provento"), "Dividendo")
+            val datacom = normalizeDisplayDate(firstText(ev.optAny("dataCom"), ev.optAny("dateCom"), ev.optAny("comDate"), ev.optAny("date_with"), ev.optAny("dataBase")))
+            val payment = normalizeDisplayDate(firstText(ev.optAny("dataPagamento"), ev.optAny("paymentDate"), ev.optAny("payDate"), ev.optAny("pagamento"), ev.optAny("date_payment")))
+            val value = firstNumber(ev.optAny("valor"), ev.optAny("value"), ev.optAny("amount"), ev.optAny("valuePerShare"), ev.optAny("valorPorCota"), ev.optAny("rendimento"), ev.optAny("ultimoRendimento"))
+            if (value > 0.0 || datacom.isNotBlank() || payment.isNotBlank()) {
+                out.add(
+                    DividendEvent(
+                        ticker = ticker,
+                        dateCom = datacom,
+                        paymentDate = payment,
+                        valuePerShare = value,
+                        status = type.ifBlank { "Pago" },
+                        source = "Valorae Proxy / Investidor10"
+                    )
+                )
+            }
+        }
+    }
+
+
+    private fun fetchAssetDividendEvents(ticker: String): List<DividendEvent> {
+        val clean = ticker.trim().uppercase(Locale.ROOT)
+        if (clean.isBlank()) return emptyList()
+        val cacheKey = "asset_dividend_events_$clean"
+        getFromCache<List<DividendEvent>>(cacheKey)?.let { return it }
+        val json = getProxyJson("/api/asset/dividends", mapOf("ticker" to clean, "limit" to "120"))
+        val root = unwrapValoraePayload(json) ?: return emptyList()
+        val out = mutableListOf<DividendEvent>()
+        appendDividendEventsFromArray(
+            clean,
+            firstArray(
+                root.optJSONArray("events"),
+                root.optJSONArray("items"),
+                root.optJSONArray("dividends"),
+                root.optJSONArray("dividendos"),
+                root.optJSONArray("historicoDividendos"),
+                root.optJSONArray("proventos"),
+                root.optJSONArray("income"),
+                root.optArray("data.events"),
+                root.optArray("data.items"),
+                root.optArray("data.dividends"),
+                root.optArray("data.dividendos"),
+                root.optArray("data.proventos")
+            ),
+            out
+        )
+        val distinct = out.distinctBy { listOf(it.ticker, it.dateCom, it.paymentDate, it.valuePerShare).joinToString("|") }
+            .sortedByDescending { parseFlexibleDateMillis(it.paymentDate.ifBlank { it.dateCom }) }
+        if (distinct.isNotEmpty()) putInCache(cacheKey, distinct, 20)
+        return distinct
+    }
+
+    private fun buildDividendYearly(events: List<DividendEvent>, currentPrice: Double): Pair<List<AssetIndicatorPoint>, List<AssetIndicatorPoint>> {
+        val byYear = linkedMapOf<String, Double>()
+        for (event in events) {
+            val ts = parseFlexibleDateMillis(event.paymentDate.ifBlank { event.dateCom })
+            val year = if (ts > 0L) SimpleDateFormat("yyyy", Locale.getDefault()).format(Date(ts)) else event.dateCom.substringAfterLast("/", "")
+            val value = event.valuePerShare.takeIf { it > 0.0 } ?: continue
+            if (year.length == 4 && year.all { it.isDigit() }) byYear[year] = (byYear[year] ?: 0.0) + value
+        }
+        val yearly = mutableListOf<AssetIndicatorPoint>()
+        val dy = mutableListOf<AssetIndicatorPoint>()
+        byYear.toSortedMap().forEach { (year, total) ->
+            yearly.add(AssetIndicatorPoint(label = "Anual", value = total, display = String.format(Locale.ROOT, "R$ %.4f", total), year = year))
+            if (currentPrice > 0.0) {
+                val percent = total / currentPrice * 100.0
+                dy.add(AssetIndicatorPoint(label = "DY %", value = percent, display = String.format(Locale.ROOT, "%.2f%%", percent), unit = "%", year = year))
+            }
+        }
+        return yearly to dy
+    }
+
+    private fun buildDividendMonthly(events: List<DividendEvent>, limit: Int = 24): List<AssetIndicatorPoint> {
+        val byMonth = linkedMapOf<String, Double>()
+        for (event in events) {
+            val ts = parseFlexibleDateMillis(event.paymentDate.ifBlank { event.dateCom })
+            val label = if (ts > 0L) SimpleDateFormat("MM/yyyy", Locale.getDefault()).format(Date(ts)) else continue
+            val value = event.valuePerShare.takeIf { it > 0.0 } ?: continue
+            byMonth[label] = (byMonth[label] ?: 0.0) + value
+        }
+        return byMonth.toSortedMap(compareBy<String> { label ->
+            val parts = label.split("/")
+            if (parts.size == 2) "${parts[1]}-${parts[0]}" else label
+        }).entries.toList().takeLast(limit).map { (period, total) ->
+            AssetIndicatorPoint(label = "Mensal", value = total, display = String.format(Locale.ROOT, "R$ %.4f", total), period = period)
+        }
+    }
+
     private fun mapProxyAsset(payload: JSONObject?): B3AssetData? {
         val root = unwrapValoraePayload(payload) ?: return null
         val ticker = firstText(root.optAny("ticker"), root.optString("symbol", "")).uppercase(Locale.ROOT)
         if (ticker.isBlank()) return null
         val results = root.optJSONObject("results") ?: root
-        val normalized = root.optJSONObject("normalized")
-        val cotacao = results.optJSONObject("cotacao")
-        val indicadores = results.optJSONObject("indicadores")
-            ?: results.optObject("indicadoresFundamentalistas.semComparativos")
-        val indicadoresAvancados = results.optJSONObject("indicadoresAvancados")
-            ?: results.optJSONObject("advancedMetrics")
-            ?: root.optJSONObject("indicadoresAvancados")
-            ?: root.optJSONObject("advancedMetrics")
-        val dadosEmpresa = results.optJSONObject("dadosEmpresa")
-            ?: results.optObject("sections.empresa.dados")
-        val infoEmpresa = results.optJSONObject("informacoesEmpresa")
-        val sections = results.optJSONObject("sections")
-        val infoFundo = results.optJSONObject("informacoesFundo")
-            ?: sections?.optJSONObject("informacoesFundo")
+        val sections = firstObject(results.optJSONObject("sections"), root.optJSONObject("sections"))
+        val normalized = mergedObject(
+            root.optJSONObject("normalized"),
+            results.optJSONObject("normalized"),
+            root.optObject("data.normalized"),
+            results.optObject("data.normalized")
+        )
+        val cotacao = firstObject(results.optJSONObject("cotacao"), root.optJSONObject("cotacao"))
+        val indicadores = mergedObject(
+            results.optJSONObject("indicadores"),
+            sections?.optJSONObject("indicadores"),
+            results.optObject("indicadoresFundamentalistas.semComparativos"),
+            results.optObject("indicadoresFundamentalistas.comComparativos"),
+            results.optObject("indicadoresFundamentalistas.comparativos"),
+            root.optJSONObject("indicadores")
+        )
+        val financialSummary = mergedObject(
+            root.optJSONObject("financialSummary"),
+            results.optJSONObject("financialSummary"),
+            sections?.optJSONObject("financialSummary"),
+            root.optObject("data.financialSummary")
+        )
+        val ratiosChave = mergedObject(
+            financialSummary?.optJSONObject("ratiosChave"),
+            financialSummary?.optJSONObject("keyRatios"),
+            financialSummary?.optJSONObject("ratios"),
+            results.optJSONObject("ratiosChave"),
+            results.optJSONObject("keyRatios")
+        )
+        val indicadoresAvancados = mergedObject(
+            sections?.optJSONObject("indicadoresAvancados"),
+            results.optJSONObject("indicadoresAvancados"),
+            results.optJSONObject("advancedMetrics"),
+            root.optJSONObject("indicadoresAvancados"),
+            root.optJSONObject("advancedMetrics")
+        )
+        val dadosEmpresa = firstObject(
+            results.optJSONObject("dadosEmpresa"),
+            results.optObject("sections.empresa.dados"),
+            sections?.optObject("empresa.dados"),
+            root.optJSONObject("dadosEmpresa")
+        )
+        val infoEmpresa = firstObject(results.optJSONObject("informacoesEmpresa"), sections?.optJSONObject("informacoesEmpresa"), root.optJSONObject("informacoesEmpresa"))
+        val infoFundo = mergedObject(
+            results.optJSONObject("informacoesFundo"),
+            sections?.optJSONObject("informacoesFundo"),
+            results.optJSONObject("dadosFundo"),
+            sections?.optJSONObject("dadosFundo"),
+            results.optJSONObject("fund"),
+            sections?.optJSONObject("fund"),
+            root.optJSONObject("informacoesFundo")
+        )
         val dividendos = results.optJSONObject("dividendos")
             ?: results.optJSONObject("dividends")
             ?: results.optJSONObject("proventos")
             ?: results.optJSONObject("income")
             ?: results.optJSONObject("earnings")
-            ?: root.optJSONObject("data.dividendos")
-            ?: root.optJSONObject("data.dividends")
+            ?: root.optObject("data.dividendos")
+            ?: root.optObject("data.dividends")
             ?: sections?.optJSONObject("dividendos")
             ?: sections?.optJSONObject("dividends")
             ?: sections?.optJSONObject("proventos")
@@ -557,6 +1104,7 @@ object B3NetworkService {
         val dy = firstNumber(
             normalizedValue(normalized, "dividendYield"),
             indicadores?.optAny("dividendYield"),
+            ratiosChave?.optAny("dividendYield"),
             dividendos?.optAny("dividendYield"),
             results.optAny("dividendYield"),
             results.optAny("yield12m"),
@@ -598,7 +1146,7 @@ object B3NetworkService {
             results.optAny("subsetor")
         )
 
-        val valorPatrimonialObj = results.optJSONObject("valorPatrimonial")
+        val valorPatrimonialObj = firstObject(results.optJSONObject("valorPatrimonial"), sections?.optJSONObject("valorPatrimonial"), root.optJSONObject("valorPatrimonial"))
         val vpaRaw = if (valorPatrimonialObj != null) {
             valorPatrimonialObj.optAny("valorPatrimonial") ?: valorPatrimonialObj.optAny("valorPatrimonialRaw")
         } else {
@@ -608,14 +1156,14 @@ object B3NetworkService {
         val patrimonioLiquidoRaw = if (valorPatrimonialObj != null) {
             valorPatrimonialObj.optAny("patrimonioLiquidoRaw") ?: valorPatrimonialObj.optAny("patrimonioLiquido")
         } else {
-            results.optAny("patrimonioLiquido")
+            results.optAny("patrimonioLiquido") ?: financialSummary?.optAny("patrimonioLiquido")
         }
 
         val valorDeMercadoObj = results.optJSONObject("valorDeMercado") ?: results.optJSONObject("valorMercado")
         val marketCapRaw = if (valorDeMercadoObj != null) {
             valorDeMercadoObj.optAny("valorDeMercadoRaw") ?: valorDeMercadoObj.optAny("valorDeMercado")
         } else {
-            results.optAny("valorDeMercado") ?: results.optAny("valorMercado")
+            results.optAny("valorDeMercado") ?: results.optAny("valorMercado") ?: financialSummary?.optAny("valorDeMercado")
         }
 
         val vpaVal = firstNumber(
@@ -672,13 +1220,13 @@ object B3NetworkService {
             price = price,
             changePercent = firstNumber(normalizedValue(normalized, "variacaoDay"), cotacao?.optAny("variacaoDay"), results.optAny("variacaoDay")),
             dy = dy,
-            pl = if (isFii) 0.0 else firstNumber(normalizedValue(normalized, "pl"), indicadores?.optAny("pl"), results.optAny("pl"), indicadoresAvancados?.optAny("p_l")),
-            pvp = firstNumber(normalizedValue(normalized, "pvp"), indicadores?.optAny("pvp"), results.optAny("pvp"), indicadoresAvancados?.optAny("p_vp")),
+            pl = if (isFii) 0.0 else firstNumber(normalizedValue(normalized, "pl"), indicadores?.optAny("pl"), ratiosChave?.optAny("pl"), results.optAny("pl"), indicadoresAvancados?.optAny("p_l")),
+            pvp = firstNumber(normalizedValue(normalized, "pvp"), indicadores?.optAny("pvp"), ratiosChave?.optAny("pvp"), results.optAny("pvp"), indicadoresAvancados?.optAny("p_vp")),
             vpa = vpaVal,
             lpa = if (isFii) 0.0 else firstNumber(indicadores?.optAny("lpa"), results.optAny("lpa"), indicadoresAvancados?.optAny("lpa")),
             marketCap = marketCapVal,
-            roe = firstNumber(normalizedValue(normalized, "roe"), indicadores?.optAny("roe"), results.optAny("roe"), indicadoresAvancados?.optAny("roe")),
-            margins = firstNumber(normalizedValue(normalized, "margemLiquida"), indicadores?.optAny("margemLiquida"), results.optAny("margemLiquida"), indicadoresAvancados?.optAny("net_margin")),
+            roe = firstNumber(normalizedValue(normalized, "roe"), indicadores?.optAny("roe"), ratiosChave?.optAny("roe"), results.optAny("roe"), indicadoresAvancados?.optAny("roe")),
+            margins = firstNumber(normalizedValue(normalized, "margemLiquida"), indicadores?.optAny("margemLiquida"), ratiosChave?.optAny("margemLiquida"), results.optAny("margemLiquida"), indicadoresAvancados?.optAny("net_margin")),
             lastDividend = lastDividend,
             dailyLiquidity = dailyLiquidityVal,
             high52 = firstNumber(cotacao?.optAny("max52Semanas"), cotacao?.optAny("high52"), results.optAny("max52Semanas"), results.optAny("high52"), results.optAny("fiftyTwoWeekHigh")),
@@ -688,21 +1236,21 @@ object B3NetworkService {
             nextEarningsDate = firstText(firstDividend?.optAny("dataCom"), results.optAny("dataCom")),
             isFii = isFii,
             source = "Valorae Proxy",
-            payout = firstNumber(normalizedValue(normalized, "payout"), indicadores?.optAny("payout"), results.optAny("payout"), indicadoresAvancados?.optAny("payout")),
+            payout = firstNumber(normalizedValue(normalized, "payout"), indicadores?.optAny("payout"), ratiosChave?.optAny("payout"), results.optAny("payout"), indicadoresAvancados?.optAny("payout")),
             cagrRevenue5y = firstNumber(normalizedValue(normalized, "cagrReceitas5a"), indicadores?.optAny("cagrReceitas5a"), results.optAny("cagrReceitas5a"), indicadoresAvancados?.optAny("growth_net_revenue_last_5_years")),
             grossMargin = firstNumber(normalizedValue(normalized, "margemBruta"), indicadores?.optAny("margemBruta"), results.optAny("margemBruta"), indicadoresAvancados?.optAny("gross_margin")),
             ebitMargin = firstNumber(normalizedValue(normalized, "margemEbit"), indicadores?.optAny("margemEbit"), results.optAny("margemEbit"), indicadoresAvancados?.optAny("ebit_margin")),
             ebitdaMargin = firstNumber(normalizedValue(normalized, "margemEbitda"), indicadores?.optAny("margemEbitda"), results.optAny("margemEbitda"), indicadoresAvancados?.optAny("ebitda_margin")),
-            evEbitda = firstNumber(normalizedValue(normalized, "evEbitda"), indicadores?.optAny("evEbitda"), results.optAny("evEbitda"), indicadoresAvancados?.optAny("ev_ebitda")),
-            evEbit = firstNumber(normalizedValue(normalized, "evEbit"), indicadores?.optAny("evEbit"), results.optAny("evEbit"), indicadoresAvancados?.optAny("ev_ebit")),
+            evEbitda = firstNumber(normalizedValue(normalized, "evEbitda"), indicadores?.optAny("evEbitda"), ratiosChave?.optAny("evEbitda"), results.optAny("evEbitda"), indicadoresAvancados?.optAny("ev_ebitda")),
+            evEbit = firstNumber(normalizedValue(normalized, "evEbit"), indicadores?.optAny("evEbit"), ratiosChave?.optAny("evEbit"), results.optAny("evEbit"), indicadoresAvancados?.optAny("ev_ebit")),
             priceEbitda = firstNumber(normalizedValue(normalized, "pEbitda"), indicadores?.optAny("pEbitda"), results.optAny("pEbitda"), indicadores?.optAny("priceEbitda"), indicadoresAvancados?.optAny("p_ebitda")),
             priceEbit = firstNumber(normalizedValue(normalized, "pEbit"), indicadores?.optAny("pEbit"), results.optAny("pEbit"), indicadores?.optAny("priceEbit"), indicadoresAvancados?.optAny("p_ebit")),
             priceAsset = firstNumber(normalizedValue(normalized, "pAtivo"), indicadores?.optAny("pAtivo"), results.optAny("pAtivo"), indicadoresAvancados?.optAny("p_assets")),
             priceCapGiro = firstNumber(normalizedValue(normalized, "pCapGiro"), indicadores?.optAny("pCapGiro"), results.optAny("pCapGiro"), indicadoresAvancados?.optAny("p_working_capital")),
             priceAtivoCircLiq = firstNumber(normalizedValue(normalized, "pAtivoCircLiq"), indicadores?.optAny("pAtivoCircLiq"), results.optAny("pAtivoCircLiq"), indicadoresAvancados?.optAny("p_asset_current_net")),
             giroAtivos = firstNumber(normalizedValue(normalized, "giroAtivos"), indicadores?.optAny("giroAtivos"), results.optAny("giroAtivos"), indicadoresAvancados?.optAny("active_turns")),
-            roic = firstNumber(normalizedValue(normalized, "roic"), indicadores?.optAny("roic"), results.optAny("roic"), indicadoresAvancados?.optAny("roic")),
-            roa = firstNumber(normalizedValue(normalized, "roa"), indicadores?.optAny("roa"), results.optAny("roa"), indicadoresAvancados?.optAny("roa")),
+            roic = firstNumber(normalizedValue(normalized, "roic"), indicadores?.optAny("roic"), ratiosChave?.optAny("roic"), results.optAny("roic"), indicadoresAvancados?.optAny("roic")),
+            roa = firstNumber(normalizedValue(normalized, "roa"), indicadores?.optAny("roa"), ratiosChave?.optAny("roa"), results.optAny("roa"), indicadoresAvancados?.optAny("roa")),
             divLiqPatrimonio = firstNumber(normalizedValue(normalized, "dividaLiquidaPatrimonio"), indicadores?.optAny("dividaLiquidaPatrimonio"), results.optAny("dividaLiquidaPatrimonio"), indicadoresAvancados?.optAny("net_debt_net_worth")),
             debtEbitda = firstNumber(normalizedValue(normalized, "dividaLiquidaEbitda"), indicadores?.optAny("dividaLiquidaEbitda"), results.optAny("dividaLiquidaEbitda"), indicadoresAvancados?.optAny("net_debt_ebitda")),
             divLiqEbit = firstNumber(normalizedValue(normalized, "dividaLiquidaEbit"), indicadores?.optAny("dividaLiquidaEbit"), results.optAny("dividaLiquidaEbit"), indicadoresAvancados?.optAny("net_debt_ebit")),
@@ -715,7 +1263,7 @@ object B3NetworkService {
             foundationYear = firstText(dadosEmpresa?.optAny("anoFundacao"), results.optAny("anoFundacao")),
             listingYear = firstText(dadosEmpresa?.optAny("anoEstreiaB3"), results.optAny("anoEstreiaB3")),
             employeesCount = firstText(dadosEmpresa?.optAny("numeroFuncionarios"), results.optAny("numeroFuncionarios")),
-            firmValue = firstNumber(infoEmpresa?.optAny("valorDeFirma"), results.optAny("valorDeFirma"), indicadoresAvancados?.optAny("enterprise_value")),
+            firmValue = firstNumber(infoEmpresa?.optAny("valorDeFirma"), financialSummary?.optAny("valorDeFirma"), results.optAny("valorDeFirma"), indicadoresAvancados?.optAny("enterprise_value")),
             netWorth = netWorthVal,
             totalPapers = firstText(infoEmpresa?.optAny("totalPapeis"), results.optAny("totalPapeis"), results.optAny("cotasEmitidas")),
             totalAssets = totalAssetsVal,
@@ -731,14 +1279,14 @@ object B3NetworkService {
             assetDescription = description,
             subSector = if (isFii) "" else companySector.ifBlank { segment },
             cagrProfit5y = firstNumber(normalizedValue(normalized, "cagrLucros5a"), indicadores?.optAny("cagrLucros5a"), results.optAny("cagrLucros5a"), indicadoresAvancados?.optAny("growth_net_profit_last_5_years")),
-            fiiTotalHolders = firstText(infoFundo?.optAny("numeroCotistas"), results.optAny("numeroCotistas")),
-            fiiIssuedShares = firstText(infoFundo?.optAny("cotasEmitidas"), results.optAny("cotasEmitidas")),
-            fiiAdminFee = firstText(infoFundo?.optAny("taxaAdministracao"), results.optAny("taxaAdministracao")),
-            fiiFundType = firstText(infoFundo?.optAny("tipoFundo"), results.optAny("tipoFundo")),
-            fiiMandate = firstText(infoFundo?.optAny("mandato"), results.optAny("mandato")),
-            fiiTargetAudience = firstText(infoFundo?.optAny("publicoAlvo"), results.optAny("publicoAlvo")),
-            fiiManagementType = firstText(infoFundo?.optAny("tipoGestao"), results.optAny("tipoGestao")),
-            fiiDuration = firstText(infoFundo?.optAny("prazoDuracao"), results.optAny("prazoDuracao")),
+            fiiTotalHolders = firstText(infoFundo?.optAny("numeroCotistas"), infoFundo?.optAny("cotistas"), results.optAny("numeroCotistas"), results.optAny("cotistas")),
+            fiiIssuedShares = firstText(infoFundo?.optAny("cotasEmitidas"), infoFundo?.optAny("quantidadeCotas"), results.optAny("cotasEmitidas"), results.optAny("totalPapeis"), results.optAny("quantidadeCotas")),
+            fiiAdminFee = firstText(infoFundo?.optAny("taxaAdministracao"), infoFundo?.optAny("taxaDeAdministracao"), results.optAny("taxaAdministracao"), results.optAny("taxaDeAdministracao")),
+            fiiFundType = firstText(infoFundo?.optAny("tipoFundo"), infoFundo?.optAny("tipo"), results.optAny("tipoFundo"), results.optAny("tipoFii"), segment),
+            fiiMandate = firstText(infoFundo?.optAny("mandato"), results.optAny("mandato"), results.optAny("classificacao")),
+            fiiTargetAudience = firstText(infoFundo?.optAny("publicoAlvo"), infoFundo?.optAny("publico"), results.optAny("publicoAlvo")),
+            fiiManagementType = firstText(infoFundo?.optAny("tipoGestao"), infoFundo?.optAny("gestao"), results.optAny("tipoGestao"), results.optAny("gestao")),
+            fiiDuration = firstText(infoFundo?.optAny("prazoDuracao"), infoFundo?.optAny("prazo"), results.optAny("prazoDuracao"), results.optAny("prazo")),
             magicNumber = if (isFii && lastDividend > 0.0 && price > 0.0) kotlin.math.ceil(price / lastDividend) else 0.0
         )
     }
@@ -862,13 +1410,33 @@ object B3NetworkService {
                 root?.optJSONArray("results"),
                 root?.optArray("data.assets")
             )
+            fun acceptMapped(mapped: B3AssetData?) {
+                if (mapped?.ticker?.isNotBlank() == true) {
+                    out[mapped.ticker] = mapped
+                    putInCache("asset_data_proxy_${mapped.ticker}", mapped, 5)
+                }
+            }
             if (assets != null) {
                 for (i in 0 until assets.length()) {
-                    val mapped = mapProxyAsset(assets.optJSONObject(i)) ?: continue
-                    if (mapped.ticker.isNotBlank()) {
-                        out[mapped.ticker] = mapped
-                        putInCache("asset_data_proxy_${mapped.ticker}", mapped, 5)
-                    }
+                    acceptMapped(mapProxyAsset(assets.optJSONObject(i)))
+                }
+            }
+            // Algumas versões do endpoint em lote podem devolver objeto indexado por ticker,
+            // em vez de array: { results: { PETR4: {...}, MXRF11: {...} } }.
+            // Sem este fallback a carteira fica com ativos ausentes mesmo quando o Proxy respondeu.
+            val assetObjects = listOfNotNull(
+                root?.optJSONObject("assets"),
+                root?.optJSONObject("items"),
+                root?.optJSONObject("results"),
+                root?.optObject("data.assets"),
+                root?.optObject("data.results")
+            )
+            for (obj in assetObjects) {
+                val keys = obj.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    val item = obj.optJSONObject(key) ?: continue
+                    acceptMapped(mapProxyAsset(item))
                 }
             }
         }
@@ -901,7 +1469,7 @@ object B3NetworkService {
         getFromCache<List<ChartPoint>>(cacheKey)?.let { return it }
         val json = getProxyJson(
             "/api/asset/history",
-            mapOf("ticker" to ticker.trim().uppercase(Locale.ROOT), "range" to normalizedRange, "limit" to "260")
+            mapOf("ticker" to ticker.trim().uppercase(Locale.ROOT), "range" to normalizedRange, "limit" to historyLimitForRange(normalizedRange))
         )
         val root = unwrapValoraePayload(json)
         val historyObj = root?.optJSONObject("history") ?: root?.optJSONObject("chart") ?: root?.optJSONObject("prices")
@@ -983,9 +1551,25 @@ object B3NetworkService {
         return if (directFallbackEnabled()) fetchNewsDirect(ticker) else emptyList()
     }
 
+    private fun positionsCacheSignature(positions: List<PortfolioProxyPosition>): String {
+        return positions
+            .map { p ->
+                listOf(
+                    p.ticker.trim().uppercase(Locale.ROOT),
+                    String.format(Locale.ROOT, "%.4f", p.quantity),
+                    String.format(Locale.ROOT, "%.4f", p.averagePrice),
+                    p.type.trim().uppercase(Locale.ROOT),
+                    String.format(Locale.ROOT, "%.4f", p.currentPrice),
+                    String.format(Locale.ROOT, "%.2f", p.totalInvested)
+                ).joinToString(":")
+            }
+            .sorted()
+            .joinToString("|")
+    }
+
     fun fetchPortfolioAnalysis(positions: List<PortfolioProxyPosition>): PortfolioProxyAnalysis? {
         if (positions.isEmpty()) return null
-        val cacheKey = "portfolio_analysis_${positions.joinToString("|") { it.ticker + ":" + it.quantity }}"
+        val cacheKey = "portfolio_analysis_${positionsCacheSignature(positions)}"
         getFromCache<PortfolioProxyAnalysis>(cacheKey)?.let { return it }
         val payload = JSONObject()
             .put("positions", positionArray(positions))
@@ -1066,12 +1650,12 @@ object B3NetworkService {
     fun fetchPortfolioHistory(positions: List<PortfolioProxyPosition>, range: String = "1Y"): List<PortfolioHistoryPoint> {
         if (positions.isEmpty()) return emptyList()
         val normalizedRange = normalizeProxyRange(range)
-        val cacheKey = "portfolio_history_${normalizedRange}_${positions.joinToString("|") { it.ticker + ":" + it.quantity }}"
+        val cacheKey = "portfolio_history_${normalizedRange}_${positionsCacheSignature(positions)}"
         getFromCache<List<PortfolioHistoryPoint>>(cacheKey)?.let { return it }
         val payload = JSONObject()
             .put("positions", positionArray(positions))
             .put("range", normalizedRange)
-            .put("limit", 260)
+            .put("limit", historyLimitForRange(normalizedRange).toIntOrNull() ?: 370)
         val json = postProxyJson("/api/portfolio/history", payload) ?: return emptyList()
         val root = unwrapValoraePayload(json) ?: return emptyList()
         val points = firstArray(
@@ -1135,7 +1719,13 @@ object B3NetworkService {
                 val p = points.optJSONObject(i) ?: continue
                 val monthly = firstNumber(p.optAny("monthlyPercent"), p.optAny("value"), p.optAny("ipca"), p.optAny("rate"))
                 val explicitAccumulated = firstNumber(p.optAny("accumulatedPercent"), p.optAny("accumulated"), p.optAny("cumulative"))
-                accumulated = if (explicitAccumulated != 0.0) explicitAccumulated else accumulated + monthly
+                // IPCA acumulado é composto, não uma soma linear simples.
+                // Mantém o valor explícito do Proxy quando disponível.
+                accumulated = if (explicitAccumulated != 0.0) {
+                    explicitAccumulated
+                } else {
+                    (((1.0 + accumulated / 100.0) * (1.0 + monthly / 100.0)) - 1.0) * 100.0
+                }
                 val ts = parseFlexibleDateMillis(firstText(p.optAny("date"), p.optAny("month"), p.optAny("time")))
                 out.add(
                     IpcaPoint(
@@ -1165,7 +1755,7 @@ object B3NetworkService {
 
     fun fetchNextDividends(positions: List<PortfolioProxyPosition>): List<DividendEvent> {
         if (positions.isEmpty()) return emptyList()
-        val cacheKey = "next_dividends_${positions.joinToString("|") { it.ticker + ":" + it.quantity }}"
+        val cacheKey = "next_dividends_${positionsCacheSignature(positions)}"
         getFromCache<List<DividendEvent>>(cacheKey)?.let { return it }
         val tickers = positions.map { it.ticker.trim().uppercase(Locale.ROOT) }.filter { it.isNotBlank() }.distinct()
         val payload = JSONObject()
@@ -1269,11 +1859,10 @@ object B3NetworkService {
             "/api/asset",
             mapOf(
                 "ticker" to clean,
-                "profile" to "deep",
-                "view" to "full",
+                "profile" to "analysis",
+                "view" to "analysis",
                 "mode" to "super",
                 "includeNews" to "0",
-                "lean" to "1",
                 "nocache" to if (bypassCache) "1" else null
             )
         )
@@ -1286,7 +1875,6 @@ object B3NetworkService {
                     "view" to "full",
                     "mode" to "basic",
                     "includeNews" to "0",
-                    "lean" to "1",
                     "nocache" to if (bypassCache) "1" else null
                 )
             )
@@ -1307,15 +1895,65 @@ object B3NetworkService {
         val mappedAsset = mapProxyAsset(root)
         val isFii = mappedAsset?.isFii ?: inferIsFii(clean)
 
-        val bundle = parseAssetChartBundle(clean, isFii, root, priceHistory)
-        putInCache(cacheKey, bundle, 4)
+        var bundle = parseAssetChartBundle(clean, isFii, root, priceHistory).copy(range = normalizedRange)
+        if (bundle.dividendEvents.isEmpty()) {
+            val dividendFallback = fetchAssetDividendEvents(clean)
+            if (dividendFallback.isNotEmpty()) {
+                val currentPrice = mappedAsset?.price?.takeIf { it > 0.0 }
+                    ?: firstNumber(root.optObject("results.cotacao")?.optAny("precoAtual"), root.optObject("results")?.optAny("precoAtual"))
+                val (yearly, dyHistory) = buildDividendYearly(dividendFallback, currentPrice)
+                val monthly = buildDividendMonthly(dividendFallback)
+                bundle = bundle.copy(
+                    dividendEvents = dividendFallback,
+                    dividendYearly = yearly.ifEmpty { bundle.dividendYearly },
+                    dividendMonthly = monthly.ifEmpty { bundle.dividendMonthly },
+                    dividendYieldHistory = dyHistory.ifEmpty { bundle.dividendYieldHistory }
+                )
+            }
+        }
+        if (bundle.profitability.isEmpty() && bundle.priceHistory.size >= 2) {
+            val first = bundle.priceHistory.first().close
+            val last = bundle.priceHistory.last().close
+            if (first > 0.0 && last > 0.0) {
+                bundle = bundle.copy(
+                    profitability = listOf(
+                        AssetPeriodReturn(
+                            period = normalizedRange,
+                            valuePercent = ((last / first) - 1.0) * 100.0,
+                            label = normalizedRange,
+                            kind = "nominal"
+                        )
+                    )
+                )
+            }
+        }
+        val needsIndexFallback = bundle.indexComparison.count { it.points.size >= 2 } < 2
+        if (needsIndexFallback) {
+            val fallbackComparison = fetchProxyComparisonSeries(clean, isFii, normalizedRange, priceHistory)
+            if (fallbackComparison.isNotEmpty()) {
+                bundle = bundle.copy(indexComparison = mergeComparisonSeries(bundle.indexComparison, fallbackComparison, clean))
+            }
+        }
+        putInCache(cacheKey, bundle, 6)
         return bundle
     }
 
-    private fun parseAssetChartBundle(ticker: String, isFii: Boolean, root: JSONObject, priceHistory: List<ChartPoint>): AssetChartBundle {
+    internal fun parseAssetChartBundle(ticker: String, isFii: Boolean, root: JSONObject, priceHistory: List<ChartPoint>): AssetChartBundle {
         val results = root.optJSONObject("results") ?: root
-        val normalized = root.optJSONObject("normalized")
-        val sections = results.optJSONObject("sections") ?: results
+        val sections = firstObject(results.optJSONObject("sections"), root.optJSONObject("sections")) ?: results
+        val normalized = mergedObject(
+            root.optJSONObject("normalized"),
+            results.optJSONObject("normalized"),
+            root.optObject("data.normalized"),
+            results.optObject("data.normalized")
+        )
+        val financialCharts = firstObject(
+            results.optJSONObject("chartsFinanceiros"),
+            results.optJSONObject("financialCharts"),
+            results.optJSONObject("demonstrativos"),
+            sections.optJSONObject("chartsFinanceiros"),
+            sections.optJSONObject("demonstrativos")
+        )
 
         val warnings = mutableListOf<String>()
         if (root.optString("status") == "PARTIAL" || root.optBoolean("partial", false)) {
@@ -1332,19 +1970,42 @@ object B3NetworkService {
         var finalPriceHistory = priceHistory
         if (finalPriceHistory.isEmpty()) {
             val hPoints = mutableListOf<ChartPoint>()
-            val chartsObj = sections.optJSONObject("charts") ?: sections.optJSONObject("rentabilidadeChart")
+            val chartsObj = firstObject(
+                sections.optJSONObject("charts"),
+                sections.optJSONObject("rentabilidadeChart"),
+                results.optJSONObject("charts"),
+                results.optJSONObject("history"),
+                results.optJSONObject("chart"),
+                results.optJSONObject("prices")
+            )
             val points = firstArray(
                 chartsObj?.optJSONArray("points"),
                 chartsObj?.optJSONArray("series"),
-                sections.optJSONArray("historicalPrice")
+                chartsObj?.optJSONArray("history"),
+                chartsObj?.optJSONArray("prices"),
+                chartsObj?.optJSONArray("items"),
+                sections.optJSONArray("historicalPrice"),
+                sections.optJSONArray("historicoPrecos"),
+                results.optJSONArray("historicalPrice"),
+                results.optJSONArray("historicoPrecos"),
+                results.optJSONArray("priceHistory"),
+                results.optJSONArray("history"),
+                results.optJSONArray("prices"),
+                root.optArray("data.points"),
+                root.optArray("data.series"),
+                root.optArray("data.history"),
+                root.optArray("data.prices"),
+                root.optArray("data.items")
             )
             if (points != null) {
                 for (i in 0 until points.length()) {
                     val p = points.optJSONObject(i) ?: continue
-                    val close = firstNumber(p.optAny("close"), p.optAny("value"), p.optAny("y"), p.optAny("preco"))
+                    val close = firstNumber(p.optAny("close"), p.optAny("adjClose"), p.optAny("value"), p.optAny("valor"), p.optAny("price"), p.optAny("preco"), p.optAny("regularMarketPrice"), p.optAny("y"))
                     if (close <= 0.0) continue
-                    val label = firstText(p.optAny("label"), p.optAny("date"), "P${i + 1}")
-                    hPoints.add(ChartPoint(i.toLong(), label, close))
+                    val rawDate = firstText(p.optAny("date"), p.optAny("data"), p.optAny("timestamp"), p.optAny("time"), p.optAny("datetime"), p.optAny("x"))
+                    val ts = parseFlexibleDateMillis(rawDate)
+                    val label = if (ts > 0L) normalizeDisplayDate(rawDate) else firstText(p.optAny("label"), p.optAny("dateLabel"), "P${i + 1}")
+                    hPoints.add(ChartPoint(if (ts > 0L) ts / 1000L else i.toLong(), label, close))
                 }
             }
             finalPriceHistory = hPoints
@@ -1406,55 +2067,251 @@ object B3NetworkService {
         }
 
         val indicatorCards = mutableListOf<AssetIndicatorPoint>()
-        val adv = sections.optJSONObject("indicadoresAvancados") ?: results.optJSONObject("indicadoresAvancados") ?: root.optJSONObject("indicadoresAvancados") ?: JSONObject()
-
-        val indicatorKeys = listOf(
-            Triple("p_l", "P/L", ""),
-            Triple("p_vp", "P/VP", ""),
-            Triple("dy", "Dividend Yield", "%"),
-            Triple("payout", "Payout", "%"),
-            Triple("net_margin", "Margem Líquida", "%"),
-            Triple("gross_margin", "Margem Bruta", "%"),
-            Triple("ebit_margin", "Margem EBIT", "%"),
-            Triple("ebitda_margin", "Margem EBITDA", "%"),
-            Triple("ev_ebitda", "EV/EBITDA", ""),
-            Triple("ev_ebit", "EV/EBIT", ""),
-            Triple("roic", "ROIC", "%"),
-            Triple("roe", "ROE", "%"),
-            Triple("roa", "ROA", "%"),
-            Triple("net_debt_ebitda", "Dívida Líquida/EBITDA", ""),
-            Triple("net_debt_ebit", "Dívida Líquida/EBIT", ""),
-            Triple("gross_debt_net_worth", "Dívida Bruta/Patrimônio", ""),
-            Triple("net_worth_assets", "Patrimônio/Ativos", "%"),
-            Triple("liabilities_assets", "Passivos/Ativos", "%"),
-            Triple("current_liquidity", "Liquidez Corrente", ""),
-            Triple("growth_net_revenue_last_5_years", "CAGR Receitas 5A", "%"),
-            Triple("growth_net_profit_last_5_years", "CAGR Lucros 5A", "%")
-        )
+        val adv = mergedObject(
+            sections.optJSONObject("indicadoresAvancados"),
+            results.optJSONObject("indicadoresAvancados"),
+            results.optJSONObject("advancedMetrics"),
+            root.optJSONObject("indicadoresAvancados"),
+            root.optJSONObject("advancedMetrics")
+        ) ?: JSONObject()
+        val indicadores = mergedObject(
+            results.optJSONObject("indicadores"),
+            sections.optJSONObject("indicadores"),
+            results.optObject("indicadoresFundamentalistas.semComparativos"),
+            results.optObject("indicadoresFundamentalistas.comComparativos"),
+            results.optObject("indicadoresFundamentalistas.comparativos"),
+            results.optJSONObject("fundamentalistIndicators"),
+            root.optJSONObject("indicadores")
+        ) ?: JSONObject()
+        val financialSummary = mergedObject(
+            root.optJSONObject("financialSummary"),
+            results.optJSONObject("financialSummary"),
+            sections.optJSONObject("financialSummary"),
+            root.optObject("data.financialSummary")
+        ) ?: JSONObject()
+        val ratiosChave = mergedObject(
+            financialSummary.optJSONObject("ratiosChave"),
+            financialSummary.optJSONObject("keyRatios"),
+            financialSummary.optJSONObject("ratios"),
+            results.optJSONObject("ratiosChave"),
+            results.optJSONObject("keyRatios")
+        ) ?: JSONObject()
+        val infoFiiForIndicators = mergedObject(
+            results.optJSONObject("informacoesFundo"),
+            sections.optJSONObject("informacoesFundo"),
+            results.optJSONObject("dadosFundo"),
+            sections.optJSONObject("dadosFundo"),
+            results.optJSONObject("fund"),
+            sections.optJSONObject("fund"),
+            sections.optJSONObject("fundo"),
+            root.optJSONObject("informacoesFundo")
+        ) ?: JSONObject()
+        val valorPatrimonialIndicadores = mergedObject(
+            results.optJSONObject("valorPatrimonial"),
+            sections.optJSONObject("valorPatrimonial"),
+            root.optJSONObject("valorPatrimonial")
+        ) ?: JSONObject()
 
         val indicatorHistory = mutableMapOf<String, List<AssetIndicatorPoint>>()
 
-        for ((field, label, unit) in indicatorKeys) {
-            val v = firstNumber(adv.optAny(field))
-            if (v != 0.0) {
-                val display = if (unit == "%") String.format(Locale.ROOT, "%.2f%%", v) else String.format(Locale.ROOT, "%.2f", v)
-                indicatorCards.add(AssetIndicatorPoint(label = label, value = v, display = display, unit = unit))
+        fun displayIndicator(value: Double, unit: String): String = when (unit) {
+            "%" -> String.format(Locale.ROOT, "%.2f%%", value)
+            "BRL" -> when {
+                value >= 1_000_000_000.0 -> String.format(Locale.ROOT, "R$ %.2f bi", value / 1_000_000_000.0)
+                value >= 1_000_000.0 -> String.format(Locale.ROOT, "R$ %.2f mi", value / 1_000_000.0)
+                else -> String.format(Locale.ROOT, "R$ %.2f", value)
+            }
+            "number" -> String.format(Locale.ROOT, "%.0f", value)
+            else -> String.format(Locale.ROOT, "%.2f", value)
+        }
+
+        fun hasExplicitValue(vararg values: Any?): Boolean {
+            return values.any { raw ->
+                when (raw) {
+                    null -> false
+                    is JSONObject -> listOf("value", "valor", "display", "raw").any { k -> raw.has(k) && !raw.isNull(k) && firstText(raw.optAny(k)).isNotBlank() }
+                    else -> firstText(raw).isNotBlank()
+                }
             }
         }
 
-        val dyVal = firstNumber(normalizedValue(normalized, "dividendYield"), results.optAny("dividendYield"))
+        fun keepZeroIndicator(label: String): Boolean {
+            val key = canonicalKey(label)
+            return key.contains("vacancia") || key.contains("divida") || key.contains("debt") || key.contains("passivos")
+        }
 
-        if (indicatorCards.none { it.label == "P/L" }) {
-            val plVal = firstNumber(normalizedValue(normalized, "pl"), results.optAny("pl"))
-            if (plVal != 0.0) indicatorCards.add(AssetIndicatorPoint("P/L", plVal, String.format(Locale.ROOT, "%.2f", plVal)))
+        fun addIndicator(label: String, unit: String = "", vararg values: Any?) {
+            if (indicatorCards.any { it.label.equals(label, ignoreCase = true) }) return
+            val value = firstNumber(*values)
+            val explicit = hasExplicitValue(*values)
+            if (value.isFinite() && (value != 0.0 || (explicit && keepZeroIndicator(label)))) {
+                indicatorCards.add(
+                    AssetIndicatorPoint(
+                        label = label,
+                        value = value,
+                        display = displayIndicator(value, unit),
+                        unit = unit
+                    )
+                )
+            }
         }
-        if (indicatorCards.none { it.label == "P/VP" }) {
-            val pvpVal = firstNumber(normalizedValue(normalized, "pvp"), results.optAny("pvp"))
-            if (pvpVal != 0.0) indicatorCards.add(AssetIndicatorPoint("P/VP", pvpVal, String.format(Locale.ROOT, "%.2f", pvpVal)))
+
+        fun addIndicatorWithDisplay(label: String, unit: String = "", displayOverride: String = "", vararg values: Any?) {
+            if (indicatorCards.any { it.label.equals(label, ignoreCase = true) }) return
+            val value = firstNumber(*values)
+            val explicit = hasExplicitValue(*values) || displayOverride.isNotBlank()
+            if (value.isFinite() && (value != 0.0 || (explicit && keepZeroIndicator(label)))) {
+                indicatorCards.add(
+                    AssetIndicatorPoint(
+                        label = label,
+                        value = value,
+                        display = displayOverride.ifBlank { displayIndicator(value, unit) },
+                        unit = unit
+                    )
+                )
+            }
         }
-        if (indicatorCards.none { it.label == "Dividend Yield" }) {
-            if (dyVal != 0.0) indicatorCards.add(AssetIndicatorPoint("Dividend Yield", dyVal, String.format(Locale.ROOT, "%.2f%%", dyVal), "%"))
+
+        fun normalizedOrElse(key: String, vararg values: Any?): Array<Any?> = arrayOf(normalizedValue(normalized, key), *values)
+
+        // Indicadores comuns: usa normalized primeiro e depois todas as estruturas reais que o Proxy pode devolver.
+        addIndicatorWithDisplay("Preço Atual", "BRL", normalizedDisplay(normalized, "precoAtual"), *normalizedOrElse("precoAtual", results.optAny("precoAtual"), results.optObject("cotacao")?.optAny("precoAtual")))
+        addIndicatorWithDisplay("Variação Dia", "%", normalizedDisplay(normalized, "variacaoDay"), *normalizedOrElse("variacaoDay", results.optAny("variacaoDay"), results.optObject("cotacao")?.optAny("variacaoDay")))
+        addIndicatorWithDisplay("Variação 12M", "%", normalizedDisplay(normalized, "variacao12m"), *normalizedOrElse("variacao12m", results.optAny("variacao12m")))
+        addIndicator("Dividend Yield", "%", *normalizedOrElse("dividendYield", indicadores.optAny("dividendYield"), ratiosChave.optAny("dividendYield"), results.optAny("dividendYield"), results.optAny("dy"), adv.optAny("dividend_yield_last_12_months"), adv.optAny("dividend_yield")))
+        addIndicator("DY Médio 5A", "%", *normalizedOrElse("dyMedio5a", indicadores.optAny("dyMedio5a"), results.optAny("dyMedio5a"), adv.optAny("dividend_yield_last_5_years")))
+        addIndicator("P/VP", "", *normalizedOrElse("pvp", indicadores.optAny("pvp"), ratiosChave.optAny("pvp"), results.optAny("pvp"), adv.optAny("p_vp")))
+        if (!isFii) addIndicator("P/L", "", *normalizedOrElse("pl", indicadores.optAny("pl"), ratiosChave.optAny("pl"), results.optAny("pl"), adv.optAny("p_l")))
+        addIndicator("Payout", "%", *normalizedOrElse("payout", indicadores.optAny("payout"), ratiosChave.optAny("payout"), results.optAny("payout"), adv.optAny("payout")))
+        addIndicator("ROE", "%", *normalizedOrElse("roe", indicadores.optAny("roe"), ratiosChave.optAny("roe"), results.optAny("roe"), adv.optAny("roe")))
+        addIndicator("ROIC", "%", *normalizedOrElse("roic", indicadores.optAny("roic"), ratiosChave.optAny("roic"), results.optAny("roic"), adv.optAny("roic")))
+        addIndicator("ROA", "%", *normalizedOrElse("roa", indicadores.optAny("roa"), ratiosChave.optAny("roa"), results.optAny("roa"), adv.optAny("roa")))
+        addIndicator("Margem Líquida", "%", *normalizedOrElse("margemLiquida", indicadores.optAny("margemLiquida"), ratiosChave.optAny("margemLiquida"), results.optAny("margemLiquida"), adv.optAny("net_margin")))
+        addIndicator("Margem Bruta", "%", *normalizedOrElse("margemBruta", indicadores.optAny("margemBruta"), results.optAny("margemBruta"), adv.optAny("gross_margin")))
+        addIndicator("Margem EBIT", "%", *normalizedOrElse("margemEbit", indicadores.optAny("margemEbit"), results.optAny("margemEbit"), adv.optAny("ebit_margin")))
+        addIndicator("Margem EBITDA", "%", *normalizedOrElse("margemEbitda", indicadores.optAny("margemEbitda"), results.optAny("margemEbitda"), adv.optAny("ebitda_margin")))
+        addIndicator("EV/EBITDA", "", *normalizedOrElse("evEbitda", indicadores.optAny("evEbitda"), ratiosChave.optAny("evEbitda"), results.optAny("evEbitda"), adv.optAny("ev_ebitda")))
+        addIndicator("EV/EBIT", "", *normalizedOrElse("evEbit", indicadores.optAny("evEbit"), ratiosChave.optAny("evEbit"), results.optAny("evEbit"), adv.optAny("ev_ebit")))
+        addIndicator("P/EBITDA", "", *normalizedOrElse("pEbitda", indicadores.optAny("pEbitda"), results.optAny("pEbitda"), adv.optAny("p_ebitda")))
+        addIndicator("P/EBIT", "", *normalizedOrElse("pEbit", indicadores.optAny("pEbit"), results.optAny("pEbit"), adv.optAny("p_ebit")))
+        addIndicator("PSR", "", *normalizedOrElse("psr", indicadores.optAny("psr"), results.optAny("psr"), adv.optAny("psr")))
+        addIndicator("LPA", "BRL", indicadores.optAny("lpa"), results.optAny("lpa"), adv.optAny("lpa"))
+        addIndicator("VPA", "BRL", *normalizedOrElse("valorPatrimonialCota", indicadores.optAny("vpa"), results.optAny("vpa"), valorPatrimonialIndicadores.optAny("valorPatrimonial"), valorPatrimonialIndicadores.optAny("valorPatrimonialRaw"), infoFiiForIndicators.optAny("valorPatrimonialCota"), adv.optAny("vpa")))
+        addIndicator("Valor de Mercado", "BRL", *normalizedOrElse("valorDeMercado", financialSummary.optAny("valorDeMercado"), results.optAny("valorDeMercado"), adv.optAny("market_value")))
+        addIndicator("Patrimônio Líquido", "BRL", *normalizedOrElse("patrimonioLiquido", financialSummary.optAny("patrimonioLiquido"), results.optAny("patrimonioLiquido"), valorPatrimonialIndicadores.optAny("patrimonioLiquido"), valorPatrimonialIndicadores.optAny("patrimonioLiquidoRaw"), infoFiiForIndicators.optAny("patrimonioLiquido"), adv.optAny("balance_net_worth")))
+        addIndicator("Liquidez Média Diária", "BRL", *normalizedOrElse("liquidezMediaDiaria", results.optAny("liquidezMediaDiaria"), results.optAny("liquidezDiaria"), financialSummary.optAny("liquidezMediaDiaria"), adv.optAny("liquidez_media_diaria")))
+        addIndicator("Liquidez Corrente", "", *normalizedOrElse("liquidezCorrente", indicadores.optAny("liquidezCorrente"), results.optAny("liquidezCorrente"), adv.optAny("current_liquidity")))
+        addIndicator("Dívida Líquida/EBITDA", "", *normalizedOrElse("dividaLiquidaEbitda", indicadores.optAny("dividaLiquidaEbitda"), results.optAny("dividaLiquidaEbitda"), adv.optAny("net_debt_ebitda")))
+        addIndicator("Dívida Líquida/EBIT", "", *normalizedOrElse("dividaLiquidaEbit", indicadores.optAny("dividaLiquidaEbit"), results.optAny("dividaLiquidaEbit"), adv.optAny("net_debt_ebit")))
+        addIndicator("Dívida Bruta/Patrimônio", "", *normalizedOrElse("dividaBrutaPatrimonio", indicadores.optAny("dividaBrutaPatrimonio"), results.optAny("dividaBrutaPatrimonio"), adv.optAny("gross_debt_net_worth")))
+        addIndicator("Patrimônio/Ativos", "%", *normalizedOrElse("patrimonioAtivos", indicadores.optAny("patrimonioAtivos"), results.optAny("patrimonioAtivos"), adv.optAny("net_worth_assets")))
+        addIndicator("Passivos/Ativos", "%", *normalizedOrElse("passivosAtivos", indicadores.optAny("passivosAtivos"), results.optAny("passivosAtivos"), adv.optAny("liabilities_assets")))
+        addIndicator("Giro dos Ativos", "", *normalizedOrElse("giroAtivos", indicadores.optAny("giroAtivos"), results.optAny("giroAtivos"), adv.optAny("active_turns")))
+        addIndicator("CAGR Receitas 5A", "%", *normalizedOrElse("cagrReceitas5a", indicadores.optAny("cagrReceitas5a"), results.optAny("cagrReceitas5a"), adv.optAny("growth_net_revenue_last_5_years")))
+        addIndicator("CAGR Lucros 5A", "%", *normalizedOrElse("cagrLucros5a", indicadores.optAny("cagrLucros5a"), results.optAny("cagrLucros5a"), adv.optAny("growth_net_profit_last_5_years")))
+
+        if (isFii) {
+            addIndicator("Yield 1M", "%", *normalizedOrElse("yield1m", results.optAny("yield1m"), indicadores.optAny("yield1m")))
+            addIndicator("Yield 3M", "%", *normalizedOrElse("yield3m", results.optAny("yield3m"), indicadores.optAny("yield3m")))
+            addIndicator("Yield 6M", "%", *normalizedOrElse("yield6m", results.optAny("yield6m"), indicadores.optAny("yield6m")))
+            addIndicator("Yield 12M", "%", *normalizedOrElse("yield12m", results.optAny("yield12m"), indicadores.optAny("yield12m"), results.optAny("dividendYield")))
+            addIndicator("Vacância Física", "%", *normalizedOrElse("vacanciaFisica", results.optAny("vacanciaFisica"), infoFiiForIndicators.optAny("vacanciaFisica"), infoFiiForIndicators.optAny("vacancia")))
+            addIndicator("Número de Imóveis", "number", results.optAny("numeroImoveis"), infoFiiForIndicators.optAny("numeroImoveis"), sections.optJSONArray("listaImoveis")?.length(), results.optJSONArray("listaImoveis")?.length())
+            addIndicator("Cotistas", "number", results.optAny("numeroCotistas"), results.optAny("cotistas"), infoFiiForIndicators.optAny("numeroCotistas"), infoFiiForIndicators.optAny("cotistas"))
+            addIndicator("Cotas Emitidas", "number", results.optAny("cotasEmitidas"), results.optAny("totalPapeis"), infoFiiForIndicators.optAny("cotasEmitidas"), infoFiiForIndicators.optAny("quantidadeCotas"))
         }
+
+        fun indicatorLabelForKey(raw: String): String {
+            val key = canonicalKey(raw)
+            return when {
+                key in setOf("precoatual", "price", "quote", "cotacao") -> "Preço Atual"
+                key in setOf("variacaoday", "daychange", "changepercent") -> "Variação Dia"
+                key in setOf("variacao12m", "variation12months", "variation1year") -> "Variação 12M"
+                key in setOf("pl") -> "P/L"
+                key in setOf("pvp") -> "P/VP"
+                key.contains("dividend") || key == "dy" || key.contains("yield") -> if (key.contains("1m")) "Yield 1M" else if (key.contains("3m")) "Yield 3M" else if (key.contains("6m")) "Yield 6M" else if (key.contains("12m")) "Yield 12M" else "Dividend Yield"
+                key.contains("payout") -> "Payout"
+                key.contains("roe") -> "ROE"
+                key.contains("roic") -> "ROIC"
+                key.contains("roa") -> "ROA"
+                key.contains("vacancia") || key.contains("vacancy") -> "Vacância Física"
+                key.contains("valorpatrimonialcota") || key.contains("valorpatrimonialporcota") || key == "vpa" -> "VPA"
+                key.contains("patrimonioliquido") || key.contains("networth") -> "Patrimônio Líquido"
+                key.contains("liquidezmedia") || key.contains("liquidezdiaria") -> "Liquidez Média Diária"
+                key.contains("cotistas") || key.contains("holders") -> "Cotistas"
+                key.contains("cotasemitidas") || key.contains("issued") -> "Cotas Emitidas"
+                key.contains("margemliquida") || key.contains("netmargin") -> "Margem Líquida"
+                key.contains("margembruta") || key.contains("grossmargin") -> "Margem Bruta"
+                key.contains("ebitda") && key.contains("margin") -> "Margem EBITDA"
+                key.contains("ebit") && key.contains("margin") -> "Margem EBIT"
+                else -> raw.replace('_', ' ').replace('-', ' ').replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.ROOT) else it.toString() }
+            }
+        }
+
+        fun unitForIndicator(label: String, rawKey: String = ""): String {
+            val text = (label + " " + rawKey).lowercase(Locale.ROOT)
+            return when {
+                text.contains("yield") || text.contains("dividend") || text.contains("variação") || text.contains("margem") || text.contains("payout") || text.contains("vacância") || text.contains("roe") || text.contains("roic") || text.contains("roa") || text.contains("cagr") -> "%"
+                text.contains("preço") || text.contains("valor") || text.contains("patrimônio") || text.contains("liquidez") || text == "vpa" || text.contains("vpa") -> "BRL"
+                text.contains("cotistas") || text.contains("cotas") || text.contains("imóveis") -> "number"
+                else -> ""
+            }
+        }
+
+        fun addGenericIndicator(rawLabel: String, rawValue: Any?, displayCandidate: Any? = null) {
+            val label = indicatorLabelForKey(rawLabel)
+            if (label.isBlank() || label.startsWith("_") || indicatorCards.any { it.label.equals(label, ignoreCase = true) }) return
+            val unit = unitForIndicator(label, rawLabel)
+            val display = firstText(displayCandidate)
+            addIndicatorWithDisplay(label, unit, display, rawValue)
+        }
+
+        fun addIndicatorsFromObject(obj: JSONObject?) {
+            if (obj == null || obj.length() == 0) return
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                if (key.startsWith("_") || key.equals("warnings", true) || key.equals("source", true)) continue
+                val value = obj.optAny(key) ?: continue
+                when (value) {
+                    is JSONObject -> addGenericIndicator(key, value.optAny("value") ?: value.optAny("valor") ?: value.optAny("display"), value.optAny("display"))
+                    is JSONArray -> Unit
+                    else -> addGenericIndicator(key, value, value)
+                }
+            }
+        }
+
+        fun addIndicatorsFromArray(arr: JSONArray?) {
+            if (arr == null) return
+            for (i in 0 until arr.length()) {
+                val item = arr.optJSONObject(i) ?: continue
+                val label = firstText(item.optAny("label"), item.optAny("name"), item.optAny("nome"), item.optAny("key"), item.optAny("indicador"), item.optAny("title"))
+                if (label.isBlank()) continue
+                val value = item.optAny("value") ?: item.optAny("valor") ?: item.optAny("percent") ?: item.optAny("percentage") ?: item.optAny("display")
+                addGenericIndicator(label, value, item.optAny("display") ?: value)
+            }
+        }
+
+        addIndicatorsFromObject(normalized)
+        addIndicatorsFromObject(indicadores)
+        addIndicatorsFromObject(ratiosChave)
+        addIndicatorsFromObject(financialSummary)
+        addIndicatorsFromObject(infoFiiForIndicators)
+        addIndicatorsFromObject(valorPatrimonialIndicadores)
+        addIndicatorsFromObject(adv)
+        addIndicatorsFromArray(results.optJSONArray("indicadores"))
+        addIndicatorsFromArray(sections.optJSONArray("indicadores"))
+        addIndicatorsFromArray(results.optJSONArray("metrics"))
+        addIndicatorsFromArray(results.optJSONArray("fundamentalistIndicators"))
+        addIndicatorsFromArray(results.optJSONArray("keyValues"))
+        addIndicatorsFromArray(sections.optJSONArray("keyValues"))
+        addIndicatorsFromArray(results.optArray("indicadoresFundamentalistas.semComparativos"))
+        addIndicatorsFromArray(results.optArray("indicadoresFundamentalistas.comComparativos"))
+        addIndicatorsFromArray(results.optArray("indicadoresFundamentalistas.comparativos"))
+        addIndicatorsFromArray(financialSummary.optJSONArray("keyValues"))
+        addIndicatorsFromArray(financialSummary.optJSONArray("items"))
+
+        val dyVal = firstNumber(normalizedValue(normalized, "dividendYield"), indicadores.optAny("dividendYield"), ratiosChave.optAny("dividendYield"), results.optAny("dividendYield"), results.optAny("yield12m"))
 
         val histInds = sections.optJSONObject("historicoIndicadores") ?: sections.optJSONObject("charts")
         if (histInds != null) {
@@ -1466,46 +2323,67 @@ object B3NetworkService {
                     val list = mutableListOf<AssetIndicatorPoint>()
                     for (i in 0 until arr.length()) {
                         val pt = arr.optJSONObject(i) ?: continue
-                        val year = firstText(pt.optAny("year"), pt.optAny("label"), pt.optAny("date"), "P${i+1}")
-                        val value = firstNumber(pt.optAny("value"), pt.optAny("valor"))
+                        val year = firstText(pt.optAny("year"), pt.optAny("ano"), pt.optAny("period"), pt.optAny("label"), pt.optAny("date"), "P${i+1}")
+                        val value = firstNumber(pt.optAny("value"), pt.optAny("valor"), pt.optAny("percent"), pt.optAny("percentage"), pt.optAny("y"))
                         val disp = pt.optString("display", String.format(Locale.ROOT, "%.2f", value))
-                        list.add(AssetIndicatorPoint(label = k, value = value, display = disp, year = year))
+                        val label = indicatorLabelForKey(k)
+                        if (value.isFinite()) list.add(AssetIndicatorPoint(label = label, value = value, display = disp, year = year))
                     }
                     if (list.isNotEmpty()) {
-                        indicatorHistory[k] = list
+                        indicatorHistory[indicatorLabelForKey(k)] = list
                     }
                 }
             }
         }
 
         val dividendEvents = mutableListOf<DividendEvent>()
-        val pEvents = firstArray(
-            results.optJSONArray("historicoDividendos"),
-            results.optJSONArray("dividends"),
-            results.optJSONArray("historicoProventos"),
-            results.optJSONArray("proventos"),
-            results.optObject("dividendos.historico")?.optJSONArray("items") ?: results.optObject("dividendos")?.optJSONArray("historico")
+        val dividendSection = firstObject(
+            results.optJSONObject("dividendos"),
+            results.optJSONObject("dividends"),
+            results.optJSONObject("proventos"),
+            results.optJSONObject("income"),
+            sections.optJSONObject("dividendos"),
+            sections.optJSONObject("dividends"),
+            sections.optJSONObject("proventos"),
+            results.optJSONObject("distribuicoes"),
+            sections.optJSONObject("distribuicoes"),
+            root.optObject("data.dividendos"),
+            root.optObject("data.dividends"),
+            root.optObject("data.proventos"),
+            root.optObject("data.distribuicoes")
         )
-        if (pEvents != null && pEvents.length() > 0) {
-            for (i in 0 until pEvents.length()) {
-                val ev = pEvents.optJSONObject(i) ?: continue
-                val type = firstText(ev.optAny("tipo"), ev.optAny("type"), ev.optAny("kind"), "Dividendo")
-                val datacom = normalizeDisplayDate(firstText(ev.optAny("dataCom"), ev.optAny("dateCom"), ev.optAny("comDate"), ev.optAny("date_with")))
-                val payment = normalizeDisplayDate(firstText(ev.optAny("dataPagamento"), ev.optAny("paymentDate"), ev.optAny("pagamento"), ev.optAny("date_payment")))
-                val value = firstNumber(ev.optAny("valor"), ev.optAny("value"), ev.optAny("amount"), ev.optAny("valuePerShare"), ev.optAny("valorPorCota"))
-                if (value > 0.0) {
-                    dividendEvents.add(
-                        DividendEvent(
-                            ticker = ticker,
-                            dateCom = datacom,
-                            paymentDate = payment,
-                            valuePerShare = value,
-                            status = "Pago"
-                        )
-                    )
-                }
-            }
-        }
+        appendDividendEventsFromArray(
+            ticker,
+            firstArray(
+                results.optJSONArray("historicoDividendos"),
+                results.optJSONArray("dividends"),
+                results.optJSONArray("historicoProventos"),
+                results.optJSONArray("proventos"),
+                results.optJSONArray("dividendos"),
+                results.optJSONArray("income"),
+                results.optJSONArray("earnings"),
+                dividendSection?.optJSONArray("historico"),
+                dividendSection?.optJSONArray("history"),
+                dividendSection?.optJSONArray("items"),
+                dividendSection?.optJSONArray("events"),
+                dividendSection?.optJSONArray("proventos"),
+                dividendSection?.optJSONArray("dividendos"),
+                dividendSection?.optJSONArray("distribuicoes"),
+                dividendSection?.optJSONArray("distributions"),
+                dividendSection?.optJSONArray("ultimos12Meses"),
+                dividendSection?.optJSONArray("last12Months"),
+                results.optObject("dividendos.historico")?.optJSONArray("items"),
+                results.optObject("dividendos")?.optJSONArray("historico"),
+                results.optObject("dividends")?.optJSONArray("history"),
+                results.optObject("proventos")?.optJSONArray("historico"),
+                sections.optJSONArray("historicoDividendos"),
+                sections.optJSONArray("proventos"),
+                root.optArray("data.dividendos.historico"),
+                root.optArray("data.dividends.history"),
+                root.optArray("data.proventos")
+            ),
+            dividendEvents
+        )
 
         val dividendYearly = mutableListOf<AssetIndicatorPoint>()
         val dividendMonthly = mutableListOf<AssetIndicatorPoint>()
@@ -1517,14 +2395,14 @@ object B3NetworkService {
             val byMonth = mutableMapOf<String, Double>()
             for (ev in dividendEvents) {
                 val year = try {
-                    ev.dateCom.substringAfterLast("/", "Previsto")
+                    ev.paymentDate.ifBlank { ev.dateCom }.substringAfterLast("/", "Previsto")
                 } catch (_: Exception) { "Previsto" }
                 if (year.length == 4 && year.all { it.isDigit() }) {
                     byYear[year] = (byYear[year] ?: 0.0) + ev.valuePerShare
                 }
 
                 val monthYear = try {
-                    val parts = ev.dateCom.split("/")
+                    val parts = ev.paymentDate.ifBlank { ev.dateCom }.split("/")
                     if (parts.size >= 3) {
                         parts[1] + "/" + parts[2]
                     } else "Previsto"
@@ -1555,15 +2433,28 @@ object B3NetworkService {
             }
         }
 
-        val payoutHistObj = sections.optJSONObject("payoutHistorico") ?: sections.optJSONObject("demonstrativos")?.optJSONObject("payoutHistorico")
+        val payoutHistObj = sections.optJSONObject("payoutHistorico") ?: financialCharts?.optJSONObject("payoutHistorico") ?: sections.optJSONObject("demonstrativos")?.optJSONObject("payoutHistorico")
         if (payoutHistObj != null) {
             val yearsArr = payoutHistObj.optJSONArray("years")
             val payoutArr = payoutHistObj.optJSONArray("payOutCompanyIndicators")
+                ?: payoutHistObj.optJSONArray("payout")
+                ?: payoutHistObj.optJSONArray("items")
             if (yearsArr != null && payoutArr != null) {
                 val len = kotlin.math.min(yearsArr.length(), payoutArr.length())
                 for (i in 0 until len) {
-                    val yr = yearsArr.optString(i)
-                    val pay = firstNumber(payoutArr.opt(i))
+                    val rawPoint = payoutArr.opt(i)
+                    val objPoint = rawPoint as? JSONObject
+                    val yr = firstText(objPoint?.optAny("year"), objPoint?.optAny("ano"), objPoint?.optAny("label"), yearsArr.optString(i))
+                    val pay = firstNumber(objPoint?.optAny("value"), objPoint?.optAny("valor"), objPoint?.optAny("payout"), rawPoint)
+                    if (yr.isNotBlank() && pay != 0.0) {
+                        payoutHistory.add(AssetIndicatorPoint("Payout", pay, String.format(Locale.ROOT, "%.2f%%", pay), "%", year = yr))
+                    }
+                }
+            } else if (payoutArr != null) {
+                for (i in 0 until payoutArr.length()) {
+                    val objPoint = payoutArr.optJSONObject(i) ?: continue
+                    val yr = firstText(objPoint.optAny("year"), objPoint.optAny("ano"), objPoint.optAny("label"))
+                    val pay = firstNumber(objPoint.optAny("value"), objPoint.optAny("valor"), objPoint.optAny("payout"))
                     if (yr.isNotBlank() && pay != 0.0) {
                         payoutHistory.add(AssetIndicatorPoint("Payout", pay, String.format(Locale.ROOT, "%.2f%%", pay), "%", year = yr))
                     }
@@ -1572,61 +2463,73 @@ object B3NetworkService {
         }
 
         val indexComparison = mutableListOf<AssetComparisonSeries>()
-        val compIndices = sections.optJSONObject("comparacaoIndices") ?: sections.optJSONObject("rentabilidadeChart")
+        val compIndices = firstObject(
+            sections.optJSONObject("comparacaoIndices"),
+            sections.optJSONObject("rentabilidadeChart"),
+            sections.optJSONObject("indexComparison"),
+            sections.optJSONObject("indicesComparison"),
+            sections.optJSONObject("rentabilidade"),
+            results.optJSONObject("comparacaoIndices"),
+            results.optJSONObject("rentabilidadeChart"),
+            results.optJSONObject("indexComparison"),
+            results.optJSONObject("indicesComparison"),
+            results.optJSONObject("rentabilidade"),
+            root.optJSONObject("comparison"),
+            root.optJSONObject("compare")
+        )
         if (compIndices != null) {
-            val seriesNames = listOf("ativo", "ibov", "ifix", "cdi", "ipca")
-            for (sName in seriesNames) {
-                val sArr = compIndices.optJSONArray(sName) ?: compIndices.optJSONArray(sName.uppercase())
-                if (sArr != null) {
-                    val pointsList = mutableListOf<AssetComparisonPoint>()
-                    for (i in 0 until sArr.length()) {
-                        val ptObj = sArr.optJSONObject(i) ?: continue
-                        val lbl = firstText(ptObj.optAny("label"), ptObj.optAny("date"), "P${i+1}")
-                        val v = firstNumber(ptObj.optAny("value"), ptObj.optAny("close"), ptObj.optAny("valor"))
-                        pointsList.add(AssetComparisonPoint(label = lbl, value = v))
-                    }
-                    if (pointsList.isNotEmpty()) {
-                        indexComparison.add(AssetComparisonSeries(sName.uppercase(Locale.ROOT), pointsList))
-                    }
-                }
+            indexComparison.addAll(parseComparisonSeriesFromObject(compIndices, ticker))
+        }
+        if (indexComparison.isEmpty()) {
+            val var12m = firstNumber(normalizedValue(normalized, "variacao12m"), results.optAny("variacao12m"))
+            if (var12m != 0.0) {
+                indexComparison.add(AssetComparisonSeries(ticker, listOf(AssetComparisonPoint("Base", 0.0), AssetComparisonPoint("12M", var12m))))
             }
         }
 
         val commodityComparison = mutableListOf<AssetComparisonSeries>()
-        val compCommObj = sections.optJSONObject("comparacaoCommodity")
+        val compCommObj = sections.optJSONObject("comparacaoCommodity") ?: results.optJSONObject("comparacaoCommodity") ?: sections.optJSONObject("commodities")
         if (compCommObj != null) {
-            val brentArr = compCommObj.optJSONArray("brent") ?: compCommObj.optJSONArray("BRENT")
+            val brentArr = compCommObj.optJSONArray("brent") ?: compCommObj.optJSONArray("BRENT") ?: compCommObj.optJSONArray("petroleoBrent")
             if (brentArr != null) {
                 val pointsList = mutableListOf<AssetComparisonPoint>()
                 for (i in 0 until brentArr.length()) {
                     val pt = brentArr.optJSONObject(i) ?: continue
-                    pointsList.add(AssetComparisonPoint(label = firstText(pt.optAny("label"), "P${i+1}"), value = firstNumber(pt.optAny("value"))))
+                    pointsList.add(AssetComparisonPoint(label = firstText(pt.optAny("label"), pt.optAny("date"), "P${i+1}"), value = firstNumber(pt.optAny("value"), pt.optAny("valor"), pt.optAny("percent"))))
                 }
-                if (pointsList.isNotEmpty()) {
-                    commodityComparison.add(AssetComparisonSeries("BRENT OIL", pointsList))
+                if (pointsList.size >= 2) {
+                    commodityComparison.add(AssetComparisonSeries("BRENT", pointsList))
                 }
+            }
+            if (commodityComparison.isEmpty()) {
+                commodityComparison.addAll(parsePercentSeriesFromText(textSection(compCommObj), setOf("BRENT", "OURO", "MILHO", "CAFÉ", "COBRE")))
             }
         }
 
         val revenueProfit = mutableListOf<FinancialStatementPoint>()
-        val demObj = sections.optJSONObject("demonstrativos")
+        val demObj = firstObject(sections.optJSONObject("demonstrativos"), results.optJSONObject("demonstrativos"), financialCharts)
         val revProfArr = firstArray(
+            financialCharts?.optJSONArray("receitasLucros"),
+            financialCharts?.optJSONArray("revenueProfit"),
+            financialCharts?.optJSONArray("items"),
             demObj?.optJSONArray("receitasLucros"),
+            demObj?.optJSONArray("revenueProfit"),
+            demObj?.optJSONArray("items"),
             sections.optJSONArray("receitasLucros"),
-            demObj?.optJSONArray("items")
+            results.optJSONArray("receitasLucros")
         )
         if (revProfArr != null) {
             for (i in 0 until revProfArr.length()) {
                 val r = revProfArr.optJSONObject(i) ?: continue
-                val yr = firstText(r.optAny("year"), r.optAny("ano"), "")
-                val qt = firstText(r.optAny("quarter"), r.optAny("trimestre"), "")
-                val rev = firstNumber(r.optAny("net_revenue"), r.optAny("revenue"), r.optAny("receitaLiquida"), r.optAny("receita"))
-                val profit = firstNumber(r.optAny("net_profit"), r.optAny("profit"), r.optAny("lucroLiquido"), r.optAny("lucro"))
-                val costVal = firstNumber(r.optAny("cost"), r.optAny("custo"))
-                val gp = firstNumber(r.optAny("gross_profit"), r.optAny("lucroBruto"))
-                val ebtda = firstNumber(r.optAny("ebitda"))
-                val ebt = firstNumber(r.optAny("ebit"))
-                if (yr.isNotBlank()) {
+                val yr = firstText(r.optAny("year"), r.optAny("ano"), r.optAny("date"), "")
+                val qt = firstText(r.optAny("quarter"), r.optAny("trimestre"), r.optAny("period"), "")
+                val rev = firstNumber(r.optAny("net_revenue"), r.optAny("netRevenue"), r.optAny("revenue"), r.optAny("receitaLiquida"), r.optAny("receita"), r.optAny("faturamento"))
+                val profit = firstNumber(r.optAny("net_profit"), r.optAny("netProfit"), r.optAny("profit"), r.optAny("lucroLiquido"), r.optAny("lucro"))
+                val costVal = firstNumber(r.optAny("cost"), r.optAny("custo"), r.optAny("costs"))
+                val gp = firstNumber(r.optAny("gross_profit"), r.optAny("grossProfit"), r.optAny("lucroBruto"))
+                val ebtda = firstNumber(r.optAny("ebitda"), r.optAny("EBITDA"))
+                val ebt = firstNumber(r.optAny("ebit"), r.optAny("EBIT"))
+                if (yr.isNotBlank() && (rev != 0.0 || profit != 0.0 || costVal != 0.0 || gp != 0.0 || ebtda != 0.0 || ebt != 0.0)) {
                     revenueProfit.add(
                         FinancialStatementPoint(
                             label = if (qt.isNotBlank()) "$qt/$yr" else yr,
@@ -1645,44 +2548,67 @@ object B3NetworkService {
         }
 
         val profitVsQuote = mutableListOf<AssetComparisonPoint>()
-        val profitQuoteObj = demObj?.optJSONObject("lucroCotacao") ?: sections.optJSONObject("lucroCotacao")
+        val profitQuoteObj = firstObject(
+            financialCharts?.optJSONObject("lucroCotacao"),
+            financialCharts?.optJSONObject("profitVsQuote"),
+            demObj?.optJSONObject("lucroCotacao"),
+            demObj?.optJSONObject("profitVsQuote"),
+            sections.optJSONObject("lucroCotacao"),
+            results.optJSONObject("lucroCotacao")
+        )
         if (profitQuoteObj != null) {
-            val quotesArr = profitQuoteObj.optJSONArray("quotes") ?: profitQuoteObj.optJSONArray("cotações")
-            val profitsArr = profitQuoteObj.optJSONArray("profits") ?: profitQuoteObj.optJSONArray("lucros")
+            val quotesArr = profitQuoteObj.optJSONArray("quotes") ?: profitQuoteObj.optJSONArray("cotacoes") ?: profitQuoteObj.optJSONArray("cotações")
+            val profitsArr = profitQuoteObj.optJSONArray("profits") ?: profitQuoteObj.optJSONArray("lucros") ?: profitQuoteObj.optJSONArray("netProfit")
             if (quotesArr != null && profitsArr != null) {
                 val len = kotlin.math.min(quotesArr.length(), profitsArr.length())
                 for (i in 0 until len) {
                     val q = quotesArr.optJSONObject(i) ?: continue
                     val p = profitsArr.optJSONObject(i) ?: continue
-                    val lbl = firstText(q.optAny("label"), q.optAny("year"), "P${i+1}")
-                    profitVsQuote.add(
-                        AssetComparisonPoint(
-                            label = lbl,
-                            value = firstNumber(q.optAny("value")),
-                            secondaryValue = firstNumber(p.optAny("value"))
-                        )
-                    )
+                    val lbl = firstText(q.optAny("label"), q.optAny("year"), q.optAny("ano"), "P${i+1}")
+                    val quote = firstNumber(q.optAny("quotation"), q.optAny("quote"), q.optAny("cotacao"), q.optAny("value"), q.optAny("valor"))
+                    val profit = firstNumber(p.optAny("net_profit"), p.optAny("netProfit"), p.optAny("profit"), p.optAny("lucro"), p.optAny("value"), p.optAny("valor"))
+                    if (quote != 0.0 || profit != 0.0) {
+                        profitVsQuote.add(AssetComparisonPoint(label = lbl, value = quote, secondaryValue = profit))
+                    }
+                }
+            } else {
+                val years = profitQuoteObj.keys()
+                while (years.hasNext()) {
+                    val year = years.next()
+                    val obj = profitQuoteObj.optJSONObject(year) ?: continue
+                    val quote = firstNumber(obj.optAny("quotation"), obj.optAny("quote"), obj.optAny("cotacao"), obj.optAny("price"), obj.optAny("value"))
+                    val profit = firstNumber(obj.optAny("net_profit"), obj.optAny("netProfit"), obj.optAny("profit"), obj.optAny("lucro"), obj.optAny("lucroLiquido"))
+                    if ((quote != 0.0 || profit != 0.0) && year.isNotBlank()) {
+                        profitVsQuote.add(AssetComparisonPoint(label = year, value = quote, secondaryValue = profit))
+                    }
                 }
             }
         }
 
         val equityEvolution = mutableListOf<FinancialStatementPoint>()
         val eqArr = firstArray(
+            financialCharts?.optJSONArray("evolucaoPatrimonio"),
+            financialCharts?.optJSONArray("equityEvolution"),
+            financialCharts?.optJSONArray("balancoPatrimonial"),
             demObj?.optJSONArray("evolucaoPatrimonio"),
-            sections.optJSONArray("evolucaoPatrimonio")
+            demObj?.optJSONArray("equityEvolution"),
+            sections.optJSONArray("evolucaoPatrimonio"),
+            results.optJSONArray("evolucaoPatrimonio")
         )
         if (eqArr != null) {
             for (i in 0 until eqArr.length()) {
                 val eq = eqArr.optJSONObject(i) ?: continue
-                val yr = firstText(eq.optAny("year"), eq.optAny("ano"), "")
-                val plVal = firstNumber(eq.optAny("net_worth"), eq.optAny("patrimonioLiquido"), eq.optAny("pl"))
-                val assetsVal = firstNumber(eq.optAny("balance_total_assets"), eq.optAny("ativos"), eq.optAny("assets"))
-                val liabVal = firstNumber(eq.optAny("balance_total_liabilities"), eq.optAny("passivos"), eq.optAny("liabilities"))
-                if (yr.isNotBlank()) {
+                val yr = firstText(eq.optAny("year"), eq.optAny("ano"), eq.optAny("date"), "")
+                val qt = firstText(eq.optAny("quarter"), eq.optAny("trimestre"), "")
+                val plVal = firstNumber(eq.optAny("net_worth"), eq.optAny("netWorth"), eq.optAny("patrimonioLiquido"), eq.optAny("pl"))
+                val assetsVal = firstNumber(eq.optAny("balance_total_assets"), eq.optAny("totalAssets"), eq.optAny("ativos"), eq.optAny("assets"), eq.optAny("ativoTotal"))
+                val liabVal = firstNumber(eq.optAny("balance_total_liabilities"), eq.optAny("totalLiabilities"), eq.optAny("passivos"), eq.optAny("liabilities"), eq.optAny("passivoTotal"))
+                if (yr.isNotBlank() && (plVal != 0.0 || assetsVal != 0.0 || liabVal != 0.0)) {
                     equityEvolution.add(
                         FinancialStatementPoint(
-                            label = yr,
+                            label = if (qt.isNotBlank()) "$qt/$yr" else yr,
                             year = yr,
+                            quarter = qt,
                             netWorth = plVal,
                             totalAssets = assetsVal,
                             totalLiabilities = liabVal
@@ -1695,7 +2621,14 @@ object B3NetworkService {
         val revenueByRegion = mutableMapOf<String, List<AssetBreakdownPoint>>()
         val revenueByBusiness = mutableMapOf<String, List<AssetBreakdownPoint>>()
 
-        val regObj = sections.optJSONObject("regioesReceita") ?: sections.optObject("empresa.regioesReceita")
+        val regObj = firstObject(
+            sections.optJSONObject("regioesReceita"),
+            sections.optObject("empresa.regioesReceita"),
+            results.optJSONObject("regioesReceita"),
+            results.optJSONObject("geografiaReceita"),
+            results.optJSONObject("revenueGeography"),
+            root.optJSONObject("revenueGeography")
+        )
         if (regObj != null) {
             val years = regObj.keys()
             while (years.hasNext()) {
@@ -1726,7 +2659,14 @@ object B3NetworkService {
             }
         }
 
-        val busObj = sections.optJSONObject("negociosReceita") ?: sections.optObject("empresa.negociosReceita")
+        val busObj = firstObject(
+            sections.optJSONObject("negociosReceita"),
+            sections.optObject("empresa.negociosReceita"),
+            results.optJSONObject("negociosReceita"),
+            results.optJSONObject("segmentosReceita"),
+            results.optJSONObject("revenueSegment"),
+            root.optJSONObject("revenueSegment")
+        )
         if (busObj != null) {
             val years = busObj.keys()
             while (years.hasNext()) {
@@ -1756,29 +2696,87 @@ object B3NetworkService {
             }
         }
 
+        if (revenueByRegion.isEmpty()) {
+            revenueByRegion.putAll(
+                parseBreakdownMap(
+                    firstObject(
+                        results.optJSONObject("revenueGeography"),
+                        results.optJSONObject("regioesReceita"),
+                        results.optJSONObject("geografiaReceita"),
+                        sections.optJSONObject("revenueGeography"),
+                        sections.optJSONObject("geografiaReceita")
+                    )
+                )
+            )
+        }
+        if (revenueByBusiness.isEmpty()) {
+            revenueByBusiness.putAll(
+                parseBreakdownMap(
+                    firstObject(
+                        results.optJSONObject("revenueSegment"),
+                        results.optJSONObject("revenueByBusiness"),
+                        results.optJSONObject("negociosReceita"),
+                        results.optJSONObject("segmentosReceita"),
+                        sections.optJSONObject("revenueSegment"),
+                        sections.optJSONObject("segmentosReceita")
+                    )
+                )
+            )
+        }
+
         val fiiDistribution12m = mutableListOf<AssetIndicatorPoint>()
         val fiiPeerAverage = mutableListOf<AssetComparisonPoint>()
         val fiiPatrimonialInfo = mutableListOf<AssetIndicatorPoint>()
         val fiiAssetDistribution = mutableMapOf<String, List<AssetBreakdownPoint>>()
 
         if (isFii) {
-            val y1m = firstNumber(normalizedValue(normalized, "yield1m"))
-            val y3m = firstNumber(normalizedValue(normalized, "yield3m"))
-            val y6m = firstNumber(normalizedValue(normalized, "yield6m"))
-            val y12m_val = firstNumber(normalizedValue(normalized, "yield12m"))
+            val y1m = firstNumber(normalizedValue(normalized, "yield1m"), results.optAny("yield1m"), indicadores.optAny("yield1m"))
+            val y3m = firstNumber(normalizedValue(normalized, "yield3m"), results.optAny("yield3m"), indicadores.optAny("yield3m"))
+            val y6m = firstNumber(normalizedValue(normalized, "yield6m"), results.optAny("yield6m"), indicadores.optAny("yield6m"))
+            val y12m_val = firstNumber(normalizedValue(normalized, "yield12m"), results.optAny("yield12m"), indicadores.optAny("yield12m"), dyVal)
             if (y1m != 0.0) fiiDistribution12m.add(AssetIndicatorPoint("Yield 1M", y1m, String.format(Locale.ROOT, "%.2f%%", y1m), "%"))
             if (y3m != 0.0) fiiDistribution12m.add(AssetIndicatorPoint("Yield 3M", y3m, String.format(Locale.ROOT, "%.2f%%", y3m), "%"))
             if (y6m != 0.0) fiiDistribution12m.add(AssetIndicatorPoint("Yield 6M", y6m, String.format(Locale.ROOT, "%.2f%%", y6m), "%"))
             if (y12m_val != 0.0) fiiDistribution12m.add(AssetIndicatorPoint("Yield 12M", y12m_val, String.format(Locale.ROOT, "%.2f%%", y12m_val), "%"))
+            if (fiiDistribution12m.isEmpty() && dividendMonthly.isNotEmpty()) {
+                val currentPriceForYield = firstNumber(normalizedValue(normalized, "precoAtual"), results.optAny("precoAtual"), results.optObject("cotacao")?.optAny("precoAtual"))
+                dividendMonthly.takeLast(12).forEach { month ->
+                    val pct = if (currentPriceForYield > 0.0) (month.value / currentPriceForYield) * 100.0 else month.value
+                    if (pct > 0.0 && pct.isFinite()) {
+                        fiiDistribution12m.add(AssetIndicatorPoint(month.period.ifBlank { "Mês" }, pct, String.format(Locale.ROOT, "%.2f%%", pct), "%"))
+                    }
+                }
+            }
 
-            val vpaVal = firstNumber(normalizedValue(normalized, "valorPatrimonialCota"), results.optAny("vpa"), results.optAny("valorPatrimonialCota"))
-            val currentPrice = firstNumber(normalizedValue(normalized, "precoAtual"), results.optAny("precoAtual"))
-            val numCotas = firstText(results.optAny("cotasEmitidas"), results.optAny("totalPapeis"))
-            val pvpVal = firstNumber(normalizedValue(normalized, "pvp"), results.optAny("pvp"))
-            val plTotal = firstNumber(normalizedValue(normalized, "patrimonioLiquido"), results.optAny("patrimonioLiquido"))
+            val infoFii = mergedObject(
+                results.optJSONObject("informacoesFundo"),
+                sections.optJSONObject("informacoesFundo"),
+                results.optJSONObject("dadosFundo"),
+                sections.optJSONObject("dadosFundo"),
+                results.optJSONObject("fund"),
+                sections.optJSONObject("fund"),
+                root.optJSONObject("informacoesFundo")
+            )
+            val fiiValorPatrimonialObj = mergedObject(results.optJSONObject("valorPatrimonial"), sections.optJSONObject("valorPatrimonial"), root.optJSONObject("valorPatrimonial"))
+            val vpaVal = firstNumber(normalizedValue(normalized, "valorPatrimonialCota"), results.optAny("vpa"), results.optAny("valorPatrimonialCota"), fiiValorPatrimonialObj?.optAny("valorPatrimonial"), fiiValorPatrimonialObj?.optAny("valorPatrimonialRaw"), infoFii?.optAny("valorPatrimonialCota"))
+            val currentPrice = firstNumber(normalizedValue(normalized, "precoAtual"), results.optAny("precoAtual"), results.optObject("cotacao")?.optAny("precoAtual"))
+            val numCotas = firstText(results.optAny("cotasEmitidas"), results.optAny("totalPapeis"), infoFii?.optAny("cotasEmitidas"), infoFii?.optAny("quantidadeCotas"))
+            val pvpVal = firstNumber(normalizedValue(normalized, "pvp"), results.optAny("pvp"), results.optObject("indicadores")?.optAny("pvp"))
+            val plTotal = firstNumber(normalizedValue(normalized, "patrimonioLiquido"), results.optAny("patrimonioLiquido"), fiiValorPatrimonialObj?.optAny("patrimonioLiquido"), fiiValorPatrimonialObj?.optAny("patrimonioLiquidoRaw"), infoFii?.optAny("patrimonioLiquido"))
+            val ultimoRendimento = firstNumber(results.optAny("ultimoRendimento"), results.optAny("lastDividend"), results.optAny("rendimento"), results.optObject("indicadores")?.optAny("ultimoRendimento"), infoFii?.optAny("ultimoRendimento"))
+            val vacancia = firstNumber(normalizedValue(normalized, "vacanciaFisica"), results.optAny("vacanciaFisica"), infoFii?.optAny("vacanciaFisica"), infoFii?.optAny("vacancia"))
+            val numeroImoveis = firstNumber(results.optAny("numeroImoveis"), infoFii?.optAny("numeroImoveis"), sections.optJSONArray("listaImoveis")?.length(), results.optJSONArray("listaImoveis")?.length())
+            val cotistas = firstText(results.optAny("numeroCotistas"), results.optAny("cotistas"), infoFii?.optAny("numeroCotistas"), infoFii?.optAny("cotistas"))
 
             if (vpaVal > 0.0) fiiPatrimonialInfo.add(AssetIndicatorPoint("VPA por Cota", vpaVal, String.format(Locale.ROOT, "R$ %.2f", vpaVal)))
             if (currentPrice > 0.0) fiiPatrimonialInfo.add(AssetIndicatorPoint("Valor da Cota", currentPrice, String.format(Locale.ROOT, "R$ %.2f", currentPrice)))
+            if (ultimoRendimento > 0.0) fiiPatrimonialInfo.add(AssetIndicatorPoint("Último Rendimento", ultimoRendimento, String.format(Locale.ROOT, "R$ %.4f", ultimoRendimento)))
+            if (vacancia > 0.0) fiiPatrimonialInfo.add(AssetIndicatorPoint("Vacância Física", vacancia, String.format(Locale.ROOT, "%.2f%%", vacancia), "%"))
+            if (numeroImoveis > 0.0) fiiPatrimonialInfo.add(AssetIndicatorPoint("Imóveis", numeroImoveis, numeroImoveis.toInt().toString()))
+            if (cotistas.isNotBlank()) {
+                val cotistasNum = parseLocaleFinancialNumber(cotistas)
+                if (cotistasNum > 0.0) fiiPatrimonialInfo.add(AssetIndicatorPoint("Cotistas", cotistasNum, cotistas))
+            }
             if (numCotas.isNotBlank()) {
                 val cn = parseLocaleFinancialNumber(numCotas)
                 if (cn > 0.0) fiiPatrimonialInfo.add(AssetIndicatorPoint("Número de Cotas", cn, numCotas))
@@ -1798,7 +2796,15 @@ object B3NetworkService {
                 sections.optJSONArray("distribuicaoAtivos"),
                 sections.optJSONArray("distribuicaoDeAtivos"),
                 sections.optJSONArray("ativosFundo"),
-                sections.optJSONArray("listaImoveis")
+                sections.optJSONArray("listaImoveis"),
+                results.optJSONArray("distribuicaoAtivos"),
+                results.optJSONArray("distribuicaoDeAtivos"),
+                results.optJSONArray("ativosFundo"),
+                results.optJSONArray("listaImoveis"),
+                results.optArray("fundo.distribuicaoAtivos"),
+                root.optArray("data.distribuicaoAtivos"),
+                root.optArray("data.ativosFundo"),
+                root.optArray("data.listaImoveis")
             )
             if (distAtivos != null) {
                 val list = mutableListOf<AssetBreakdownPoint>()
@@ -1814,7 +2820,7 @@ object B3NetworkService {
                     fiiAssetDistribution["Ativos"] = list
                 }
             } else {
-                val imoveisArr = sections.optJSONArray("listaImoveis")
+                val imoveisArr = sections.optJSONArray("listaImoveis") ?: results.optJSONArray("listaImoveis")
                 if (imoveisArr != null && imoveisArr.length() > 0) {
                     val countByState = mutableMapOf<String, Int>()
                     for (i in 0 until imoveisArr.length()) {
@@ -1827,6 +2833,26 @@ object B3NetworkService {
                         AssetBreakdownPoint(name = state, valuePercent = (count / total) * 100.0, displayValue = "$count Imóveis")
                     }
                     if (list.isNotEmpty()) fiiAssetDistribution["Ativos"] = list
+                }
+            }
+            if (fiiAssetDistribution.isEmpty()) {
+                val classificacao = firstText(
+                    infoFii?.optAny("segmento"),
+                    infoFii?.optAny("segmentoFii"),
+                    infoFii?.optAny("tipoFundo"),
+                    infoFii?.optAny("mandato"),
+                    results.optAny("segmentoFii"),
+                    results.optAny("tipoFundo"),
+                    "Classificação não informada"
+                )
+                if (classificacao.isNotBlank() && classificacao != "Classificação não informada") {
+                    fiiAssetDistribution["Ativos"] = listOf(
+                        AssetBreakdownPoint(
+                            name = classificacao,
+                            valuePercent = 100.0,
+                            displayValue = "Classificação do fundo"
+                        )
+                    )
                 }
             }
         }
@@ -1894,445 +2920,31 @@ object B3NetworkService {
      * Fallback direto legado. O caminho principal usa Valorae Proxy.
      */
     private fun fetchAssetDataDirect(ticker: String, bypassCache: Boolean = false): B3AssetData? {
-        val cacheKey = "asset_data_$ticker"
-        if (!bypassCache) {
-            getFromCache<B3AssetData>(cacheKey)?.let { return it }
-        } else {
-            memoryCache.remove(cacheKey)
-        }
-
-        val symbol = getTickerWithSuffix(ticker)
-        val isFii = inferIsFii(ticker)
-        
-        try {
-            var price = 0.0
-            var changePercent = 0.0
-            var name = ticker.uppercase()
-
-            // 1. Fetch Chart endpoint for real-time price & daily change
-            val chartUrl = "https://query1.finance.yahoo.com/v8/finance/chart/$symbol?range=1d&interval=1d&includePrePost=false"
-            val chartRequest = Request.Builder()
-                .url(chartUrl)
-                .addHeader("User-Agent", getRandomAgent())
-                .build()
-
-            client.newCall(chartRequest).execute().use { response ->
-                if (response.isSuccessful) {
-                    val bodyString = response.body?.string() ?: ""
-                    if (bodyString.contains("meta")) {
-                        val json = JSONObject(bodyString)
-                        val chart = json.optJSONObject("chart")
-                        val resultList = chart?.optJSONArray("result")
-                        if (resultList != null && resultList.length() > 0) {
-                            val result0 = resultList.getJSONObject(0)
-                            val meta = result0.getJSONObject("meta")
-                            price = meta.optDouble("regularMarketPrice", 0.0)
-                            
-                            val prevClose = if (meta.has("chartPreviousClose")) {
-                                meta.optDouble("chartPreviousClose", price)
-                            } else {
-                                meta.optDouble("regularMarketPreviousClose", price)
-                            }
-                            
-                            if (prevClose > 0.0 && !price.isNaN() && !prevClose.isNaN()) {
-                                changePercent = ((price - prevClose) / prevClose) * 100.0
-                            }
-                            name = meta.optString("symbol", name).replace(".SA", "")
-                        }
-                    }
-                }
-            }
-
-            // 2. Fetch QuoteSummary
-            val summaryUrl = "https://query1.finance.yahoo.com/v10/finance/quoteSummary/$symbol?modules=financialData,defaultKeyStatistics,summaryDetail"
-            val summaryRequest = Request.Builder()
-                .url(summaryUrl)
-                .addHeader("User-Agent", getRandomAgent())
-                .build()
-
-            var dy = 0.0
-            var pl = 0.0
-            var pvp = 0.0
-            var vpa = 0.0
-            var lpa = 0.0
-            var marketCap = 0.0
-            var roe = 0.0
-            var margins = 0.0
-            var lastDividend = 0.0
-            var dailyLiquidity = 0.0
-            var high52 = 0.0
-            var low52 = 0.0
-            var forwardPE = 0.0
-            var priceToSales = 0.0
-            var nextEarningsDate = ""
-            var fiiVacancy = 0.0
-
-            client.newCall(summaryRequest).execute().use { response ->
-                if (response.isSuccessful) {
-                    val bodyString = response.body?.string() ?: ""
-                    if (bodyString.contains("quoteSummary")) {
-                        val json = JSONObject(bodyString)
-                        val quoteSummary = json.optJSONObject("quoteSummary")
-                        val resultList = quoteSummary?.optJSONArray("result")
-                        if (resultList != null && resultList.length() > 0) {
-                            val result0 = resultList.getJSONObject(0)
-
-                            val detail = result0.optJSONObject("summaryDetail")
-                            if (detail != null) {
-                                if (detail.has("trailingAnnualDividendYield") && !detail.isNull("trailingAnnualDividendYield")) {
-                                    dy = detail.getJSONObject("trailingAnnualDividendYield").optDouble("raw", 0.0) * 100.0
-                                } else if (detail.has("yield") && !detail.isNull("yield")) {
-                                    dy = detail.getJSONObject("yield").optDouble("raw", 0.0) * 100.0
-                                }
-                                if (detail.has("dividendRate") && !detail.isNull("dividendRate")) {
-                                    lastDividend = detail.getJSONObject("dividendRate").optDouble("raw", 0.0)
-                                }
-                                if (detail.has("marketCap") && !detail.isNull("marketCap")) {
-                                    marketCap = detail.getJSONObject("marketCap").optDouble("raw", 0.0)
-                                }
-                                if (detail.has("averageVolume") && !detail.isNull("averageVolume")) {
-                                    dailyLiquidity = detail.getJSONObject("averageVolume").optDouble("raw", 0.0)
-                                }
-                                if (detail.has("fiftyTwoWeekHigh") && !detail.isNull("fiftyTwoWeekHigh")) {
-                                    high52 = detail.getJSONObject("fiftyTwoWeekHigh").optDouble("raw", 0.0)
-                                }
-                                if (detail.has("fiftyTwoWeekLow") && !detail.isNull("fiftyTwoWeekLow")) {
-                                    low52 = detail.getJSONObject("fiftyTwoWeekLow").optDouble("raw", 0.0)
-                                }
-                                if (detail.has("forwardPE") && !detail.isNull("forwardPE")) {
-                                    forwardPE = detail.getJSONObject("forwardPE").optDouble("raw", 0.0)
-                                }
-                                if (detail.has("priceToSalesTrailing12Months") && !detail.isNull("priceToSalesTrailing12Months")) {
-                                    priceToSales = detail.getJSONObject("priceToSalesTrailing12Months").optDouble("raw", 0.0)
-                                }
-                            }
-
-                            val stats = result0.optJSONObject("defaultKeyStatistics")
-                            if (stats != null) {
-                                if (stats.has("trailingPE") && !stats.isNull("trailingPE")) {
-                                    pl = stats.getJSONObject("trailingPE").optDouble("raw", 0.0)
-                                }
-                                if (stats.has("priceToBook") && !stats.isNull("priceToBook")) {
-                                    pvp = stats.getJSONObject("priceToBook").optDouble("raw", 0.0)
-                                }
-                                if (stats.has("bookValue") && !stats.isNull("bookValue")) {
-                                    vpa = stats.getJSONObject("bookValue").optDouble("raw", 0.0)
-                                }
-                                if (stats.has("trailingEps") && !stats.isNull("trailingEps")) {
-                                    lpa = stats.getJSONObject("trailingEps").optDouble("raw", 0.0)
-                                }
-                                if (stats.has("nextFiscalYearEnd") && !stats.isNull("nextFiscalYearEnd")) {
-                                    val dateTs = stats.getJSONObject("nextFiscalYearEnd").optLong("raw", 0)
-                                    if (dateTs > 0) {
-                                        nextEarningsDate = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(dateTs * 1000))
-                                    }
-                                }
-                            }
-
-                            val fd = result0.optJSONObject("financialData")
-                            if (fd != null) {
-                                if (fd.has("returnOnEquity") && !fd.isNull("returnOnEquity")) {
-                                    roe = fd.getJSONObject("returnOnEquity").optDouble("raw", 0.0) * 100.0
-                                }
-                                if (fd.has("profitMargins") && !fd.isNull("profitMargins")) {
-                                    margins = fd.getJSONObject("profitMargins").optDouble("raw", 0.0) * 100.0
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Scraping fallbacks removed as requested (deep clean)
-            val numericFallback = emptyMap<String, Double>()
-            val textFallback = emptyMap<String, String>()
-
-            // Sync from optional direct fallback if Proxy is unavailable and fallback is explicitly enabled
-            if (price == 0.0) price = numericFallback["price"] ?: 0.0
-            if (changePercent == 0.0) changePercent = numericFallback["changePercent"] ?: 0.0
-            if (dy == 0.0) dy = numericFallback["dy"] ?: 0.0
-            if (pl == 0.0 && !isFii) pl = numericFallback["pl"] ?: 0.0
-            if (pvp == 0.0) pvp = numericFallback["pvp"] ?: 0.0
-            if (vpa == 0.0) vpa = numericFallback["vpa"] ?: 0.0
-            if (lpa == 0.0 && !isFii) lpa = numericFallback["lpa"] ?: 0.0
-            if (roe == 0.0) roe = numericFallback["roe"] ?: 0.0
-            if (margins == 0.0) margins = numericFallback["margins"] ?: 0.0
-            if (dailyLiquidity == 0.0) dailyLiquidity = numericFallback["liquidity"] ?: 0.0
-            if (marketCap == 0.0) marketCap = numericFallback["marketCap"] ?: 0.0
-            if (isFii) fiiVacancy = numericFallback["fiiVacancy"] ?: 0.0
-            
-            if (nextEarningsDate.isEmpty()) nextEarningsDate = textFallback["nextEarningsDate"] ?: ""
-            if (lastDividend == 0.0) lastDividend = numericFallback["lastDividend"] ?: 0.0
-            if (name == ticker.uppercase()) name = textFallback["name"] ?: name
-
-            val result = B3AssetData(
-                ticker = ticker.uppercase(),
-                name = name,
-                price = price,
-                changePercent = changePercent,
-                dy = dy,
-                pl = pl,
-                pvp = pvp,
-                vpa = vpa,
-                lpa = lpa,
-                marketCap = marketCap,
-                roe = roe,
-                margins = margins,
-                lastDividend = lastDividend,
-                dailyLiquidity = dailyLiquidity,
-                high52 = high52,
-                low52 = low52,
-                forwardPE = forwardPE,
-                priceToSales = numericFallback["priceToSales"] ?: priceToSales,
-                nextEarningsDate = nextEarningsDate,
-                isFii = isFii,
-                fiiVacancy = fiiVacancy,
-                
-                // Novos Campos Investidor10
-                grossMargin = numericFallback["grossMargin"] ?: 0.0,
-                ebitMargin = numericFallback["ebitMargin"] ?: 0.0,
-                ebitdaMargin = numericFallback["ebitdaMargin"] ?: 0.0,
-                evEbitda = numericFallback["evEbitda"] ?: 0.0,
-                evEbit = numericFallback["evEbit"] ?: 0.0,
-                priceEbitda = numericFallback["priceEbitda"] ?: 0.0,
-                priceEbit = numericFallback["priceEbit"] ?: 0.0,
-                priceAsset = numericFallback["priceAsset"] ?: 0.0,
-                priceCapGiro = numericFallback["priceCapGiro"] ?: 0.0,
-                priceAtivoCircLiq = numericFallback["priceAtivoCircLiq"] ?: 0.0,
-                giroAtivos = numericFallback["giroAtivos"] ?: 0.0,
-                roic = numericFallback["roic"] ?: 0.0,
-                roa = numericFallback["roa"] ?: 0.0,
-                divLiqPatrimonio = numericFallback["divLiqPatrimonio"] ?: 0.0,
-                debtEbitda = numericFallback["debtEbitda"] ?: 0.0,
-                divLiqEbit = numericFallback["divLiqEbit"] ?: 0.0,
-                divBrutaPatrimonio = numericFallback["divBrutaPatrimonio"] ?: 0.0,
-                patrimonioAtivos = numericFallback["patrimonioAtivos"] ?: 0.0,
-                passivosAtivos = numericFallback["passivosAtivos"] ?: 0.0,
-                liquidezCorrente = numericFallback["liquidezCorrente"] ?: 0.0,
-                cagrRevenue5y = numericFallback["cagrRevenue5y"] ?: 0.0,
-                cagrProfit5y = numericFallback["cagrProfit5y"] ?: 0.0,
-                payout = numericFallback["payout"] ?: 0.0,
-
-                // FII
-                fiiTotalHolders = textFallback["fiiTotalHolders"] ?: "",
-                fiiIssuedShares = textFallback["fiiIssuedShares"] ?: "",
-                fiiAdminFee = textFallback["fiiAdminFee"] ?: "",
-                fiiFundType = textFallback["fiiFundType"] ?: "",
-                fiiMandate = textFallback["fiiMandate"] ?: "",
-                fiiTargetAudience = textFallback["fiiTargetAudience"] ?: "",
-                fiiManagementType = textFallback["fiiManagementType"] ?: "",
-                fiiDuration = textFallback["fiiDuration"] ?: "",
-                fiiSegment = textFallback["fiiSegment"] ?: "",
-                magicNumber = if (isFii && lastDividend > 0.0 && price > 0.0) kotlin.math.ceil(price / lastDividend) else numericFallback["magicNumber"] ?: 0.0,
-
-                // Textos
-                cnpj = textFallback["cnpj"] ?: "",
-                listSegment = textFallback["listSegment"] ?: "",
-                foundationYear = textFallback["foundationYear"] ?: "",
-                listingYear = textFallback["listingYear"] ?: "",
-                employeesCount = textFallback["employeesCount"] ?: "",
-                totalPapers = textFallback["totalPapers"] ?: "",
-
-                // Balanço Monetário
-                firmValue = numericFallback["firmValue"] ?: 0.0,
-                netWorth = numericFallback["netWorth"] ?: 0.0,
-                totalAssets = numericFallback["totalAssets"] ?: 0.0,
-                currentAssets = numericFallback["currentAssets"] ?: 0.0,
-                grossDebt = numericFallback["grossDebt"] ?: 0.0,
-                netDebt = numericFallback["netDebt"] ?: 0.0,
-                availability = numericFallback["availability"] ?: 0.0,
-                freeFloat = numericFallback["freeFloat"] ?: 0.0,
-                tagAlong = numericFallback["tagAlong"] ?: 0.0
-            )
-            val enriched = enrichAssetDetails(result)
-            putInCache(cacheKey, enriched, 5) // Cache for 5 mins
-            return enriched
-
-        } catch (e: Exception) {
-            Log.e("B3NetworkService", "Error fetching stock: $ticker", e)
-            return null
-        }
+        Log.w("B3NetworkService", "Fallback direto desativado para $ticker. Use somente Valorae Proxy.")
+        return null
     }
+
 
     /**
      * Fetch historical chart points for graphing
      */
     private fun fetchHistoricalChartDirect(ticker: String, range: String = "1y"): List<ChartPoint> {
-        val normalizedRange = normalizeProxyRange(range)
-        val symbol = getTickerWithSuffix(ticker)
-        val yahooRange = when (normalizedRange) {
-            "1D" -> "1d"
-            "5D" -> "5d"
-            "1M" -> "1mo"
-            "3M" -> "3mo"
-            "6M" -> "6mo"
-            "1Y" -> "1y"
-            "5Y" -> "5y"
-            "MAX" -> "max"
-            else -> range.trim().lowercase(Locale.ROOT).ifBlank { "1y" }
-        }
-        val interval = when (normalizedRange) {
-            "1D" -> "5m"
-            "5D" -> "15m"
-            "1M", "3M" -> "1d"
-            "6M", "1Y" -> "1wk"
-            else -> "1mo"
-        }
-        
-        val url = "https://query1.finance.yahoo.com/v8/finance/chart/$symbol?range=$yahooRange&interval=$interval&includePrePost=false"
-        val request = Request.Builder()
-            .url(url)
-            .addHeader("User-Agent", getRandomAgent())
-            .build()
-
-        val list = mutableListOf<ChartPoint>()
-        try {
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val bodyString = response.body?.string() ?: ""
-                    val json = JSONObject(bodyString)
-                    val chart = json.optJSONObject("chart")
-                    val resultList = chart?.optJSONArray("result")
-                    val result = resultList?.optJSONObject(0)
-                    if (result != null) {
-                        val timestamps = result.optJSONArray("timestamp")
-                        val indicators = result.optJSONObject("indicators")
-                        val quote = indicators?.optJSONArray("quote")?.optJSONObject(0)
-                        val closeValues = quote?.optJSONArray("close")
-
-                        if (timestamps != null && closeValues != null) {
-                            val sdf = SimpleDateFormat(if (normalizedRange == "1D" || normalizedRange == "5D") "HH:mm" else "dd/MM", Locale.getDefault())
-
-                            for (i in 0 until timestamps.length()) {
-                                if (i < closeValues.length() && !closeValues.isNull(i)) {
-                                    val ts = timestamps.optLong(i)
-                                    val closeVal = closeValues.optDouble(i)
-                                    if (!closeVal.isNaN() && !closeVal.isInfinite()) {
-                                        val dateLabel = sdf.format(Date(ts * 1000))
-                                        list.add(ChartPoint(ts, dateLabel, closeVal))
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.e("B3NetworkService", "Error historical: $ticker", e)
-        }
-        
-        // Return actual list, don't generate mock data
-        return list
+        Log.w("B3NetworkService", "Histórico direto desativado para $ticker/$range. Use somente Valorae Proxy.")
+        return emptyList()
     }
+
 
     /**
      * Fetch news RSS search for Brazilian stocks
      */
     private fun fetchNewsDirect(ticker: String = ""): List<NewsItem> {
-        val query = if (ticker.isNotEmpty()) {
-            "${ticker.trim().uppercase()}+ação+OR+fii+OR+B3+OR+investimento"
-        } else {
-            "ações+fii+B3+dividendos+investimentos+economia"
-        }
-        
-        val url = "https://news.google.com/rss/search?q=$query&hl=pt-BR&gl=BR&ceid=BR:pt-419"
-        val request = Request.Builder()
-            .url(url)
-            .addHeader("User-Agent", getRandomAgent())
-            .build()
-
-        val list = mutableListOf<NewsItem>()
-        try {
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val xmlString = response.body?.string() ?: ""
-                    
-                    // RSS parsing via regex
-                    val itemPattern = Pattern.compile("<item>([\\s\\S]*?)</item>")
-                    val itemMatcher = itemPattern.matcher(xmlString)
-                    
-                    val titlePattern = Pattern.compile("<title>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?</title>")
-                    val linkPattern = Pattern.compile("<link>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?</link>")
-                    val pubDatePattern = Pattern.compile("<pubDate>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?</pubDate>")
-                    val sourcePattern = Pattern.compile("<source[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?</source>")
-                    val descPattern = Pattern.compile("<description>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?</description>")
-
-                    var count = 0
-                    while (itemMatcher.find() && count < 20) {
-                        val itemXml = itemMatcher.group(1) ?: ""
-                        
-                        val tMatcher = titlePattern.matcher(itemXml)
-                        val lMatcher = linkPattern.matcher(itemXml)
-                        val pMatcher = pubDatePattern.matcher(itemXml)
-                        val sMatcher = sourcePattern.matcher(itemXml)
-                        val dMatcher = descPattern.matcher(itemXml)
-
-                        if (tMatcher.find() && lMatcher.find()) {
-                            var title = tMatcher.group(1) ?: ""
-                            val link = lMatcher.group(1) ?: ""
-                            var pubDate = if (pMatcher.find()) pMatcher.group(1) ?: "" else ""
-                            val source = if (sMatcher.find()) sMatcher.group(1) ?: "" else ""
-                            var description = if (dMatcher.find()) dMatcher.group(1) ?: "" else ""
-
-                            // Unescape basic XML symbols
-                            title = title.replace("&amp;", "&")
-                                .replace("&quot;", "\"")
-                                .replace("&apos;", "'")
-                                .replace("&lt;", "<")
-                                .replace("&gt;", ">")
-
-                            description = description.replace("&amp;", "&")
-                                .replace("&quot;", "\"")
-                                .replace("&apos;", "'")
-                                .replace("&lt;", "<")
-                                .replace("&gt;", ">")
-                                .replace(Regex("<[^>]*>"), "") // Remove HTML tags
-                                .trim()
-
-                            if (description.length > 150) {
-                                description = description.take(147) + "..."
-                            }
-                            
-                            // Remove duplicate title from description
-                            if (description.lowercase().startsWith(title.lowercase().take(10))) {
-                                description = ""
-                            }
-
-                            // Format date nicely (usually "EEE, d MMM yyyy HH:mm:ss z")
-                            var timestamp = 0L
-                            try {
-                                val inputFormat = SimpleDateFormat("EEE, d MMM yyyy HH:mm:ss z", Locale.US)
-                                val date = inputFormat.parse(pubDate)
-                                if (date != null) {
-                                    timestamp = date.time
-                                    pubDate = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(date)
-                                }
-                            } catch (e: Exception) {
-                                // Default format fallback
-                                pubDate = pubDate.substringBefore(" :").replace(" GMT", "")
-                            }
-
-                            // Trim Google News suffix if present " - Fonte"
-                            if (title.contains(" - ")) {
-                                title = title.substringBeforeLast(" - ")
-                            }
-
-                            list.add(NewsItem(title, link, pubDate, source, description, timestamp))
-                            count++
-                        }
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.e("B3NetworkService", "Error RSS news", e)
-        }
-
-        return list.sortedByDescending { it.timestamp }
+        Log.w("B3NetworkService", "Notícias diretas desativadas para ${ticker.ifBlank { "mercado" }}. Use somente Valorae Proxy.")
+        return emptyList()
     }
 
+
     private fun enrichAssetDetails(base: B3AssetData): B3AssetData {
-        // Não adiciona dados inventados. O caminho principal é o Valorae Proxy;
-        // fallback direto só preserva campos obtidos por fonte externa real.
+        // Não adiciona dados inventados. O caminho principal e único para dados de mercado é o Valorae Proxy.
         return base
     }
 }

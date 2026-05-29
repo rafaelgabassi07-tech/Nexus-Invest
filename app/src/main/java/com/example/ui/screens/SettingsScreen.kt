@@ -1237,8 +1237,8 @@ private fun PinSetupDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
                     color = MaterialTheme.colorScheme.primary
                 )
                 
-                if (error != null) {
-                    Text(error!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                error?.let { message ->
+                    Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
                 
                 Spacer(modifier = Modifier.height(24.dp))

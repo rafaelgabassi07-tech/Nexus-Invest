@@ -1,11 +1,10 @@
 package com.example.network
 
-import org.json.JSONObject
-import org.json.JSONArray
 
 data class AssetChartBundle(
     val ticker: String,
     val type: String,
+    val range: String = "1Y",
     val priceHistory: List<ChartPoint> = emptyList(),
     val profitability: List<AssetPeriodReturn> = emptyList(),
     val realProfitability: List<AssetPeriodReturn> = emptyList(),
@@ -20,7 +19,7 @@ data class AssetChartBundle(
     val revenueProfit: List<FinancialStatementPoint> = emptyList(),
     val profitVsQuote: List<AssetComparisonPoint> = emptyList(),
     val equityEvolution: List<FinancialStatementPoint> = emptyList(),
-    val payoutHistory: List<AssetIndicatorPoint> = emptyMap<String, List<AssetIndicatorPoint>>().values.flatten(), // Allow List
+    val payoutHistory: List<AssetIndicatorPoint> = emptyList(),
     val revenueByRegion: Map<String, List<AssetBreakdownPoint>> = emptyMap(),
     val revenueByBusiness: Map<String, List<AssetBreakdownPoint>> = emptyMap(),
     val fiiDistribution12m: List<AssetIndicatorPoint> = emptyList(),

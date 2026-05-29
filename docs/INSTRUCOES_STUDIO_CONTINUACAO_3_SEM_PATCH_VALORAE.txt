@@ -1,0 +1,48 @@
+INSTRUÇÕES PARA O GOOGLE AI STUDIO / GEMINI 3.1 PRO
+VALORAE INVESTIDOR / PORTFOLIO — CONTINUAÇÃO 3 SEM PATCH
+
+Envie como arquivo principal:
+investidor-portfolio-continuacao-3-recebimento-informacoes-graficos-performance-corrigido.zip
+
+Não envie patch.
+O Studio não precisa de patch porque o ZIP já contém o código corrigido.
+
+Leia também:
+- RELATORIO_CONTINUACAO_3_VALORAE.md
+- PROMPT_GEMINI_3_1_PRO_CONTINUACAO_3_VALORAE.md
+- BUILD_VALIDATION_LOG_CONTINUACAO_3_VALORAE.txt
+
+Proxy obrigatório:
+https://servidor-valorae.vercel.app/api
+
+Não usar:
+https://valorae-proxy.vercel.app
+
+Não fazer scraping direto no app Android.
+Todas as informações externas devem vir pelo Valorae Proxy.
+
+Antes de compilar, substituir ou regenerar:
+gradle/wrapper/gradle-wrapper.jar
+
+Depois executar:
+./gradlew clean assembleDebug
+
+Validar:
+- PETR4
+- VALE3
+- MXRF11
+- Análise
+- Detalhes do Ativo
+- Comparação de Índices
+- Dividendos/proventos
+- Evolução de Proventos
+- Rentabilidade vs IPCA+
+- Equilíbrio de Carteira
+- Agenda de Dividendos
+- Gráficos com descrição
+- Estados vazios sem tela branca
+- Payloads PARTIAL/warnings sem crash
+
+Não adicionar recursos pagos.
+Não reintroduzir host antigo.
+Não reintroduzir scraping direto.

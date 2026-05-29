@@ -51,6 +51,8 @@ import com.example.ui.components.AssetDetailModal
 import com.example.ui.theme.*
 import com.example.viewmodel.AssetSummary
 import com.example.viewmodel.PortfolioSummary
+import com.example.network.B3AssetData
+import com.example.network.AssetChartBundle
 import kotlinx.coroutines.launch
 
 @Composable
@@ -58,6 +60,10 @@ fun DashboardScreen(
     summary: PortfolioSummary,
     assets: List<AssetSummary>,
     transactions: List<Transaction>,
+    cachedAssetData: Map<String, B3AssetData> = emptyMap(),
+    assetChartBundles: Map<String, AssetChartBundle> = emptyMap(),
+    isLoadingChartBundle: Boolean = false,
+    onLoadAssetChartBundle: (String, String) -> Unit = { _, _ -> },
     chartHistory: List<com.example.network.ChartPoint> = emptyList(),
     chartRange: String = "1y",
     onRangeChange: (String) -> Unit = {},
@@ -204,6 +210,8 @@ fun DashboardScreen(
                                 asset = asset,
                                 hideValues = hideValues,
                                 onClick = {
+                                    val tickerKey = asset.ticker.trim().uppercase()
+                                    onLoadAssetChartBundle(tickerKey, chartRange.ifBlank { "1Y" })
                                     selectedAssetForDetail = asset
                                 }
                             )
@@ -225,6 +233,8 @@ fun DashboardScreen(
                                 asset = asset,
                                 hideValues = hideValues,
                                 onClick = {
+                                    val tickerKey = asset.ticker.trim().uppercase()
+                                    onLoadAssetChartBundle(tickerKey, chartRange.ifBlank { "1Y" })
                                     selectedAssetForDetail = asset
                                 }
                             )
@@ -344,21 +354,26 @@ fun DashboardScreen(
         }
 
         // Asset Detail Modal
-        if (selectedAssetForDetail != null) {
-            val asset = selectedAssetForDetail!!
-            val filteredTxs = remember(transactions, asset.ticker) {
-                transactions.filter { it.ticker.trim().uppercase() == asset.ticker.trim().uppercase() }
+        selectedAssetForDetail?.let { selectedAsset ->
+            val filteredTxs = remember(transactions, selectedAsset.ticker) {
+                transactions.filter { it.ticker.trim().uppercase() == selectedAsset.ticker.trim().uppercase() }
             }
             
             // Check if user still holds this asset
-            val currentAsset = assets.find { it.ticker.trim().uppercase() == asset.ticker.trim().uppercase() }
+            val currentAsset = assets.find { it.ticker.trim().uppercase() == selectedAsset.ticker.trim().uppercase() }
             if (currentAsset == null) {
                 // Asset was deleted or has 0 shares
                 selectedAssetForDetail = null
             } else {
+                val tickerKey = currentAsset.ticker.trim().uppercase()
+                val cachedBundle = assetChartBundles[tickerKey]
                 AssetDetailModal(
                     asset = currentAsset,
-                    chartPoints = chartHistory,
+                    initialAssetData = cachedAssetData[tickerKey],
+                    initialChartBundle = cachedBundle,
+                    isLoadingInitialChartBundle = isLoadingChartBundle && cachedBundle == null,
+                    onLoadChartBundle = { ticker, range -> onLoadAssetChartBundle(ticker, range) },
+                    chartPoints = cachedBundle?.priceHistory.orEmpty(),
                     chartRange = chartRange,
                     onRangeChange = onRangeChange,
                     transactions = filteredTxs,
@@ -688,46 +703,25 @@ fun HoldingsListItem(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
             .testTag("asset_item_${asset.ticker}"),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Asset Ticker Badge Indicator
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
-                .border(1.dp, BorderColor.copy(alpha = 0.1f), CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = asset.ticker.take(4),
-                color = GoldPrimary,
-                fontWeight = FontWeight.Bold,
-                fontSize = 11.sp
-            )
-        }
-
-        Spacer(modifier = Modifier.width(16.dp))
-
-        // Shares and Average cost columns
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = asset.ticker,
                     color = TextPrimary,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp
                 )
-                Spacer(modifier = Modifier.width(6.dp))
-                if (asset.type == "FII") {
-                    Text(
-                        text = "FII",
-                        color = TextSecondary,
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 10.sp
-                    )
-                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (asset.type == "FII") "FII" else "AÇÃO",
+                    color = TextSecondary,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 10.sp
+                )
             }
             Spacer(modifier = Modifier.height(2.dp))
             val formattedShares = if (asset.sharesCount % 1.0 == 0.0) {
@@ -742,29 +736,46 @@ fun HoldingsListItem(
             )
         }
 
-        // Return absolute vs live prices columns
         Column(
             horizontalAlignment = Alignment.End,
-            modifier = Modifier.padding(end = 4.dp)
+            verticalArrangement = Arrangement.Center
         ) {
             Text(
                 text = if (hideValues) "R$ ••" else "R$ ${String.format("%,.2f", asset.totalCurrentValue)}",
                 color = TextPrimary,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp
             )
             Spacer(modifier = Modifier.height(2.dp))
-            
-            val isPositive = asset.totalReturn >= 0.0
-            val accentColor = if (isPositive) SuccessGreen else DangerRed
-            
-            Text(
-                text = if (hideValues) "••%"  else "${if (isPositive) "+" else ""}R$ ${String.format("%.2f", asset.totalReturn)}",
-                color = accentColor,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val isMarketPositive = asset.dailyChangePercent >= 0.0
+                val marketAccentColor = if (isMarketPositive) SuccessGreen else DangerRed
+                Text(
+                    text = if (hideValues) "••%" else "${if (isMarketPositive) "+" else ""}${String.format("%.2f", asset.dailyChangePercent)}%",
+                    color = marketAccentColor,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                val isTotalPositive = asset.returnPercent >= 0.0
+                val totalAccentColor = if (isTotalPositive) SuccessGreen else DangerRed
+                Text(
+                    text = if (hideValues) "••%" else "(${if (isTotalPositive) "+" else ""}${String.format("%.2f", asset.returnPercent)}%)",
+                    color = totalAccentColor.copy(alpha = 0.8f),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
         }
+        
+        Spacer(modifier = Modifier.width(12.dp))
+        
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+            contentDescription = "Detalhes",
+            tint = TextSecondary.copy(alpha = 0.5f),
+            modifier = Modifier.size(16.dp)
+        )
     }
 }
 
@@ -1234,9 +1245,9 @@ fun AddTransactionDialog(
                     }
                 }
 
-                if (errorMsg != null) {
+                errorMsg?.let { message ->
                     Text(
-                        text = errorMsg!!,
+                        text = message,
                         color = DangerRed,
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Bold,

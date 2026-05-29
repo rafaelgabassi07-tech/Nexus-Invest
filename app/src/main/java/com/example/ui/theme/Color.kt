@@ -25,8 +25,8 @@ val GoldPale = Color(0xFFFEF08A) // Light Pale Yellow Gold
 val GoldBronze = Color(0xFFB45309) // Bronze Gold
 val GoldDeep = Color(0xFF92400E) // Deep Earth Gold
 
-val SuccessGreen = Color(0xFFFBBF24) // Replaced green with GoldPrimary per user request
-val DangerRed = Color(0xFFEF4444) // Coral (Negative losses)
+val SuccessGreen = Color(0xFF10B981) // Emerald Green for positive numbers
+val DangerRed = Color(0xFFEF4444) // Red for negative numbers
 
 val TextPrimary: Color
     get() = if (isDarkThemeGlobal) Color(0xFFF3F4F6) else Color(0xFF111827)

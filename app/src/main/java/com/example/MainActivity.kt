@@ -92,17 +92,16 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             val darkVariant by themePreferences.darkVariant.collectAsStateWithLifecycle(com.example.data.DarkVariant.CARBON)
             val lightVariant by themePreferences.lightVariant.collectAsStateWithLifecycle(com.example.data.LightVariant.CLASSIC)
             
-            val biometricEnabled by themePreferences.biometricEnabled.collectAsStateWithLifecycle(initialValue = false)
+            val biometricEnabledState = themePreferences.biometricEnabled.collectAsStateWithLifecycle(initialValue = null)
             val hideValues by themePreferences.hideValues.collectAsStateWithLifecycle(initialValue = false)
 
-            var isAppUnlocked by remember { mutableStateOf(false) }
-            val requiresLock = remember(biometricEnabled) {
-                biometricEnabled
+            var isAppUnlocked by rememberSaveable { mutableStateOf(false) }
+
+            LaunchedEffect(biometricEnabledState.value) {
+                if (biometricEnabledState.value == false) isAppUnlocked = true
             }
 
-            LaunchedEffect(requiresLock) {
-                if (!requiresLock) isAppUnlocked = true
-            }
+            val biometricEnabled = biometricEnabledState.value ?: false
 
             val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
             DisposableEffect(lifecycleOwner, biometricEnabled) {
@@ -170,6 +169,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     val assetNews by viewModel.searchQueryNews.collectAsStateWithLifecycle()
                     val isSearchingAsset by viewModel.isSearchingAsset.collectAsStateWithLifecycle()
                     val chartRange by viewModel.searchQueryRange.collectAsStateWithLifecycle()
+                    val cachedAssetData by viewModel.cachedAssetData.collectAsStateWithLifecycle()
                     val assetChartBundles by viewModel.assetChartBundles.collectAsStateWithLifecycle()
                     val isLoadingChartBundle by viewModel.isLoadingChartBundle.collectAsStateWithLifecycle()
                     val notificationsList by viewModel.notifications.collectAsStateWithLifecycle()
@@ -465,7 +465,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                     }
                                 )
                                 // Elegant and persistent tickers below the top bar visible on all pages!
-                                com.example.ui.components.MarketTicker()
+                                // com.example.ui.components.MarketTicker()
                             }
                         },
                         bottomBar = {
@@ -609,6 +609,10 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                             summary = portfolioSummary,
                                             assets = assetSummaries,
                                             transactions = transactions,
+                                            cachedAssetData = cachedAssetData,
+                                            assetChartBundles = assetChartBundles,
+                                            isLoadingChartBundle = isLoadingChartBundle,
+                                            onLoadAssetChartBundle = { ticker, range -> viewModel.loadAssetChartBundle(ticker, range) },
                                             chartHistory = chartHistory,
                                             chartRange = chartRange,
                                             onRangeChange = { range -> viewModel.changeSearchChartRange(range) },
@@ -693,14 +697,14 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
 @Composable
 fun LockScreen(
-    biometricEnabled: Boolean,
+    biometricEnabled: Boolean?,
     onUnlock: () -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val activity = context as? androidx.fragment.app.FragmentActivity
 
     val authenticateDevice = {
-        if (activity != null && biometricEnabled) {
+        if (activity != null && biometricEnabled == true) {
             val executor = androidx.core.content.ContextCompat.getMainExecutor(context)
             val biometricPrompt = androidx.biometric.BiometricPrompt(
                 activity,
@@ -735,9 +739,11 @@ fun LockScreen(
         }
     }
 
-    LaunchedEffect(Unit) {
-        if (biometricEnabled) {
+    LaunchedEffect(biometricEnabled) {
+        if (biometricEnabled == true) {
             authenticateDevice()
+        } else if (biometricEnabled == false) {
+            onUnlock()
         }
     }
 
@@ -779,23 +785,31 @@ fun LockScreen(
             Spacer(modifier = Modifier.height(8.dp))
             
             Text(
-                text = "INTELLIGENCE ENGINE",
+                text = "INVESTIDOR",
                 style = MaterialTheme.typography.labelSmall.copy(
-                    letterSpacing = 2.sp,
-                    fontWeight = FontWeight.Bold
+                    letterSpacing = 4.sp,
+                    fontWeight = FontWeight.Black
                 ),
                 color = Color.White.copy(alpha = 0.4f)
             )
 
             Spacer(modifier = Modifier.height(48.dp))
-
-            Button(
-                onClick = { authenticateDevice() },
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = GoldPrimary, contentColor = Color.Black),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Text("ACESSAR PORTFÓLIO", fontWeight = FontWeight.Black, letterSpacing = 2.sp)
+            Box(modifier = Modifier.height(56.dp)) {
+                if (biometricEnabled == true) {
+                    Button(
+                        onClick = { authenticateDevice() },
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = GoldPrimary, contentColor = Color.Black),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Text("ACESSAR PORTFÓLIO", fontWeight = FontWeight.Black, letterSpacing = 1.sp)
+                    }
+                } else if (biometricEnabled == null) {
+                    CircularProgressIndicator(
+                        color = GoldPrimary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
             }
         }
     }

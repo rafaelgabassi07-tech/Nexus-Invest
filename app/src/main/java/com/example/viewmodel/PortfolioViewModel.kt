@@ -6,6 +6,8 @@ import com.example.data.*
 import com.example.network.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import org.json.JSONArray
+import org.json.JSONObject
 
 data class AssetSummary(
     val ticker: String,
@@ -199,39 +201,56 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
         val grouped = txs.groupBy { it.ticker.trim().uppercase() }
         
         grouped.map { (ticker, list) ->
-            val type = list.firstOrNull()?.type ?: "ACAO"
+            val liveInfo = cache[ticker]
+            val declaredType = list.firstOrNull()?.type?.trim()?.uppercase() ?: "ACAO"
+            val type = when {
+                liveInfo?.isFii == true -> "FII"
+                B3NetworkService.inferIsFii(ticker) -> "FII"
+                declaredType == "FII" -> "FII"
+                else -> "ACAO"
+            }
             
             var currentShares = 0.0
-            var cumulativeBoughtQty = 0.0
-            var cumulativeBoughtCost = 0.0
+            var remainingCostBasis = 0.0
             
             val sortedTxs = list.sortedBy { it.date }
             
+            // Custo médio móvel: compras aumentam posição/custo; vendas baixam o custo
+            // proporcional ao preço médio vigente. A lógica anterior usava média de todas
+            // as compras históricas e podia distorcer rentabilidade após vendas parciais.
             for (tx in sortedTxs) {
+                val qty = tx.quantity.takeIf { it.isFinite() && it > 0.0 } ?: continue
+                val price = tx.purchasePrice.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
                 if (!tx.isSell) {
-                    currentShares += tx.quantity
-                    cumulativeBoughtQty += tx.quantity
-                    cumulativeBoughtCost += (tx.quantity * tx.purchasePrice)
-                } else {
-                    currentShares -= tx.quantity
+                    currentShares += qty
+                    remainingCostBasis += qty * price
+                } else if (currentShares > 0.0) {
+                    val qtySold = qty.coerceAtMost(currentShares)
+                    val avgBeforeSale = if (currentShares > 0.0) remainingCostBasis / currentShares else 0.0
+                    currentShares -= qtySold
+                    remainingCostBasis -= qtySold * avgBeforeSale
+                    if (currentShares <= 0.0001) {
+                        currentShares = 0.0
+                        remainingCostBasis = 0.0
+                    }
                 }
             }
             
             if (currentShares < 0.0001) {
                 currentShares = 0.0
+                remainingCostBasis = 0.0
             }
             
-            val avgPrice = if (cumulativeBoughtQty > 0) cumulativeBoughtCost / cumulativeBoughtQty else 0.0
-            val totalCostBasis = currentShares * avgPrice
+            val avgPrice = if (currentShares > 0.0 && remainingCostBasis > 0.0) remainingCostBasis / currentShares else 0.0
+            val totalCostBasis = remainingCostBasis.coerceAtLeast(0.0)
 
-            val liveInfo = cache[ticker]
-            val livePrice = liveInfo?.price ?: avgPrice
-            val liveDY = liveInfo?.dy ?: 0.0
-            val liveChange = liveInfo?.changePercent ?: 0.0
-            val lastDiv = liveInfo?.lastDividend ?: 0.0
+            val livePrice = liveInfo?.price?.takeIf { it.isFinite() && it > 0.0 } ?: avgPrice
+            val liveDY = liveInfo?.dy?.takeIf { it.isFinite() } ?: 0.0
+            val liveChange = liveInfo?.changePercent?.takeIf { it.isFinite() } ?: 0.0
+            val lastDiv = liveInfo?.lastDividend?.takeIf { it.isFinite() } ?: 0.0
             val nextEarningsDate = liveInfo?.nextEarningsDate ?: ""
 
-            val currentVal = currentShares * livePrice
+            val currentVal = (currentShares * livePrice).takeIf { it.isFinite() } ?: 0.0
             val retVal = currentVal - totalCostBasis
             val retPct = if (totalCostBasis > 0) (retVal / totalCostBasis) * 100.0 else 0.0
 
@@ -402,9 +421,27 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
 
     private val _isLoadingChartBundle = MutableStateFlow(false)
     val isLoadingChartBundle: StateFlow<Boolean> = _isLoadingChartBundle.asStateFlow()
+    private val loadingChartBundleKeys = mutableSetOf<String>()
 
     private val _portfolioAnalytics = MutableStateFlow(PortfolioAnalyticsState())
     val portfolioAnalytics: StateFlow<PortfolioAnalyticsState> = _portfolioAnalytics.asStateFlow()
+
+    private fun normalizeAssetRange(range: String): String {
+        return when (range.trim().lowercase(java.util.Locale.ROOT)) {
+            "1d", "d1" -> "1D"
+            "5d", "d5" -> "5D"
+            "1mo", "1m", "m1", "30d" -> "1M"
+            "3mo", "3m", "m3" -> "3M"
+            "6mo", "6m", "m6" -> "6M"
+            "ytd", "ano" -> "YTD"
+            "1y", "1a", "y1", "12m" -> "1Y"
+            "3y", "3a", "y3" -> "3Y"
+            "5y", "5a", "y5" -> "5Y"
+            "10y", "10a", "y10" -> "10Y"
+            "max", "tudo", "all" -> "MAX"
+            else -> range.trim().uppercase(java.util.Locale.ROOT).ifBlank { "1Y" }
+        }
+    }
 
     init {
         // Automatically fetch prices for loaded tickers when room updates, but with debouncing
@@ -505,62 +542,87 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
     fun forceRefresh() {
         viewModelScope.launch {
             _isRefreshing.value = true
-            val distinctTickers = transactions.value.map { it.ticker.trim().uppercase() }.distinct()
-            if (distinctTickers.isNotEmpty()) {
-                triggerBatchedPriceFetch(distinctTickers, showSecondaryLoading = true)
+            try {
+                val distinctTickers = transactions.value.map { it.ticker.trim().uppercase() }.distinct()
+                if (distinctTickers.isNotEmpty()) {
+                    triggerBatchedPriceFetch(distinctTickers, showSecondaryLoading = true)
+                }
+                fetchGlobalNews()
+                if (assetSummaries.value.isNotEmpty()) {
+                    refreshPortfolioAnalytics(assetSummaries.value, transactions.value, force = true)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("PortfolioViewModel", "Erro ao atualizar dados do app", e)
+            } finally {
+                _isRefreshing.value = false
             }
-            fetchGlobalNews()
-            if (assetSummaries.value.isNotEmpty()) {
-                refreshPortfolioAnalytics(assetSummaries.value, transactions.value, force = true)
-            }
-            _isRefreshing.value = false
         }
     }
 
     private suspend fun triggerBatchedPriceFetch(tickers: List<String>, showSecondaryLoading: Boolean) {
         if (showSecondaryLoading) _isLoadingPrices.value = true
-        withContext(Dispatchers.IO) {
-            val currentCache = _cachedAssetData.value
-            val updatedMap = java.util.concurrent.ConcurrentHashMap<String, B3AssetData>(currentCache)
-            
-            val tickersToFetch = tickers
-                .map { it.trim().uppercase() }
-                .distinct()
-                .filter { showSecondaryLoading || !currentCache.containsKey(it) }
+        try {
+            val updated = withContext(Dispatchers.IO) {
+                val currentCache = _cachedAssetData.value
+                val updatedMap = java.util.concurrent.ConcurrentHashMap<String, B3AssetData>(currentCache)
 
-            if (tickersToFetch.isNotEmpty()) {
-                val batch = B3NetworkService.fetchAssetsData(tickersToFetch, bypassCache = showSecondaryLoading)
-                batch.forEach { (ticker, data) ->
-                    updatedMap[ticker] = data
+                val tickersToFetch = tickers
+                    .map { it.trim().uppercase() }
+                    .distinct()
+                    .filter { showSecondaryLoading || !currentCache.containsKey(it) }
+
+                if (tickersToFetch.isNotEmpty()) {
+                    val batch = runCatching {
+                        B3NetworkService.fetchAssetsData(tickersToFetch, bypassCache = showSecondaryLoading)
+                    }.getOrDefault(emptyMap())
+                    batch.forEach { (ticker, data) ->
+                        updatedMap[ticker] = data
+                    }
                 }
+
+                updatedMap.toMap()
             }
-            
-            _cachedAssetData.value = updatedMap.toMap()
+            _cachedAssetData.value = updated
+        } catch (e: Exception) {
+            android.util.Log.e("PortfolioViewModel", "Erro ao atualizar cotações em lote", e)
+        } finally {
+            if (showSecondaryLoading) _isLoadingPrices.value = false
         }
-        _isLoadingPrices.value = false
     }
 
     fun fetchGlobalNews() {
         viewModelScope.launch {
             _isLoadingNews.value = true
-            val news = withContext(Dispatchers.IO) {
-                // If user has tickers, fetch customized news for foremost picker or generic news
-                val userTicker = transactions.value.firstOrNull()?.ticker
-                B3NetworkService.fetchNews(userTicker ?: "")
+            try {
+                val news = withContext(Dispatchers.IO) {
+                    // If user has tickers, fetch customized news for foremost picker or generic news
+                    val userTicker = transactions.value.firstOrNull()?.ticker
+                    runCatching { B3NetworkService.fetchNews(userTicker ?: "") }.getOrDefault(emptyList())
+                }
+                _newsFeed.value = news
+            } catch (e: Exception) {
+                android.util.Log.e("PortfolioViewModel", "Erro ao carregar notícias", e)
+                _newsFeed.value = emptyList()
+            } finally {
+                _isLoadingNews.value = false
             }
-            _newsFeed.value = news
-            _isLoadingNews.value = false
         }
     }
 
     fun loadAssetChartBundle(ticker: String, range: String = "1Y") {
         val clean = ticker.trim().uppercase(java.util.Locale.ROOT)
         if (clean.isEmpty()) return
+        val normalizedRange = normalizeAssetRange(range)
+        val alreadyLoaded = _assetChartBundles.value[clean]
+        if (alreadyLoaded != null && alreadyLoaded.range.equals(normalizedRange, ignoreCase = true)) return
+        val loadingKey = "$clean:$normalizedRange"
+        if (loadingChartBundleKeys.contains(loadingKey)) return
         viewModelScope.launch {
+            loadingChartBundleKeys.add(loadingKey)
             _isLoadingChartBundle.value = true
             try {
                 val bundle = withContext(Dispatchers.IO) {
-                    B3NetworkService.fetchAssetChartBundle(clean, range)
+                    B3NetworkService.fetchAssetChartBundle(clean, normalizedRange)
                 }
                 val current = _assetChartBundles.value.toMutableMap()
                 current[clean] = bundle
@@ -568,7 +630,8 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
             } catch (e: Exception) {
                 android.util.Log.e("PortfolioViewModel", "Error loading asset chart bundle", e)
             } finally {
-                _isLoadingChartBundle.value = false
+                loadingChartBundleKeys.remove(loadingKey)
+                _isLoadingChartBundle.value = loadingChartBundleKeys.isNotEmpty()
             }
         }
     }
@@ -579,41 +642,55 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
 
         viewModelScope.launch {
             _isSearchingAsset.value = true
-            
-            val info = withContext(Dispatchers.IO) {
-                B3NetworkService.fetchAssetData(clean)
-            }
-            _searchQueryResult.value = info
-
-            if (info != null) {
-                // Fetch historic chart point & dedicated news for selected asset in parallel on Dispatchers.IO
-                coroutineScope {
-                    val historyDeferred = async(Dispatchers.IO) {
-                        B3NetworkService.fetchHistoricalChart(clean, "1y")
-                    }
-                    val newsDeferred = async(Dispatchers.IO) {
-                        B3NetworkService.fetchNews(clean)
-                    }
-                    _searchQueryHistory.value = historyDeferred.await()
-                    _searchQueryNews.value = newsDeferred.await()
+            try {
+                val info = withContext(Dispatchers.IO) {
+                    runCatching { B3NetworkService.fetchAssetData(clean) }.getOrNull()
                 }
-                loadAssetChartBundle(clean, "1Y")
+                _searchQueryResult.value = info
+
+                if (info != null) {
+                    // Fetch historic chart point & dedicated news for selected asset in parallel on Dispatchers.IO
+                    val (history, news) = coroutineScope {
+                        val historyDeferred = async(Dispatchers.IO) {
+                            runCatching { B3NetworkService.fetchHistoricalChart(clean, "1y") }.getOrDefault(emptyList())
+                        }
+                        val newsDeferred = async(Dispatchers.IO) {
+                            runCatching { B3NetworkService.fetchNews(clean) }.getOrDefault(emptyList())
+                        }
+                        historyDeferred.await() to newsDeferred.await()
+                    }
+                    _searchQueryHistory.value = history
+                    _searchQueryNews.value = news
+                    loadAssetChartBundle(clean, "1Y")
+                } else {
+                    _searchQueryHistory.value = emptyList()
+                    _searchQueryNews.value = emptyList()
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("PortfolioViewModel", "Erro ao analisar ativo $clean", e)
+                _searchQueryResult.value = null
+                _searchQueryHistory.value = emptyList()
+                _searchQueryNews.value = emptyList()
+            } finally {
+                _isSearchingAsset.value = false
             }
-            
-            _isSearchingAsset.value = false
         }
     }
 
     fun changeSearchChartRange(range: String) {
         val ticker = searchQueryResult.value?.ticker ?: return
-        _searchQueryRange.value = range
-        
+        _searchQueryRange.value = normalizeAssetRange(range)
+
         viewModelScope.launch {
-            val history = withContext(Dispatchers.IO) {
-                B3NetworkService.fetchHistoricalChart(ticker, range)
+            try {
+                val history = withContext(Dispatchers.IO) {
+                    runCatching { B3NetworkService.fetchHistoricalChart(ticker, normalizeAssetRange(range)) }.getOrDefault(emptyList())
+                }
+                _searchQueryHistory.value = history
+                loadAssetChartBundle(ticker, normalizeAssetRange(range))
+            } catch (e: Exception) {
+                android.util.Log.e("PortfolioViewModel", "Erro ao trocar período do gráfico de $ticker", e)
             }
-            _searchQueryHistory.value = history
-            loadAssetChartBundle(ticker, range)
         }
     }
 
@@ -647,28 +724,41 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
             )
         }.filter { it.quantity > 0.0 }
 
-        val result = withContext(Dispatchers.IO) {
-            coroutineScope {
-                val analysisDeferred = async { B3NetworkService.fetchPortfolioAnalysis(positions) }
-                val historyDeferred = async { B3NetworkService.fetchPortfolioHistory(positions, "1Y") }
-                val ipcaDeferred = async { B3NetworkService.fetchIpcaSeries(12) }
-                val dividendsDeferred = async { B3NetworkService.fetchNextDividends(positions) }
+        val result = try {
+            withContext(Dispatchers.IO) {
+                coroutineScope {
+                    val analysisDeferred = async { runCatching { B3NetworkService.fetchPortfolioAnalysis(positions) }.getOrNull() }
+                    val historyDeferred = async { runCatching { B3NetworkService.fetchPortfolioHistory(positions, "1Y") }.getOrDefault(emptyList()) }
+                    val ipcaDeferred = async { runCatching { B3NetworkService.fetchIpcaSeries(12) }.getOrDefault(emptyList()) }
+                    val dividendsDeferred = async { runCatching { B3NetworkService.fetchNextDividends(positions) }.getOrDefault(emptyList()) }
 
-                val remoteAnalysis = runCatching { analysisDeferred.await() }.getOrNull()
-                val remoteHistory = runCatching { historyDeferred.await() }.getOrDefault(emptyList())
-                val remoteIpca = runCatching { ipcaDeferred.await() }.getOrDefault(emptyList())
-                val remoteDividends = runCatching { dividendsDeferred.await() }.getOrDefault(emptyList())
+                    val remoteAnalysis = analysisDeferred.await()
+                    val remoteHistory = historyDeferred.await()
+                    val remoteIpca = ipcaDeferred.await()
+                    val remoteDividends = dividendsDeferred.await()
 
-                PortfolioAnalyticsState(
-                    isLoading = false,
-                    analysis = remoteAnalysis ?: buildLocalPortfolioAnalysis(summaries),
-                    portfolioHistory = remoteHistory.ifEmpty { buildLocalPortfolioHistory(txs, summaries) },
-                    ipcaSeries = remoteIpca.ifEmpty { buildIpcaFallbackSeries(12) },
-                    dividendEvents = remoteDividends.ifEmpty { buildLocalDividendEvents(summaries) },
-                    source = if (remoteAnalysis != null || remoteHistory.isNotEmpty() || remoteIpca.isNotEmpty() || remoteDividends.isNotEmpty()) "Valorae Proxy + carteira local" else "Carteira local + indicadores disponíveis",
-                    lastUpdated = System.currentTimeMillis()
-                )
+                    PortfolioAnalyticsState(
+                        isLoading = false,
+                        analysis = remoteAnalysis ?: buildLocalPortfolioAnalysis(summaries),
+                        portfolioHistory = remoteHistory.ifEmpty { buildLocalPortfolioHistory(txs, summaries) },
+                        ipcaSeries = remoteIpca.ifEmpty { buildIpcaFallbackSeries(12) },
+                        dividendEvents = remoteDividends.ifEmpty { buildLocalDividendEvents(summaries) },
+                        source = if (remoteAnalysis != null || remoteHistory.isNotEmpty() || remoteIpca.isNotEmpty() || remoteDividends.isNotEmpty()) "Valorae Proxy + carteira local" else "Carteira local + indicadores disponíveis",
+                        lastUpdated = System.currentTimeMillis()
+                    )
+                }
             }
+        } catch (e: Exception) {
+            android.util.Log.e("PortfolioViewModel", "Erro ao atualizar analytics da carteira", e)
+            PortfolioAnalyticsState(
+                isLoading = false,
+                analysis = buildLocalPortfolioAnalysis(summaries),
+                portfolioHistory = buildLocalPortfolioHistory(txs, summaries),
+                ipcaSeries = buildIpcaFallbackSeries(12),
+                dividendEvents = buildLocalDividendEvents(summaries),
+                source = "Carteira local + fallback seguro",
+                lastUpdated = System.currentTimeMillis()
+            )
         }
         _portfolioAnalytics.value = result
     }
@@ -821,28 +911,25 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
     // --- DATA BACKUP & SHEET IMPORT UTILITIES ---
 
     fun exportTransactionsToJson(): String {
-        val txs = transactions.value
-        val sb = java.lang.StringBuilder()
-        sb.append("[\n")
-        txs.forEachIndexed { index, tx ->
-            sb.append("  {\n")
-            sb.append("    \"ticker\": \"${tx.ticker}\",\n")
-            sb.append("    \"name\": \"${tx.name}\",\n")
-            sb.append("    \"quantity\": ${tx.quantity},\n")
-            sb.append("    \"purchasePrice\": ${tx.purchasePrice},\n")
-            sb.append("    \"date\": ${tx.date},\n")
-            sb.append("    \"type\": \"${tx.type}\",\n")
-            sb.append("    \"isSell\": ${tx.isSell},\n")
-            sb.append("    \"broker\": \"${tx.broker}\",\n")
-            sb.append("    \"sector\": \"${tx.sector}\",\n")
-            sb.append("    \"notes\": \"${tx.notes}\"\n")
-            sb.append("  }")
-            if (index < txs.size - 1) sb.append(",")
-            sb.append("\n")
+        val arr = JSONArray()
+        transactions.value.forEach { tx ->
+            arr.put(
+                JSONObject()
+                    .put("ticker", tx.ticker)
+                    .put("name", tx.name)
+                    .put("quantity", tx.quantity)
+                    .put("purchasePrice", tx.purchasePrice)
+                    .put("date", tx.date)
+                    .put("type", tx.type)
+                    .put("isSell", tx.isSell)
+                    .put("broker", tx.broker)
+                    .put("sector", tx.sector)
+                    .put("notes", tx.notes)
+            )
         }
-        sb.append("]")
-        return sb.toString()
+        return arr.toString(2)
     }
+
 
     fun exportTransactionsToCsv(): String {
         val txs = transactions.value
@@ -862,44 +949,37 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
     fun importTransactionsFromJson(json: String, clearExisting: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val blocks = json.split("}")
                 val parsedList = mutableListOf<Transaction>()
-                val tickerRegex = "\"ticker\"\\s*:\\s*\"([^\"]+)\"".toRegex()
-                val nameRegex = "\"name\"\\s*:\\s*\"([^\"]+)\"".toRegex()
-                val qtyRegex = "\"quantity\"\\s*:\\s*([0-9\\.]+)".toRegex()
-                val priceRegex = "\"purchasePrice\"\\s*:\\s*([0-9\\.]+)".toRegex()
-                val dateRegex = "\"date\"\\s*:\\s*([0-9]+)".toRegex()
-                val typeRegex = "\"type\"\\s*:\\s*\"([^\"]+)\"".toRegex()
-                val isSellRegex = "\"isSell\"\\s*:\\s*(true|false)".toRegex()
-                val brokerRegex = "\"broker\"\\s*:\\s*\"([^\"]*)\"".toRegex()
-                val sectorRegex = "\"sector\"\\s*:\\s*\"([^\"]*)\"".toRegex()
-                val notesRegex = "\"notes\"\\s*:\\s*\"([^\"]*)\"".toRegex()
+                val trimmed = json.trim()
+                val arr = when {
+                    trimmed.startsWith("[") -> JSONArray(trimmed)
+                    trimmed.startsWith("{") -> {
+                        val obj = JSONObject(trimmed)
+                        obj.optJSONArray("transactions") ?: obj.optJSONArray("items") ?: JSONArray().put(obj)
+                    }
+                    else -> JSONArray()
+                }
 
-                for (block in blocks) {
-                    val tickerMatch = tickerRegex.find(block) ?: continue
-                    val ticker = tickerMatch.groupValues[1]
-                    val name = nameRegex.find(block)?.groupValues?.get(1) ?: ticker
-                    val quantity = qtyRegex.find(block)?.groupValues?.get(1)?.toDoubleOrNull() ?: continue
-                    val purchasePrice = priceRegex.find(block)?.groupValues?.get(1)?.toDoubleOrNull() ?: continue
-                    val date = dateRegex.find(block)?.groupValues?.get(1)?.toLongOrNull() ?: System.currentTimeMillis()
-                    val type = typeRegex.find(block)?.groupValues?.get(1) ?: "ACAO"
-                    val isSell = isSellRegex.find(block)?.groupValues?.get(1)?.toBoolean() ?: false
-                    val broker = brokerRegex.find(block)?.groupValues?.get(1) ?: ""
-                    val sector = sectorRegex.find(block)?.groupValues?.get(1) ?: ""
-                    val notes = notesRegex.find(block)?.groupValues?.get(1) ?: ""
-
+                for (i in 0 until arr.length()) {
+                    val item = arr.optJSONObject(i) ?: continue
+                    val ticker = item.optString("ticker", "").trim().uppercase()
+                    if (ticker.isBlank()) continue
+                    val quantity = item.optDouble("quantity", Double.NaN).takeIf { it.isFinite() } ?: continue
+                    val purchasePrice = item.optDouble("purchasePrice", item.optDouble("price", 0.0)).takeIf { it.isFinite() } ?: 0.0
+                    val date = item.optLong("date", System.currentTimeMillis())
+                    val type = item.optString("type", if (B3NetworkService.inferIsFii(ticker)) "FII" else "ACAO")
                     parsedList.add(
                         Transaction(
                             ticker = ticker,
-                            name = name,
+                            name = item.optString("name", ticker),
                             quantity = quantity,
                             purchasePrice = purchasePrice,
                             date = date,
                             type = type,
-                            isSell = isSell,
-                            broker = broker,
-                            sector = sector,
-                            notes = notes
+                            isSell = item.optBoolean("isSell", false),
+                            broker = item.optString("broker", ""),
+                            sector = item.optString("sector", ""),
+                            notes = item.optString("notes", "")
                         )
                     )
                 }
@@ -921,10 +1001,11 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
                     )
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                android.util.Log.e("PortfolioViewModel", "Erro ao importar backup JSON", e)
             }
         }
     }
+
 
     fun importFromB3Spreadsheet(text: String, onComplete: (Int) -> Unit = {}) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -1076,7 +1157,7 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
                         }
 
                         if (ticker.isNotEmpty() && qty > 0.0) {
-                            val assetType = if (ticker.endsWith("11") && !ticker.startsWith("BOVA") && !ticker.startsWith("SMAL")) "FII" else "ACAO"
+                            val assetType = if (B3NetworkService.inferIsFii(ticker)) "FII" else "ACAO"
                             listToInsert.add(
                                 Transaction(
                                     ticker = ticker,

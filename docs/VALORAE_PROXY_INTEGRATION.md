@@ -54,17 +54,11 @@ User-Agent: VALORAE-Investidor-Portfolio/1.1.4 Android
 
 Com isso, o painel de observabilidade do Valorae Proxy consegue identificar o app consumidor, medir latência, volume, status, endpoints chamados, payloads e erros.
 
-## Fallback direto
+## Fallback direto desativado
 
-Por padrão, `VALORAE_DIRECT_FALLBACK_ENABLED=false`. Assim o app não consulta Yahoo/Google diretamente e mantém o Proxy como fonte oficial.
+`VALORAE_DIRECT_FALLBACK_ENABLED=false` deve permanecer fixo. O app Android não deve consultar Yahoo, Google News, StatusInvest ou Investidor10 diretamente para dados de mercado. Todo dado externo deve passar pelo Valorae Proxy oficial para manter cache, normalização, observabilidade, controle de headers e contrato JSON estável.
 
-Se desejar contingência manual durante manutenção do Proxy, defina:
-
-```env
-VALORAE_DIRECT_FALLBACK_ENABLED=true
-```
-
-Nesse modo, as rotinas diretas antigas só entram se o Proxy estiver indisponível.
+As rotinas legadas diretas foram neutralizadas no código e retornam vazio/nulo mesmo se alguém tentar habilitar a flag por engano.
 
 ## Privacidade
 

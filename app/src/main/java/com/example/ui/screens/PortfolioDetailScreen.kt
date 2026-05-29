@@ -297,7 +297,7 @@ fun PortfolioDetailScreen(
             val biggestAssetLabel = biggestAsset?.let { "${it.ticker} (${String.format("%.1f%%", biggestAssetPercent)})" } ?: "Nenhum"
             
             val highestYieldAsset = assets.maxByOrNull { it.dividendYield }
-            val highestYieldLabel = highestYieldAsset?.let { "${it.ticker} (${String.format("%.2f%%", it.dividendYield * 100)})" } ?: "Nenhum"
+            val highestYieldLabel = highestYieldAsset?.let { "${it.ticker} (${String.format("%.2f%%", it.dividendYield)})" } ?: "Nenhum"
             
             val bestReturnAsset = assets.maxByOrNull { it.totalReturn }
             val bestReturnLabel = bestReturnAsset?.let { 
@@ -433,7 +433,7 @@ fun PortfolioDetailScreen(
                                     }
                                     
                                     Text(
-                                        text = String.format("%.1f%%", asset.dividendYield * 100),
+                                        text = String.format("%.1f%%", asset.dividendYield),
                                         color = TextPrimary,
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold,

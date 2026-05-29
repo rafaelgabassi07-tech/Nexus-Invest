@@ -139,10 +139,15 @@ fun HistoricalPriceLineChart(
     modifier: Modifier = Modifier,
     lineColor: Color = GoldPrimary
 ) {
-    if (points.isEmpty()) return
+    val cleanPoints = remember(points) {
+        points
+            .filter { it.close.isFinite() && it.close > 0.0 }
+            .sortedBy { it.timestamp }
+    }
+    if (cleanPoints.isEmpty()) return
 
-    val minPrice = points.minOf { if (it.close.isNaN() || it.close.isInfinite()) 0.0 else it.close }
-    val maxPrice = points.maxOf { if (it.close.isNaN() || it.close.isInfinite()) 0.0 else it.close }
+    val minPrice = cleanPoints.minOf { it.close }
+    val maxPrice = cleanPoints.maxOf { it.close }
     val priceRange = maxPrice - minPrice
     val paddingPercent = 0.15f // add vertical breathing space
 
@@ -163,7 +168,7 @@ fun HistoricalPriceLineChart(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .pointerInput(points) {
+                    .pointerInput(cleanPoints) {
                         awaitPointerEventScope {
                             while (true) {
                                 val event = awaitPointerEvent()
@@ -173,9 +178,9 @@ fun HistoricalPriceLineChart(
                                     val change = changes.first()
                                     val x = change.position.x
                                     val width = size.width.coerceAtLeast(0)
-                                    if (points.size > 1 && width > 0) {
-                                        val itemWidth = width.toFloat() / (points.size - 1)
-                                        val index = (x / itemWidth).roundToInt().coerceIn(0, points.size - 1)
+                                    if (cleanPoints.size > 1 && width > 0) {
+                                        val itemWidth = width.toFloat() / (cleanPoints.size - 1)
+                                        val index = (x / itemWidth).roundToInt().coerceIn(0, cleanPoints.size - 1)
                                         activePointIndex = index
                                     }
                                 } else {
@@ -202,7 +207,7 @@ fun HistoricalPriceLineChart(
                     }
 
                     // If only 1 point, center it
-                    if (points.size == 1) {
+                    if (cleanPoints.size == 1) {
                         drawCircle(
                             color = lineColor,
                             radius = 6.dp.toPx(),
@@ -214,9 +219,9 @@ fun HistoricalPriceLineChart(
                     val path = Path()
                     val bgPath = Path()
                     
-                    val itemWidth = width / (points.size - 1)
+                    val itemWidth = width / (cleanPoints.size - 1)
 
-                    points.forEachIndexed { index, point ->
+                    cleanPoints.forEachIndexed { index, point ->
                         val x = index * itemWidth
                         
                         val safeClose = if (point.close.isNaN() || point.close.isInfinite()) 0.0 else point.close
@@ -234,7 +239,7 @@ fun HistoricalPriceLineChart(
                         } else {
                             // Curved smooth bezier transition
                             val prevX = (index - 1) * itemWidth
-                            val prevCloseValue = if (points[index-1].close.isNaN()) 0.0 else points[index-1].close
+                            val prevCloseValue = if (cleanPoints[index-1].close.isNaN()) 0.0 else cleanPoints[index-1].close
                             val prevNormalizedY = ((prevCloseValue - finalDisplayMin) / finalDisplayRange).toFloat().let {
                                 if (it.isNaN() || it.isInfinite()) 0f else it
                             }
@@ -252,7 +257,7 @@ fun HistoricalPriceLineChart(
                             )
                         }
                         
-                        if (index == points.size - 1) {
+                        if (index == cleanPoints.size - 1) {
                             bgPath.lineTo(x, height)
                             bgPath.close()
                         }
@@ -276,11 +281,11 @@ fun HistoricalPriceLineChart(
                     )
 
                     // Highlight the active touch point (or default to last point)
-                    val selectedIndex = activePointIndex ?: (points.size - 1)
+                    val selectedIndex = activePointIndex ?: (cleanPoints.size - 1)
                     val isHotTouch = activePointIndex != null
 
                     val pX = selectedIndex * itemWidth
-                    val pClose = if (points[selectedIndex].close.isNaN()) 0.0 else points[selectedIndex].close
+                    val pClose = if (cleanPoints[selectedIndex].close.isNaN()) 0.0 else cleanPoints[selectedIndex].close
                     val pNormalY = ((pClose - finalDisplayMin) / finalDisplayRange).toFloat().let {
                         if (it.isNaN() || it.isInfinite()) 0f else it
                     }
@@ -323,7 +328,7 @@ fun HistoricalPriceLineChart(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = points.firstOrNull()?.dateLabel ?: "",
+                    text = cleanPoints.firstOrNull()?.dateLabel ?: "",
                     color = TextSecondary,
                     fontSize = 11.sp
                 )
@@ -343,7 +348,7 @@ fun HistoricalPriceLineChart(
                     )
                 }
                 Text(
-                    text = points.lastOrNull()?.dateLabel ?: "",
+                    text = cleanPoints.lastOrNull()?.dateLabel ?: "",
                     color = TextSecondary,
                     fontSize = 11.sp
                 )
@@ -357,8 +362,9 @@ fun HistoricalPriceLineChart(
             exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(),
             modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp)
         ) {
-            if (activePointIndex != null && activePointIndex!! in points.indices) {
-                val point = points[activePointIndex!!]
+            val safeActivePointIndex = activePointIndex?.takeIf { it in cleanPoints.indices }
+            if (safeActivePointIndex != null) {
+                val point = cleanPoints[safeActivePointIndex]
                 Surface(
                     color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
                     shape = RoundedCornerShape(12.dp),
@@ -402,9 +408,47 @@ fun CustomBarChart(
     if (values.isEmpty()) return
     val maxValue = values.maxOrNull()?.let { if (it <= 0f) 1f else it } ?: 1f
 
+    var activeIndex by remember(values) { mutableStateOf<Int?>(null) }
+    var touchX by remember { mutableStateOf(0f) }
+
     Column(modifier = modifier) {
         Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
+            Canvas(modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(values) {
+                    detectDragGestures(
+                        onDragStart = { offset ->
+                            val width = size.width
+                            val spacing = 8.dp.toPx()
+                            val barCount = values.size
+                            val barWidth = ((width - (spacing * (barCount + 1))) / barCount).coerceAtLeast(0f)
+                            activeIndex = ((offset.x - spacing) / (barWidth + spacing)).toInt().coerceIn(0, barCount - 1)
+                        },
+                        onDrag = { change, _ ->
+                            val width = size.width
+                            val spacing = 8.dp.toPx()
+                            val barCount = values.size
+                            val barWidth = ((width - (spacing * (barCount + 1))) / barCount).coerceAtLeast(0f)
+                            activeIndex = ((change.position.x - spacing) / (barWidth + spacing)).toInt().coerceIn(0, barCount - 1)
+                        },
+                        onDragEnd = { activeIndex = null },
+                        onDragCancel = { activeIndex = null }
+                    )
+                }
+                .pointerInput(values) {
+                    detectTapGestures(
+                        onPress = { offset ->
+                            val width = size.width
+                            val spacing = 8.dp.toPx()
+                            val barCount = values.size
+                            val barWidth = ((width - (spacing * (barCount + 1))) / barCount).coerceAtLeast(0f)
+                            activeIndex = ((offset.x - spacing) / (barWidth + spacing)).toInt().coerceIn(0, barCount - 1)
+                            tryAwaitRelease()
+                            activeIndex = null
+                        }
+                    )
+                }
+            ) {
                 val width = size.width
                 val height = size.height
                 val spacing = 8.dp.toPx()
@@ -428,14 +472,40 @@ fun CustomBarChart(
                     val barHeight = ((value / maxValue) * height).coerceAtLeast(0f)
                     val y = (height - barHeight).coerceAtLeast(0f)
 
+                    val isSelected = activeIndex == index
+                    val alpha = if (activeIndex == null || isSelected) 1f else 0.4f
+
                     drawRoundRect(
                         brush = Brush.verticalGradient(
-                            colors = listOf(barColor, barColor.copy(alpha = 0.4f))
+                            colors = listOf(barColor.copy(alpha = alpha), barColor.copy(alpha = alpha * 0.4f))
                         ),
                         topLeft = Offset(x, y),
                         size = Size(barWidth, barHeight),
                         cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx(), 4.dp.toPx())
                     )
+                }
+            }
+            
+            // Tooltip Overlay
+            activeIndex?.let { idx ->
+                val value = values[idx]
+                val months = listOf("Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez")
+                val m = months.getOrNull(idx) ?: ""
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(bottom = 8.dp),
+                    contentAlignment = Alignment.TopCenter
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .background(com.example.ui.theme.DarkSurfaceElevated, RoundedCornerShape(8.dp))
+                            .border(1.dp, BorderColor.copy(alpha=0.2f), RoundedCornerShape(8.dp))
+                            .padding(8.dp)
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(text = m, color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            Text(text = String.format("R$ %,.2f", value), color = barColor, fontSize = 12.sp, fontWeight = FontWeight.Black)
+                        }
+                    }
                 }
             }
         }
@@ -525,21 +595,60 @@ fun StackedBarChart(
             Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
                 Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
                     Canvas(modifier = Modifier.fillMaxSize().pointerInput(data) {
-                        detectTapGestures { offset ->
-                            val width = size.width
-                            val spacing = 12.dp.toPx()
-                            val barCount = data.size
-                            val barWidth = ((width - (spacing * (barCount + 1))) / barCount).coerceAtLeast(0f)
-                            var clickedIndex: Int? = null
-                            for (index in data.indices) {
-                                val x = spacing + index * (barWidth + spacing)
-                                if (offset.x >= x && offset.x <= x + barWidth) {
-                                    clickedIndex = index
-                                    break
+                        detectDragGestures(
+                            onDragStart = { offset ->
+                                val width = size.width
+                                val spacing = 12.dp.toPx()
+                                val barCount = data.size
+                                val barWidth = ((width - (spacing * (barCount + 1))) / barCount).coerceAtLeast(0f)
+                                var draggedIndex: Int? = null
+                                for (index in data.indices) {
+                                    val x = spacing + index * (barWidth + spacing)
+                                    if (offset.x >= x && offset.x <= x + barWidth) {
+                                        draggedIndex = index
+                                        break
+                                    }
                                 }
+                                selectedIndex = draggedIndex
+                            },
+                            onDrag = { change, _ ->
+                                val width = size.width
+                                val spacing = 12.dp.toPx()
+                                val barCount = data.size
+                                val barWidth = ((width - (spacing * (barCount + 1))) / barCount).coerceAtLeast(0f)
+                                var draggedIndex: Int? = null
+                                for (index in data.indices) {
+                                    val x = spacing + index * (barWidth + spacing)
+                                    if (change.position.x >= x && change.position.x <= x + barWidth) {
+                                        draggedIndex = index
+                                        break
+                                    }
+                                }
+                                if (draggedIndex != null) selectedIndex = draggedIndex
+                            },
+                            onDragEnd = { selectedIndex = null },
+                            onDragCancel = { selectedIndex = null }
+                        )
+                    }.pointerInput(data) {
+                        detectTapGestures(
+                            onPress = { offset ->
+                                val width = size.width
+                                val spacing = 12.dp.toPx()
+                                val barCount = data.size
+                                val barWidth = ((width - (spacing * (barCount + 1))) / barCount).coerceAtLeast(0f)
+                                var clickedIndex: Int? = null
+                                for (index in data.indices) {
+                                    val x = spacing + index * (barWidth + spacing)
+                                    if (offset.x >= x && offset.x <= x + barWidth) {
+                                        clickedIndex = index
+                                        break
+                                    }
+                                }
+                                selectedIndex = clickedIndex
+                                tryAwaitRelease()
+                                selectedIndex = null
                             }
-                            selectedIndex = if (selectedIndex == clickedIndex) null else clickedIndex
-                        }
+                        )
                     }) {
                         val width = size.width
                         val height = size.height
@@ -711,6 +820,25 @@ fun StackedBarChart(
     }
 }
 
+private fun resampleFloatSeries(values: List<Float>, targetSize: Int): List<Float> {
+    val clean = values.filter { it.isFinite() }
+    if (targetSize <= 0) return emptyList()
+    if (clean.isEmpty()) return List(targetSize) { 0f }
+    if (clean.size == targetSize) return clean
+    if (clean.size == 1) return List(targetSize) { clean.first() }
+    return List(targetSize) { index ->
+        val sourceIndex = if (targetSize == 1) 0.0 else index.toDouble() * (clean.size - 1).toDouble() / (targetSize - 1).toDouble()
+        val lower = kotlin.math.floor(sourceIndex).toInt().coerceIn(0, clean.lastIndex)
+        val upper = kotlin.math.ceil(sourceIndex).toInt().coerceIn(0, clean.lastIndex)
+        if (lower == upper) {
+            clean[lower]
+        } else {
+            val t = (sourceIndex - lower).toFloat().coerceIn(0f, 1f)
+            clean[lower] + ((clean[upper] - clean[lower]) * t)
+        }
+    }
+}
+
 /**
  * Premium Dual Line Compare Canvas Chart comparing Portfolio Return vs IPCA Accumulated
  */
@@ -720,10 +848,12 @@ fun CustomLineChartCompare(
     ipcaValues: List<Float>,
     modifier: Modifier = Modifier
 ) {
-    if (portfolioValues.isEmpty()) return
+    val cleanPortfolioValues = portfolioValues.filter { it.isFinite() }
+    if (cleanPortfolioValues.isEmpty()) return
+    val alignedIpcaValues = resampleFloatSeries(ipcaValues, cleanPortfolioValues.size)
 
-    val maxVal = maxOf(portfolioValues.maxOrNull() ?: 0f, ipcaValues.maxOrNull() ?: 0f).let { if (it <= 0f) 1f else it } + 1f
-    val minVal = minOf(portfolioValues.minOfOrNull { it } ?: 0f, ipcaValues.minOfOrNull { it } ?: 0f).let { if (it >= 0f) -1f else it } - 1f
+    val maxVal = maxOf(cleanPortfolioValues.maxOrNull() ?: 0f, alignedIpcaValues.maxOrNull() ?: 0f).let { if (it <= 0f) 1f else it } + 1f
+    val minVal = minOf(cleanPortfolioValues.minOfOrNull { it } ?: 0f, alignedIpcaValues.minOfOrNull { it } ?: 0f).let { if (it >= 0f) -1f else it } - 1f
     val range = if (maxVal - minVal > 0f) maxVal - minVal else 1f
 
     var selectedIndex by remember { mutableStateOf<Int?>(null) }
@@ -734,15 +864,15 @@ fun CustomLineChartCompare(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .pointerInput(portfolioValues) {
+                    .pointerInput(cleanPortfolioValues) {
                         detectDragGestures(
                             onDragStart = { offset ->
-                                val itemWidth = size.width / (portfolioValues.size - 1).coerceAtLeast(1)
-                                selectedIndex = (offset.x / itemWidth).roundToInt().coerceIn(0, portfolioValues.size - 1)
+                                val itemWidth = size.width / (cleanPortfolioValues.size - 1).coerceAtLeast(1)
+                                selectedIndex = (offset.x / itemWidth).roundToInt().coerceIn(0, cleanPortfolioValues.size - 1)
                             },
                             onDrag = { change, _ ->
-                                val itemWidth = size.width / (portfolioValues.size - 1).coerceAtLeast(1)
-                                selectedIndex = (change.position.x / itemWidth).roundToInt().coerceIn(0, portfolioValues.size - 1)
+                                val itemWidth = size.width / (cleanPortfolioValues.size - 1).coerceAtLeast(1)
+                                selectedIndex = (change.position.x / itemWidth).roundToInt().coerceIn(0, cleanPortfolioValues.size - 1)
                             },
                             onDragEnd = {
                                 selectedIndex = null
@@ -752,11 +882,11 @@ fun CustomLineChartCompare(
                             }
                         )
                     }
-                    .pointerInput(portfolioValues) {
+                    .pointerInput(cleanPortfolioValues) {
                         detectTapGestures(
                             onPress = { offset ->
-                                val itemWidth = size.width / (portfolioValues.size - 1).coerceAtLeast(1)
-                                selectedIndex = (offset.x / itemWidth).roundToInt().coerceIn(0, portfolioValues.size - 1)
+                                val itemWidth = size.width / (cleanPortfolioValues.size - 1).coerceAtLeast(1)
+                                selectedIndex = (offset.x / itemWidth).roundToInt().coerceIn(0, cleanPortfolioValues.size - 1)
                                 tryAwaitRelease()
                                 selectedIndex = null
                             }
@@ -766,7 +896,7 @@ fun CustomLineChartCompare(
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val width = size.width.coerceAtLeast(0f)
                     val height = size.height.coerceAtLeast(0f)
-                    val itemWidth = width / (portfolioValues.size - 1).coerceAtLeast(1)
+                    val itemWidth = width / (cleanPortfolioValues.size - 1).coerceAtLeast(1)
 
                     // Background horizontal grids
                     val gridLines = 3
@@ -784,7 +914,7 @@ fun CustomLineChartCompare(
                     val ipcaPath = Path()
                     val portBgPath = Path()
 
-                    portfolioValues.forEachIndexed { index, value ->
+                    cleanPortfolioValues.forEachIndexed { index, value ->
                         val x = index * itemWidth
                         val normY = (value - minVal) / range
                         val y = height - (normY * height)
@@ -794,7 +924,7 @@ fun CustomLineChartCompare(
                             portBgPath.lineTo(x, y)
                         } else {
                             val prevX = (index - 1) * itemWidth
-                            val prevNormY = (portfolioValues[index - 1] - minVal) / range
+                            val prevNormY = (cleanPortfolioValues[index - 1] - minVal) / range
                             val prevY = height - (prevNormY * height)
                             portPath.cubicTo(
                                 prevX + itemWidth / 2, prevY,
@@ -807,13 +937,13 @@ fun CustomLineChartCompare(
                                 x, y
                             )
                         }
-                        if (index == portfolioValues.size - 1) {
+                        if (index == cleanPortfolioValues.size - 1) {
                             portBgPath.lineTo(x, height)
                             portBgPath.close()
                         }
                     }
 
-                    ipcaValues.forEachIndexed { index, value ->
+                    alignedIpcaValues.forEachIndexed { index, value ->
                         val x = index * itemWidth
                         val normY = (value - minVal) / range
                         val y = height - (normY * height)
@@ -821,7 +951,7 @@ fun CustomLineChartCompare(
                             ipcaPath.moveTo(x, y)
                         } else {
                             val prevX = (index - 1) * itemWidth
-                            val prevNormY = (ipcaValues[index - 1] - minVal) / range
+                            val prevNormY = (alignedIpcaValues[index - 1] - minVal) / range
                             val prevY = height - (prevNormY * height)
                             ipcaPath.cubicTo(
                                 prevX + itemWidth / 2, prevY,
@@ -855,8 +985,9 @@ fun CustomLineChartCompare(
                         style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
                     )
 
-                    if (selectedIndex != null) {
-                        val idx = selectedIndex!!
+                    val safeSelectedIndex = selectedIndex?.takeIf { it in cleanPortfolioValues.indices }
+                    if (safeSelectedIndex != null) {
+                        val idx = safeSelectedIndex
                         val x = idx * itemWidth
                         drawLine(
                             color = GoldPrimary.copy(alpha = 0.4f),
@@ -866,8 +997,8 @@ fun CustomLineChartCompare(
                             pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
                         )
 
-                        val portY = height - ((((portfolioValues.getOrNull(idx) ?: 0f) - minVal) / range) * height)
-                        val ipcaY = height - ((((ipcaValues.getOrNull(idx) ?: 0f) - minVal) / range) * height)
+                        val portY = height - ((((cleanPortfolioValues.getOrNull(idx) ?: 0f) - minVal) / range) * height)
+                        val ipcaY = height - ((((alignedIpcaValues.getOrNull(idx) ?: 0f) - minVal) / range) * height)
 
                         drawCircle(color = GoldPrimary, radius = 7.dp.toPx(), center = Offset(x, portY))
                         drawCircle(color = Color.White, radius = 4.dp.toPx(), center = Offset(x, portY))
@@ -875,10 +1006,10 @@ fun CustomLineChartCompare(
                         drawCircle(color = Color(0xFF94A3B8), radius = 6.dp.toPx(), center = Offset(x, ipcaY))
                         drawCircle(color = Color.White, radius = 3.dp.toPx(), center = Offset(x, ipcaY))
                     } else {
-                        val lastIdx = portfolioValues.size - 1
+                        val lastIdx = cleanPortfolioValues.size - 1
                         val lastX = lastIdx * itemWidth
-                        val lastPortY = height - (((portfolioValues[lastIdx] - minVal) / range) * height)
-                        val lastIpcaY = height - (((ipcaValues[lastIdx] - minVal) / range) * height)
+                        val lastPortY = height - (((cleanPortfolioValues[lastIdx] - minVal) / range) * height)
+                        val lastIpcaY = height - (((alignedIpcaValues[lastIdx] - minVal) / range) * height)
 
                         drawCircle(color = GoldPrimary, radius = 5.dp.toPx(), center = Offset(lastX, lastPortY))
                         drawCircle(color = Color(0xFF94A3B8), radius = 4.dp.toPx(), center = Offset(lastX, lastIpcaY))
@@ -913,8 +1044,8 @@ fun CustomLineChartCompare(
                 .padding(top = 8.dp)
         ) {
             selectedIndex?.let { idx ->
-                val portVal = portfolioValues.getOrNull(idx) ?: 0f
-                val ipcaVal = ipcaValues.getOrNull(idx) ?: 0f
+                val portVal = cleanPortfolioValues.getOrNull(idx) ?: 0f
+                val ipcaVal = alignedIpcaValues.getOrNull(idx) ?: 0f
                 val jurosReais = portVal - ipcaVal
                 
                 Surface(
@@ -993,36 +1124,95 @@ fun PieChart(
         contentAlignment = Alignment.Center
     ) {
         Canvas(modifier = Modifier.fillMaxSize().pointerInput(data) {
-            detectTapGestures { offset ->
-                val centerX = size.width / 2f
-                val centerY = size.height / 2f
-                
-                // Calculate distance to check if within donut ring (roughly)
-                val dx = offset.x - centerX
-                val dy = offset.y - centerY
-                val dist = Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
-                
-                val strokeWidthX = 12.dp.toPx()
-                val radiusOuter = (kotlin.math.min(size.width, size.height)) / 2f
-                val radiusInner = radiusOuter - strokeWidthX * 2
-                
-                if (dist in radiusInner..radiusOuter) {
-                    val clickAngle = (Math.toDegrees(kotlin.math.atan2(dy.toDouble(), dx.toDouble())).toFloat() + 90f + 360f) % 360f
-                    var currentAngle = 0f
-                    var clicked = -1
-                    for (i in data.indices) {
-                        val sliceSweep = (data[i].second / totalSum) * 360f * progress
-                        if (clickAngle >= currentAngle && clickAngle < currentAngle + sliceSweep) {
-                            clicked = i
-                            break
+            detectDragGestures(
+                onDragStart = { offset ->
+                    val centerX = size.width / 2f
+                    val centerY = size.height / 2f
+                    val dx = offset.x - centerX
+                    val dy = offset.y - centerY
+                    val dist = Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+                    val strokeWidthX = 12.dp.toPx()
+                    val radiusOuter = (kotlin.math.min(size.width, size.height)) / 2f
+                    val radiusInner = radiusOuter - strokeWidthX * 2
+                    if (dist in radiusInner..radiusOuter) {
+                        val clickAngle = (Math.toDegrees(kotlin.math.atan2(dy.toDouble(), dx.toDouble())).toFloat() + 90f + 360f) % 360f
+                        var currentAngle = 0f
+                        var clicked = -1
+                        for (i in data.indices) {
+                            val sliceSweep = (data[i].second / totalSum) * 360f * progress
+                            if (clickAngle >= currentAngle && clickAngle < currentAngle + sliceSweep) {
+                                clicked = i
+                                break
+                            }
+                            currentAngle += sliceSweep
                         }
-                        currentAngle += sliceSweep
+                        selectedSlice = clicked
+                    } else {
+                        selectedSlice = null
                     }
-                    selectedSlice = if (selectedSlice == clicked) null else clicked
-                } else {
-                    selectedSlice = null // Deselect if tapped outside/inside ring
+                },
+                onDrag = { change, _ ->
+                    val centerX = size.width / 2f
+                    val centerY = size.height / 2f
+                    val dx = change.position.x - centerX
+                    val dy = change.position.y - centerY
+                    val dist = Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+                    val strokeWidthX = 12.dp.toPx()
+                    val radiusOuter = (kotlin.math.min(size.width, size.height)) / 2f
+                    val radiusInner = radiusOuter - strokeWidthX * 2
+                    if (dist in radiusInner..radiusOuter) {
+                        val clickAngle = (Math.toDegrees(kotlin.math.atan2(dy.toDouble(), dx.toDouble())).toFloat() + 90f + 360f) % 360f
+                        var currentAngle = 0f
+                        var clicked = -1
+                        for (i in data.indices) {
+                            val sliceSweep = (data[i].second / totalSum) * 360f * progress
+                            if (clickAngle >= currentAngle && clickAngle < currentAngle + sliceSweep) {
+                                clicked = i
+                                break
+                            }
+                            currentAngle += sliceSweep
+                        }
+                        if (clicked != -1) selectedSlice = clicked
+                    } // preserve previous slice if dragged outside slightly, or set to null
+                },
+                onDragEnd = { selectedSlice = null },
+                onDragCancel = { selectedSlice = null }
+            )
+        }.pointerInput(data) {
+            detectTapGestures(
+                onPress = { offset ->
+                    val centerX = size.width / 2f
+                    val centerY = size.height / 2f
+                    
+                    // Calculate distance to check if within donut ring (roughly)
+                    val dx = offset.x - centerX
+                    val dy = offset.y - centerY
+                    val dist = Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+                    
+                    val strokeWidthX = 12.dp.toPx()
+                    val radiusOuter = (kotlin.math.min(size.width, size.height)) / 2f
+                    val radiusInner = radiusOuter - strokeWidthX * 2
+                    
+                    if (dist in radiusInner..radiusOuter) {
+                        val clickAngle = (Math.toDegrees(kotlin.math.atan2(dy.toDouble(), dx.toDouble())).toFloat() + 90f + 360f) % 360f
+                        var currentAngle = 0f
+                        var clicked = -1
+                        for (i in data.indices) {
+                            val sliceSweep = (data[i].second / totalSum) * 360f * progress
+                            if (clickAngle >= currentAngle && clickAngle < currentAngle + sliceSweep) {
+                                clicked = i
+                                break
+                            }
+                            currentAngle += sliceSweep
+                        }
+                        selectedSlice = clicked
+                    } else {
+                        selectedSlice = null // Deselect if tapped outside/inside ring
+                    }
+                    tryAwaitRelease()
+                    selectedSlice = null
                 }
-            }
+            )
         }) {
             val strokeWidth = 12.dp.toPx()
             val canvasSize = size.minDimension
@@ -1062,8 +1252,9 @@ fun PieChart(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            val displayTitle = if (selectedSlice != null) data[selectedSlice!!].first else centerText
-            val displayValue = if (selectedSlice != null) "R$ %.2f".format(data[selectedSlice!!].second) else centerSubtext
+            val safeSelectedSlice = selectedSlice?.takeIf { it in data.indices }
+            val displayTitle = safeSelectedSlice?.let { data[it].first } ?: centerText
+            val displayValue = safeSelectedSlice?.let { "R$ %.2f".format(data[it].second) } ?: centerSubtext
             Text(
                 text = displayTitle,
                 color = TextPrimary,

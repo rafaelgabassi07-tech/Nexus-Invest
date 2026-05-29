@@ -48,3 +48,16 @@ Mantenha assim para garantir que o Valorae Proxy seja a fonte oficial. Defina `t
 4. Rode em emulador ou dispositivo físico.
 
 Mais detalhes: `docs/VALORAE_PROXY_INTEGRATION.md`.
+
+## Nota da auditoria VALORAE — Continuação 3
+
+Este pacote preserva as correções anteriores e adiciona nova camada de estabilidade para:
+
+- classificação automática de FIIs por ticker e payload do Proxy;
+- comparação de índices normalizada para retorno percentual quando o Proxy entrega preço/nível bruto;
+- leitura em lote mais flexível quando `/api/assets` retorna objeto indexado por ticker;
+- fallback dedicado de dividendos via `/api/asset/dividends` para alimentar proventos, DY histórico e agenda;
+- histórico de carteira com limite proporcional ao range solicitado;
+- headers dinâmicos usando `BuildConfig.VERSION_NAME`.
+
+Antes de gerar APK, substitua ou regenere `gradle/wrapper/gradle-wrapper.jar`, pois o wrapper recebido continua corrompido no ZIP de origem.

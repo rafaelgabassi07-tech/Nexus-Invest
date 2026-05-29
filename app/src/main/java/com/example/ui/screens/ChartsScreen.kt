@@ -96,70 +96,47 @@ fun ChartsScreen(viewModel: PortfolioViewModel, modifier: Modifier = Modifier) {
         }
     }
     
-    val currentCalendar = java.util.Calendar.getInstance()
-    val divStackedDataValues = remember(divDataValues, firstTransactionTime) {
-        val calFirst = java.util.Calendar.getInstance().apply { timeInMillis = firstTransactionTime }
-        val startMonthIdx = calFirst.get(java.util.Calendar.YEAR) * 12 + calFirst.get(java.util.Calendar.MONTH)
-
-        List(6) { i -> 
-            // We want last 2 received, next 4 projected (for demonstration)
-            val monthIndex = i - 1
-            val cal = currentCalendar.clone() as java.util.Calendar
-            cal.add(java.util.Calendar.MONTH, monthIndex)
-            val currentMonthIdx = cal.get(java.util.Calendar.YEAR) * 12 + cal.get(java.util.Calendar.MONTH)
-            
-            val monthStr = String.format("%02d/%d", cal.get(java.util.Calendar.MONTH) + 1, cal.get(java.util.Calendar.YEAR))
-            
-            // Map the 6 values dynamically from divDataValues or just linear growth
-            val value = divDataValues.getOrNull(i * 2) ?: 0f
-            
-            val isBeforeExistence = currentMonthIdx < startMonthIdx
-
-            if (i < 2) {
-                com.example.ui.components.StackedBarData(
-                    received = if (isBeforeExistence) 0f else value, 
-                    projected = 0f, 
-                    label = monthStr
-                )
-            } else {
-                com.example.ui.components.StackedBarData(
-                    received = if (isBeforeExistence) 0f else value * 0.8f, 
-                    projected = if (isBeforeExistence) 0f else value * 0.2f, 
-                    label = monthStr
-                )
-            }
-        }
+    val divStackedDataValues = remember(analytics.dividendEvents, summaries, finalMonthlyDiv, firstTransactionTime) {
+        buildDividendEvolutionData(
+            events = analytics.dividendEvents,
+            summaries = summaries,
+            firstTransactionTime = firstTransactionTime,
+            months = 6,
+            fallbackMonthly = finalMonthlyDiv
+        )
     }
     
-    // Generate Portfolio Curve vs IPCA (assuming 5.5% IPCA over the period)
+    // Curva Carteira vs IPCA. Prioriza séries reais do Proxy, ordenadas por tempo,
+    // e só usa fallback local transparente quando o Proxy ainda não trouxe histórico.
     val portReturnPct = remember(summaryModel) {
-        summaryModel.returnPercent.toFloat().let {
-            if (it.isNaN() || it.isInfinite()) 0f else it
-        }
+        summaryModel.returnPercent.toFloat().takeIf { it.isFinite() } ?: 0f
     }
     
     val portDataValues = remember(portReturnPct, analytics.portfolioHistory) {
-        if (analytics.portfolioHistory.isNotEmpty()) {
-            analytics.portfolioHistory.map { it.returnPercent.toFloat() }
-        } else {
-            List(12) { i -> (portReturnPct / 12f) * (i + 1) }
-        }
+        val remote = analytics.portfolioHistory
+            .sortedBy { it.timestamp }
+            .mapNotNull { it.returnPercent.toFloat().takeIf { value -> value.isFinite() } }
+        remote.ifEmpty { List(12) { i -> (portReturnPct / 12f) * (i + 1) } }
     }
     
     val ipcaDataValues = remember(totalCurrent, analytics.ipcaSeries) {
-        if (analytics.ipcaSeries.isNotEmpty()) {
-            analytics.ipcaSeries.map { it.accumulatedPercent.toFloat() }
-        } else {
+        val remote = analytics.ipcaSeries
+            .sortedBy { it.timestamp }
+            .mapNotNull { it.accumulatedPercent.toFloat().takeIf { value -> value.isFinite() } }
+        remote.ifEmpty {
             val ipcaAccumulated = if (totalCurrent > 0) 5.5f else 0f
             List(12) { i -> (ipcaAccumulated / 12f) * (i + 1) }
         }
     }
 
-    val currentIpcaAccumulated = ipcaDataValues.lastOrNull() ?: 0f
+    val alignedIpcaPreview = remember(ipcaDataValues, portDataValues) { resampleInsightSeries(ipcaDataValues, portDataValues.size) }
+    val currentIpcaAccumulated = alignedIpcaPreview.lastOrNull() ?: 0f
 
     // Segment data for visual allocation
     val alocacaoData = remember(summaryModel, analytics.analysis) {
-        val remote = analytics.analysis?.allocationByClass?.map { it.first to it.second.toFloat() }.orEmpty().filter { it.second > 0f }
+        val remote = normalizeInsightPercentPairs(
+            analytics.analysis?.allocationByClass?.map { it.first to it.second.toFloat() }.orEmpty()
+        )
         if (remote.isNotEmpty()) {
             remote
         } else {
@@ -168,14 +145,15 @@ fun ChartsScreen(viewModel: PortfolioViewModel, modifier: Modifier = Modifier) {
             val data = mutableListOf<Pair<String, Float>>()
             if (acoes > 0f) data.add("Ações" to acoes)
             if (fiis > 0f) data.add("FIIs" to fiis)
-            if (data.isEmpty()) data.add("Sem Cotas" to 100f)
-            data
+            normalizeInsightPercentPairs(data).ifEmpty { listOf("Sem Cotas" to 100f) }
         }
     }
     
     // Sector-specific calculations
     val segmentosData = remember(summaries, totalCurrent, analytics.analysis) {
-        val remote = analytics.analysis?.allocationBySector?.map { it.first to it.second.toFloat() }.orEmpty().filter { it.second > 0f }
+        val remote = normalizeInsightPercentPairs(
+            analytics.analysis?.allocationBySector?.map { it.first to it.second.toFloat() }.orEmpty()
+        )
         if (remote.isNotEmpty()) return@remember remote
         if (totalCurrent <= 0.0) return@remember listOf("Sem Cotas" to 100f)
         
@@ -194,11 +172,15 @@ fun ChartsScreen(viewModel: PortfolioViewModel, modifier: Modifier = Modifier) {
             val sectorVal = entry.value.sumOf { it.totalCurrentValue }
             (sectorVal / totalCurrent * 100.0).toFloat().let { if (it.isNaN() || it.isInfinite()) 0f else it }
         }.toList()
-        if (setores.isEmpty()) listOf("Sem Cotas" to 100f) else setores
+        normalizeInsightPercentPairs(setores).ifEmpty { listOf("Sem Cotas" to 100f) }
     }
     
     val topAgenda = remember(summaries) {
-        summaries.sortedByDescending { it.dividendYield * it.totalCurrentValue }.take(4)
+        summaries
+            .filter { it.lastDividend > 0.0 || it.dividendYield > 0.0 }
+            .sortedByDescending { (it.lastDividend * it.sharesCount).coerceAtLeast(it.dividendYield * it.totalCurrentValue) }
+            .take(6)
+            .ifEmpty { summaries.sortedByDescending { it.dividendYield * it.totalCurrentValue }.take(4) }
     }
 
     // Intercept physical Back presses to return to listing
@@ -238,7 +220,7 @@ fun ChartsScreen(viewModel: PortfolioViewModel, modifier: Modifier = Modifier) {
             item {
                 ChartCard(
                     title = "Evolução de Proventos",
-                    description = "Seus dividendos projetados lineares nos próximos 12 meses.",
+                    description = "Proventos recebidos e previstos por mês, usando eventos do Proxy quando disponíveis e fallback local transparente.",
                     subStats = "Yield Médio: ${String.format("%.2f%%", avgDy)}",
                     icon = Icons.AutoMirrored.Outlined.TrendingUp,
                     onClick = { activeDetailPage = "Proventos" }
@@ -306,28 +288,11 @@ fun ChartsScreen(viewModel: PortfolioViewModel, modifier: Modifier = Modifier) {
             // 4. Agenda de Dividendos Preview
             item {
                 val agendaPreviewChartData = remember(topAgenda, analytics.dividendEvents) {
-                    if (analytics.dividendEvents.isNotEmpty()) {
-                        analytics.dividendEvents.take(6).map { event ->
-                            com.example.ui.components.StackedBarData(
-                                received = if (event.status.contains("pago", ignoreCase = true)) event.estimatedAmount.toFloat() else 0f,
-                                projected = if (!event.status.contains("pago", ignoreCase = true)) event.estimatedAmount.toFloat() else 0f,
-                                label = event.ticker.take(5)
-                            )
-                        }
-                    } else {
-                        topAgenda.mapNotNull { asset ->
-                            val divAmt = asset.lastDividend * asset.sharesCount
-                            if (divAmt <= 0.0) null else com.example.ui.components.StackedBarData(
-                                received = 0f,
-                                projected = divAmt.toFloat(),
-                                label = asset.ticker.take(5)
-                            )
-                        }
-                    }
+                    buildDividendAgendaData(analytics.dividendEvents, topAgenda, limit = 6)
                 }
                 ChartCard(
                     title = "Agenda de Dividendos",
-                    description = "Datas-com e pagamentos projetados por ativos da sua carteira.",
+                    description = "Próximas datas-com e pagamentos, priorizando eventos futuros do Proxy e evitando misturar eventos antigos na agenda.",
                     subStats = "R$ ${String.format("%.2f", analytics.dividendEvents.sumOf { it.estimatedAmount }.takeIf { it > 0.0 } ?: topAgenda.sumOf { it.lastDividend * it.sharesCount })} estimado",
                     icon = Icons.AutoMirrored.Outlined.EventNote,
                     onClick = { activeDetailPage = "Agenda" }
@@ -357,7 +322,7 @@ fun ChartsScreen(viewModel: PortfolioViewModel, modifier: Modifier = Modifier) {
             }
         }
 
-        if (activeDetailPage != null) {
+        activeDetailPage?.let { detailPage ->
             androidx.compose.ui.window.Dialog(
                 onDismissRequest = { activeDetailPage = null },
                 properties = androidx.compose.ui.window.DialogProperties(
@@ -370,7 +335,7 @@ fun ChartsScreen(viewModel: PortfolioViewModel, modifier: Modifier = Modifier) {
                     color = DarkBackground
                 ) {
                     ChartDetailPage(
-                        pageName = activeDetailPage!!,
+                        pageName = detailPage,
                         summaries = summaries,
                         summaryModel = summaryModel,
                         divDataValues = divDataValues,
@@ -526,8 +491,9 @@ fun DividendScheduleList(agenda: List<AssetSummary>, transactions: List<com.exam
             val sharesAtDataCom = remember(tickerTxs, comDateMillis) {
                 if (comDateMillis == null) asset.sharesCount // Fallback to current if date unknown
                 else {
+                    val endOfComDayMillis = comDateMillis + (24 * 60 * 60 * 1000 - 1000)
                     var count = 0.0
-                    tickerTxs.filter { it.date <= comDateMillis }.forEach {
+                    tickerTxs.filter { it.date <= endOfComDayMillis }.forEach {
                         if (it.isSell) count -= it.quantity else count += it.quantity
                     }
                     count
@@ -643,7 +609,16 @@ fun DividendScheduleList(agenda: List<AssetSummary>, transactions: List<com.exam
 
 @Composable
 fun DividendEventsList(events: List<DividendEvent>, limit: Int = Int.MAX_VALUE) {
-    val showList = remember(events, limit) { events.take(limit) }
+    val showList = remember(events, limit) {
+        val now = System.currentTimeMillis()
+        events.sortedWith(
+            compareBy<DividendEvent> {
+                val ts = eventRelevantMillis(it)
+                if (!isPaidDividendEvent(it, now) && ts > 0L) 0 else 1
+            }.thenBy { eventRelevantMillis(it).takeIf { ts -> ts > 0L } ?: Long.MAX_VALUE }
+                .thenBy { it.ticker }
+        ).take(limit)
+    }
     if (showList.isEmpty()) {
         Box(
             modifier = Modifier
@@ -725,7 +700,7 @@ fun ChartDetailPage(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val totalCurrent = if (summaryModel.totalCurrentValue.isNaN()) 0.0 else summaryModel.totalCurrentValue
+    val totalCurrent = if (summaryModel.totalCurrentValue.isNaN() || summaryModel.totalCurrentValue.isInfinite()) 0.0 else summaryModel.totalCurrentValue
     val avgDy = remember(summaryModel, summaries) {
         if (totalCurrent > 0) summaries.sumOf { it.totalCurrentValue * it.dividendYield } / totalCurrent else 0.0
     }
@@ -855,61 +830,29 @@ fun ChartDetailPage(
             var selectedTimePie by remember { mutableStateOf("Últimos 12 meses") }
             var selectedFilterPie by remember { mutableStateOf("Todos") }
 
-            val currentCalendar = java.util.Calendar.getInstance()
-            
-            val dynamicStackedData = remember(summaries, selectedTime, selectedFilter, firstTransactionTime) {
-                val calFirst = java.util.Calendar.getInstance().apply { timeInMillis = firstTransactionTime }
-                val startMonthIdx = calFirst.get(java.util.Calendar.YEAR) * 12 + calFirst.get(java.util.Calendar.MONTH)
-
+            val dynamicStackedData = remember(summaries, analytics.dividendEvents, selectedTime, selectedFilter, firstTransactionTime) {
                 val filteredAssets = when (selectedFilter) {
-                    "Apenas FIIs" -> summaries.filter { it.type == "FII" }
-                    "Apenas Ações" -> summaries.filter { it.type == "ACAO" }
+                    "Apenas FIIs" -> summaries.filter { it.type.equals("FII", ignoreCase = true) }
+                    "Apenas Ações" -> summaries.filter { it.type.equals("ACAO", ignoreCase = true) }
                     else -> summaries
                 }
+                val filteredTickers = filteredAssets.map { it.ticker.uppercase() }.toSet()
+                val filteredEvents = analytics.dividendEvents.filter { it.ticker.uppercase() in filteredTickers }
                 val totalMonthlyFilteredDiv = filteredAssets.sumOf {
                     it.sharesCount * (it.currentPrice * (it.dividendYield / 100.0) / 12.0)
                 }
-                
                 val barCount = when (selectedTime) {
                     "6 meses" -> 6
                     "24 meses" -> 24
                     else -> 12
                 }
-                
-                val startOffset = barCount / 3
-                
-                List(barCount) { i ->
-                    val cal = currentCalendar.clone() as java.util.Calendar
-                    cal.add(java.util.Calendar.MONTH, i - startOffset)
-                    val monthStr = String.format("%02d/%d", cal.get(java.util.Calendar.MONTH) + 1, cal.get(java.util.Calendar.YEAR))
-                    val currentMonthIdx = cal.get(java.util.Calendar.YEAR) * 12 + cal.get(java.util.Calendar.MONTH)
-                    
-                    val isBeforeExistence = currentMonthIdx < startMonthIdx
-
-                    val baseFactor = 0.618f + 0.382f * (i.toFloat() / barCount.coerceAtLeast(1))
-                    val totalVal = (totalMonthlyFilteredDiv * baseFactor).toFloat()
-                    
-                    val receivedVal = if (isBeforeExistence) 0f else if (i < startOffset) {
-                        totalVal
-                    } else if (i == startOffset) {
-                        totalVal * 0.45f
-                    } else {
-                        0f
-                    }
-                    val projectedVal = if (isBeforeExistence) 0f else if (i < startOffset) {
-                        0f
-                    } else if (i == startOffset) {
-                        totalVal * 0.55f
-                    } else {
-                        totalVal
-                    }
-                    
-                    com.example.ui.components.StackedBarData(
-                        received = receivedVal,
-                        projected = projectedVal,
-                        label = monthStr
-                    )
-                }
+                buildDividendEvolutionData(
+                    events = filteredEvents,
+                    summaries = filteredAssets,
+                    firstTransactionTime = firstTransactionTime,
+                    months = barCount,
+                    fallbackMonthly = totalMonthlyFilteredDiv
+                )
             }
 
             val dynamicTopDividendAssets = remember(summaries, selectedTimePie, selectedFilterPie) {
@@ -1368,26 +1311,10 @@ fun ChartDetailPage(
                         }
                     }
                     "Agenda" -> {
-                        val agendaChartData = remember(topAgenda) {
-                            topAgenda.map { asset ->
-                                val divAmt = asset.lastDividend * asset.sharesCount
-                                com.example.ui.components.StackedBarData(
-                                    received = if (divAmt > 0) divAmt.toFloat() else 0f,
-                                    projected = 0f,
-                                    label = asset.ticker.take(5)
-                                )
-                            }
-                        }
                         val proxyEvents = analytics.dividendEvents
-                        val eventChartData = if (proxyEvents.isNotEmpty()) {
-                            proxyEvents.take(8).map { event ->
-                                com.example.ui.components.StackedBarData(
-                                    received = if (event.paymentDate.isNotBlank()) event.estimatedAmount.toFloat() else 0f,
-                                    projected = if (event.paymentDate.isBlank()) event.estimatedAmount.toFloat() else 0f,
-                                    label = event.ticker.take(5)
-                                )
-                            }
-                        } else agendaChartData
+                        val eventChartData = remember(proxyEvents, topAgenda) {
+                            buildDividendAgendaData(proxyEvents, topAgenda, limit = 8)
+                        }
                         if (eventChartData.isNotEmpty()) {
                             Box(modifier = Modifier.fillMaxWidth().height(160.dp).padding(bottom = 16.dp)) {
                                 com.example.ui.components.StackedBarChart(
@@ -2113,6 +2040,188 @@ fun KpiRow(
     }
 }
 
+
+// -------------------------------------------------------------
+// INSIGHTS DATA HELPERS
+// -------------------------------------------------------------
+private fun safeDividendAmount(event: DividendEvent): Double {
+    return when {
+        event.estimatedAmount > 0.0 -> event.estimatedAmount
+        event.valuePerShare > 0.0 && event.quantity > 0.0 -> event.valuePerShare * event.quantity
+        event.valuePerShare > 0.0 -> event.valuePerShare
+        else -> 0.0
+    }
+}
+
+private fun normalizeInsightPercentPairs(raw: List<Pair<String, Float>>): List<Pair<String, Float>> {
+    val cleaned = raw
+        .mapNotNull { (label, value) ->
+            val safe = value.takeIf { it.isFinite() && it > 0f } ?: return@mapNotNull null
+            label.trim().ifBlank { "Outros" } to safe
+        }
+    if (cleaned.isEmpty()) return emptyList()
+    val sum = cleaned.sumOf { it.second.toDouble() }.toFloat()
+    val max = cleaned.maxOf { it.second }
+    val scaled = when {
+        max <= 1.5f && sum <= 1.5f -> cleaned.map { it.first to it.second * 100f }
+        sum > 100.5f -> cleaned.map { it.first to (it.second / sum * 100f) }
+        else -> cleaned
+    }
+    return scaled
+        .filter { it.second.isFinite() && it.second > 0f }
+        .sortedByDescending { it.second }
+}
+
+private fun resampleInsightSeries(values: List<Float>, targetSize: Int): List<Float> {
+    val clean = values.filter { it.isFinite() }
+    if (targetSize <= 0) return emptyList()
+    if (clean.isEmpty()) return List(targetSize) { 0f }
+    if (clean.size == targetSize) return clean
+    if (clean.size == 1) return List(targetSize) { clean.first() }
+    return List(targetSize) { index ->
+        val sourceIndex = if (targetSize == 1) 0.0 else index.toDouble() * (clean.size - 1).toDouble() / (targetSize - 1).toDouble()
+        val lower = kotlin.math.floor(sourceIndex).toInt().coerceIn(0, clean.lastIndex)
+        val upper = kotlin.math.ceil(sourceIndex).toInt().coerceIn(0, clean.lastIndex)
+        if (lower == upper) clean[lower] else {
+            val t = (sourceIndex - lower).toFloat().coerceIn(0f, 1f)
+            clean[lower] + ((clean[upper] - clean[lower]) * t)
+        }
+    }
+}
+
+private fun parseInsightDateMillis(value: String): Long {
+    if (value.isBlank()) return 0L
+    val raw = value.trim()
+    raw.toLongOrNull()?.let { return if (it > 10_000_000_000L) it else it * 1000L }
+    val patterns = listOf("dd/MM/yyyy", "yyyy-MM-dd", "dd-MM-yyyy", "MM/yyyy", "yyyy-MM")
+    for (pattern in patterns) {
+        try {
+            val sdf = java.text.SimpleDateFormat(pattern, java.util.Locale("pt", "BR"))
+            sdf.isLenient = false
+            return sdf.parse(raw)?.time ?: 0L
+        } catch (_: Exception) {}
+    }
+    return 0L
+}
+
+private fun eventRelevantMillis(event: DividendEvent): Long {
+    return parseInsightDateMillis(event.paymentDate).takeIf { it > 0L }
+        ?: parseInsightDateMillis(event.dateCom).takeIf { it > 0L }
+        ?: 0L
+}
+
+private fun eventMonthLabel(event: DividendEvent): String {
+    val ts = eventRelevantMillis(event)
+    if (ts <= 0L) return event.ticker.take(5)
+    return java.text.SimpleDateFormat("MM/yyyy", java.util.Locale("pt", "BR")).format(java.util.Date(ts))
+}
+
+private fun isPaidDividendEvent(event: DividendEvent, nowMillis: Long = System.currentTimeMillis()): Boolean {
+    val status = event.status.lowercase(java.util.Locale.ROOT)
+    val ts = eventRelevantMillis(event)
+    return status.contains("pago") || status.contains("recebido") || status.contains("último") || status.contains("ultimo") || (ts > 0L && ts < nowMillis)
+}
+
+private fun buildDividendEvolutionData(
+    events: List<DividendEvent>,
+    summaries: List<AssetSummary>,
+    firstTransactionTime: Long,
+    months: Int,
+    fallbackMonthly: Double
+): List<com.example.ui.components.StackedBarData> {
+    val safeMonths = months.coerceIn(3, 24)
+    val now = java.util.Calendar.getInstance()
+    val startOffset = safeMonths / 3
+    val calFirst = java.util.Calendar.getInstance().apply { timeInMillis = firstTransactionTime }
+    val firstMonthIndex = calFirst.get(java.util.Calendar.YEAR) * 12 + calFirst.get(java.util.Calendar.MONTH)
+
+    val eventsByMonth = events
+        .mapNotNull { event ->
+            val amount = safeDividendAmount(event)
+            val ts = eventRelevantMillis(event)
+            if (amount <= 0.0 || ts <= 0L) null else event to amount
+        }
+        .groupBy { (event, _) -> eventMonthLabel(event) }
+
+    return List(safeMonths) { i ->
+        val cal = now.clone() as java.util.Calendar
+        cal.add(java.util.Calendar.MONTH, i - startOffset)
+        val monthLabel = String.format("%02d/%d", cal.get(java.util.Calendar.MONTH) + 1, cal.get(java.util.Calendar.YEAR))
+        val monthIndex = cal.get(java.util.Calendar.YEAR) * 12 + cal.get(java.util.Calendar.MONTH)
+        val bucket = eventsByMonth[monthLabel].orEmpty()
+
+        if (bucket.isNotEmpty()) {
+            val received = bucket.filter { (event, _) -> isPaidDividendEvent(event) }.sumOf { it.second }.toFloat()
+            val projected = bucket.filterNot { (event, _) -> isPaidDividendEvent(event) }.sumOf { it.second }.toFloat()
+            com.example.ui.components.StackedBarData(received = received, projected = projected, label = monthLabel)
+        } else {
+            val isBeforePortfolio = monthIndex < firstMonthIndex
+            val totalMonthlyFromAssets = summaries.sumOf {
+                it.sharesCount * (it.currentPrice * (it.dividendYield / 100.0) / 12.0)
+            }.takeIf { it > 0.0 } ?: fallbackMonthly
+            val factor = 0.75f + (i.toFloat() / safeMonths.coerceAtLeast(1)) * 0.35f
+            val estimated = if (isBeforePortfolio) 0f else (totalMonthlyFromAssets * factor).toFloat()
+            val isFuture = i >= startOffset
+            com.example.ui.components.StackedBarData(
+                received = if (isFuture) 0f else estimated,
+                projected = if (isFuture) estimated else 0f,
+                label = monthLabel
+            )
+        }
+    }
+}
+
+private fun buildDividendAgendaData(
+    events: List<DividendEvent>,
+    fallbackAssets: List<AssetSummary>,
+    limit: Int = 8
+): List<com.example.ui.components.StackedBarData> {
+    val now = System.currentTimeMillis()
+    val normalizedEvents = events
+        .mapNotNull { event ->
+            val amount = safeDividendAmount(event)
+            if (amount <= 0.0) null else event to amount
+        }
+
+    fun rowsFrom(source: List<Pair<DividendEvent, Double>>): List<com.example.ui.components.StackedBarData> {
+        return source
+            .sortedWith(compareBy<Pair<DividendEvent, Double>> {
+                eventRelevantMillis(it.first).let { ts -> if (ts > 0L) ts else Long.MAX_VALUE }
+            }.thenBy { it.first.ticker })
+            .take(limit)
+            .map { (event, amount) ->
+                val paid = isPaidDividendEvent(event, now)
+                com.example.ui.components.StackedBarData(
+                    received = if (paid) amount.toFloat() else 0f,
+                    projected = if (paid) 0f else amount.toFloat(),
+                    label = listOf(event.ticker.take(5), event.paymentDate.take(5).ifBlank { event.dateCom.take(5) })
+                        .filter { it.isNotBlank() }
+                        .joinToString(" ")
+                )
+            }
+    }
+
+    val upcomingRows = rowsFrom(
+        normalizedEvents.filter { (event, _) ->
+            val ts = eventRelevantMillis(event)
+            !isPaidDividendEvent(event, now) || ts >= now
+        }
+    )
+    if (upcomingRows.isNotEmpty()) return upcomingRows
+
+    val recentRows = rowsFrom(normalizedEvents)
+    if (recentRows.isNotEmpty()) return recentRows
+
+    return fallbackAssets.mapNotNull { asset ->
+        val amount = asset.lastDividend * asset.sharesCount
+        if (amount <= 0.0) null else com.example.ui.components.StackedBarData(
+            received = 0f,
+            projected = amount.toFloat(),
+            label = asset.ticker.take(5)
+        )
+    }.take(limit)
+}
+
 // -------------------------------------------------------------
 // TEXT CONTENT & KPI COMPUTATION HELPERS
 // -------------------------------------------------------------
@@ -2132,7 +2241,7 @@ fun getKpiMetricsForPage(
     summaryModel: com.example.viewmodel.PortfolioSummary,
     analytics: PortfolioAnalyticsState
 ): List<Triple<String, String, String>> {
-    val totalCurrent = if (summaryModel.totalCurrentValue.isNaN()) 0.0 else summaryModel.totalCurrentValue
+    val totalCurrent = if (summaryModel.totalCurrentValue.isNaN() || summaryModel.totalCurrentValue.isInfinite()) 0.0 else summaryModel.totalCurrentValue
     val avgDy = if (totalCurrent > 0) summaries.sumOf { it.totalCurrentValue * it.dividendYield } / totalCurrent else 0.0
     val finalMonthlyDiv = (totalCurrent * (avgDy / 100.0)) / 12.0
 
@@ -2147,27 +2256,41 @@ fun getKpiMetricsForPage(
             val ipca = analytics.ipcaSeries.lastOrNull()?.accumulatedPercent ?: 5.5
             val realReturn = portReturn - ipca
             listOf(
-                Triple("Carteira Acc.", String.format("%+.2f%%", portReturn), if (portReturn >= 0) "GREEN" else "RED"),
+                Triple("Carteira Acum.", String.format("%+.2f%%", portReturn), if (portReturn >= 0) "GREEN" else "RED"),
                 Triple("IPCA Período", String.format("%+.2f%%", ipca), "GOLD"),
                 Triple("Ganho Real", String.format("%+.2f%%", realReturn), if (realReturn >= 0) "GREEN" else "RED")
             )
         }
         "Diversificação" -> {
-            val sectorsCount = summaries.map { it.ticker.take(4) }.distinct().size
+            val remoteSectors = analytics.analysis?.allocationBySector.orEmpty().filter { it.second > 0.0 }
+            val sectorsCount = if (remoteSectors.isNotEmpty()) {
+                remoteSectors.size
+            } else {
+                summaries.map { it.type.ifBlank { it.ticker.take(4) } }.distinct().size
+            }
             listOf(
-                Triple("Sectores", "$sectorsCount", "GOLD"),
+                Triple("Setores", "$sectorsCount", "GOLD"),
                 Triple("Ações Peso", "%.1f%%".format(summaryModel.sharesRatioStock * 100), "GREEN"),
                 Triple("Total Alocado", String.format("R$ %.0f", totalCurrent), "GOLD")
             )
         }
         "Agenda" -> {
-            val events = analytics.dividendEvents
+            val now = System.currentTimeMillis()
+            val upcomingEvents = analytics.dividendEvents.filter { event ->
+                val ts = eventRelevantMillis(event)
+                !isPaidDividendEvent(event, now) || ts >= now
+            }
+            val events = upcomingEvents.ifEmpty { analytics.dividendEvents }
             val agendaCount = if (events.isNotEmpty()) events.size else summaries.size
-            val sumDY = if (events.isNotEmpty()) events.sumOf { it.estimatedAmount } else summaries.sumOf { it.lastDividend * it.sharesCount }
+            val sumDY = if (events.isNotEmpty()) {
+                events.sumOf { safeDividendAmount(it) }
+            } else {
+                summaries.sumOf { it.lastDividend * it.sharesCount }
+            }
             listOf(
                 Triple("Eventos", "$agendaCount un", "GOLD"),
                 Triple("Próx. Estimado", String.format("R$ %.2f", sumDY), "GREEN"),
-                Triple("Fonte", if (events.isNotEmpty()) "Proxy" else "Local", "GOLD")
+                Triple("Fonte", if (analytics.dividendEvents.isNotEmpty()) "Proxy" else "Local", "GOLD")
             )
         }
         else -> emptyList()

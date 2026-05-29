@@ -49,14 +49,18 @@ class UpdateManager(private val context: Context) {
             
             // Rebuild only if baseUrl changes
             if (currentRetrofit?.baseUrl()?.toString() != baseUrl) {
-                currentRetrofit = Retrofit.Builder()
+                val retrofit = Retrofit.Builder()
                     .baseUrl(baseUrl)
                     .addConverterFactory(MoshiConverterFactory.create(moshi))
                     .build()
-                currentApi = currentRetrofit!!.create(UpdateApiService::class.java)
+                currentRetrofit = retrofit
+                currentApi = retrofit.create(UpdateApiService::class.java)
             }
 
-            val api = currentApi ?: return
+            val api = currentApi ?: run {
+                _updateStatus.value = UpdateStatus.UpToDate
+                return
+            }
             val updateInfo = api.getLatestUpdateInfo(
                 timestamp = System.currentTimeMillis(),
                 cacheControl = "no-cache, no-store, must-revalidate"

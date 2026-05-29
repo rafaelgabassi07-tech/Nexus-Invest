@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -46,6 +47,7 @@ import com.example.network.B3AssetData
 import com.example.network.ChartPoint
 import com.example.network.NewsItem
 import com.example.ui.components.HistoricalPriceLineChart
+import com.example.ui.components.AssetChartBundlePanel
 import com.example.ui.components.CustomBarChart
 import com.example.ui.components.PieChart
 import com.example.ui.theme.*
@@ -448,7 +450,38 @@ fun AnalysisScreen(
                         }
                     }
 
-                    // 3. Historical Canvas Line Chart card
+                    var mainAnalysisTabIdx by remember { mutableStateOf(0) }
+                    val analysisTabs = listOf("Resumo & Gráficos", "Indicadores Gerais", "Perfil & Dados", "Análise Valorae")
+                    
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(analysisTabs.size) { idx ->
+                            val isSelected = mainAnalysisTabIdx == idx
+                            Surface(
+                                color = if (isSelected) GoldPrimary.copy(alpha = 0.15f) else Color.Transparent,
+                                shape = RoundedCornerShape(20.dp),
+                                border = BorderStroke(1.dp, if (isSelected) GoldPrimary else BorderColor.copy(alpha = 0.2f)),
+                                modifier = Modifier.clickable { mainAnalysisTabIdx = idx }
+                            ) {
+                                Text(
+                                    text = analysisTabs[idx],
+                                    color = if (isSelected) GoldPrimary else TextSecondary,
+                                    fontSize = 13.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    if (mainAnalysisTabIdx == 0) {
+                    
+                    val tickerKey = asset.ticker.trim().uppercase()
+                    val bundle = assetChartBundles[tickerKey]
+
+                    // Proxy Chart & 52-wk
                     if (chartHistory.isNotEmpty()) {
                         Surface(
                             color = DarkSurfaceElevated,
@@ -471,9 +504,13 @@ fun AnalysisScreen(
                                     )
                                     
                                     // Range Selector
-                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        listOf("1d", "5d", "1mo", "1y", "5y").forEach { range ->
-                                            val isSelected = range == chartRange
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        modifier = Modifier.horizontalScroll(rememberScrollState())
+                                    ) {
+                                        listOf("1D", "5D", "1M", "6M", "YTD", "1Y", "5Y", "MAX").forEach { rawRange ->
+                                            val range = rawRange.lowercase()
+                                            val isSelected = range == chartRange.lowercase()
                                             Box(
                                                 modifier = Modifier
                                                     .clip(RoundedCornerShape(8.dp))
@@ -507,69 +544,69 @@ fun AnalysisScreen(
                                         .height(180.dp),
                                     lineColor = GoldPrimary
                                 )
-                                
-                                Spacer(modifier = Modifier.height(20.dp))
-                                
-                                // 52 Week Range Indicator
-                                Column(modifier = Modifier.fillMaxWidth()) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Text("Mín 52sem", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                        Text("Máx 52sem", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(8.dp)
-                                            .background(BorderColor.copy(alpha = 0.1f), CircleShape)
-                                    ) {
-                                        val low = asset.low52
-                                        val high = asset.high52
-                                        val current = asset.price
+                            }
+                        }
+                    }
+
+                    // Always show 52-week oscillation independently
+                    if (!asset.low52.isNaN() && !asset.high52.isNaN() && asset.high52 > 0) {
+                        Surface(
+                            color = DarkSurfaceElevated,
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.dp, BorderColor.copy(alpha = 0.05f)),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                        ) {
+                            Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("Mín 52 Semanas", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                    Text("Máx 52 Semanas", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(8.dp)
+                                        .background(BorderColor.copy(alpha = 0.1f), CircleShape)
+                                ) {
+                                    val low = asset.low52
+                                    val high = asset.high52
+                                    val current = asset.price
+                                    
+                                    if (high > low && current >= low) {
+                                        val den = high - low
+                                        val progress = if (den > 0) ((current - low) / den).coerceIn(0.0, 1.0).toFloat() else 0f
                                         
-                                        if (high > low && current >= low && !current.isNaN() && !low.isNaN() && !high.isNaN()) {
-                                            val den = high - low
-                                            val progress = if (den > 0) {
-                                                ((current - low) / den).coerceIn(0.0, 1.0).toFloat()
-                                            } else 0f
-                                            
-                                            if (!progress.isNaN()) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .fillMaxWidth(progress)
-                                                        .fillMaxHeight()
-                                                        .background(
-                                                            brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
-                                                                listOf(GoldPrimary.copy(alpha = 0.6f), GoldPrimary)
-                                                            ),
-                                                            shape = CircleShape
-                                                        )
-                                                )
-                                            }
+                                        if (!progress.isNaN()) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth(progress)
+                                                    .fillMaxHeight()
+                                                    .background(
+                                                        brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
+                                                            listOf(GoldPrimary.copy(alpha = 0.6f), GoldPrimary)
+                                                        ),
+                                                        shape = CircleShape
+                                                    )
+                                            )
                                         }
                                     }
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Text("R$ ${String.format("%.2f", asset.low52)}", color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, fontWeight = FontWeight.Black)
-                                        Text("R$ ${String.format("%.2f", asset.high52)}", color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, fontWeight = FontWeight.Black)
-                                    }
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("R$ ${String.format("%.2f", asset.low52)}", color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                                    Text("R$ ${String.format("%.2f", asset.high52)}", color = MaterialTheme.colorScheme.onSurface, fontSize = 11.sp, fontWeight = FontWeight.Black)
                                 }
                             }
                         }
                     }
 
-                    AssetVisualProxyCharts(asset = asset, isFii = isFii)
-
-                    // 3.5 Investidor10 Chart Bundle panel
-                    val tickerKey = asset.ticker.trim().uppercase()
-                    val bundle = assetChartBundles[tickerKey]
-                    
+                    // Investidor10 Chart Bundle panel
                     if (isLoadingChartBundle) {
                         Surface(
                             color = DarkSurfaceElevated,
@@ -587,15 +624,19 @@ fun AnalysisScreen(
                             }
                         }
                     } else if (bundle != null) {
-                        com.example.ui.components.AssetChartBundlePanel(
+                        Spacer(modifier = Modifier.height(12.dp))
+                        AssetChartBundlePanel(
                             bundle = bundle,
                             isFii = isFii,
                             currentRange = chartRange,
                             onRangeChange = onRangeChange,
-                            modifier = Modifier.padding(vertical = 12.dp)
+                            modifier = Modifier.fillMaxWidth()
                         )
+                        Spacer(modifier = Modifier.height(12.dp))
                     }
-
+                    } // end tab 0
+                    
+                    if (mainAnalysisTabIdx == 1) {
                     // 4. Metrics Indicators Grid (VALORAE inspired)
                     Surface(
                         color = DarkSurface,
@@ -678,9 +719,25 @@ fun AnalysisScreen(
                             }
                         }
                     }
+                    
+                    val bundle = assetChartBundles[asset.ticker.trim().uppercase()]
+                    if (bundle != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        if (asset.isFii) {
+                            com.example.ui.components.FiiDividendTab(bundle = bundle)
+                            Spacer(modifier = Modifier.height(20.dp))
+                            com.example.ui.components.FiiPatrimonialTab(bundle = bundle)
+                        } else {
+                            com.example.ui.components.StockDividendTab(bundle = bundle)
+                            Spacer(modifier = Modifier.height(20.dp))
+                            com.example.ui.components.StockDreTab(bundle = bundle)
+                        }
+                    }
+                    } // end tab 1
 
                     Spacer(modifier = Modifier.height(8.dp))
 
+                    if (mainAnalysisTabIdx == 2) {
                     // 4B. Informações da Empresa (Investidor10 inspired)
                     Surface(
                         color = DarkSurface,
@@ -753,9 +810,18 @@ fun AnalysisScreen(
                             }
                         }
                     }
+                    val bundleTab2 = assetChartBundles[asset.ticker.trim().uppercase()]
+                    if (bundleTab2 != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        if (!asset.isFii) {
+                            com.example.ui.components.StockBusinessTab(bundle = bundleTab2)
+                        }
+                    }
+                    } // end tab 2
 
                     Spacer(modifier = Modifier.height(8.dp))
 
+                    if (mainAnalysisTabIdx == 3) {
                     // Qualitative Analysis Box
                     Surface(
                         color = GoldPrimary.copy(alpha = 0.05f),
@@ -903,6 +969,17 @@ fun AnalysisScreen(
                         }
                     }
                     
+                    
+                    val bundleTab3 = assetChartBundles[asset.ticker.trim().uppercase()]
+                    if (bundleTab3 != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        if (asset.isFii) {
+                            com.example.ui.components.FiiComparisonTab(bundle = bundleTab3)
+                        } else {
+                            com.example.ui.components.StockComparisonTab(bundle = bundleTab3)
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(24.dp))
                     
                     // News Section for the specific asset
@@ -932,6 +1009,7 @@ fun AnalysisScreen(
                             Spacer(modifier = Modifier.height(12.dp))
                         }
                     }
+                    } // end tab 3
 
                 }
             }
@@ -978,101 +1056,6 @@ fun AnalysisScreen(
         }
         
         Spacer(modifier = Modifier.height(24.dp))
-    }
-}
-
-@Composable
-fun AssetVisualProxyCharts(asset: B3AssetData, isFii: Boolean) {
-    val qualityScore = remember(asset) {
-        val profitability = listOf(asset.roe, asset.roic, asset.roa, asset.margins, asset.grossMargin).filter { it > 0.0 }.average().let { if (it.isNaN()) 0.0 else it }.coerceIn(0.0, 30.0) / 30.0 * 100.0
-        val income = (asset.dy.coerceIn(0.0, 12.0) / 12.0) * 100.0
-        val valuation = when {
-            isFii && asset.pvp > 0.0 -> (100.0 - kotlin.math.abs(asset.pvp - 1.0) * 70.0).coerceIn(0.0, 100.0)
-            !isFii && asset.pl > 0.0 -> (100.0 - kotlin.math.abs(asset.pl - 12.0) * 3.0).coerceIn(0.0, 100.0)
-            else -> 0.0
-        }
-        val leverage = when {
-            isFii -> (100.0 - asset.fiiVacancy.coerceIn(0.0, 40.0) * 2.0).coerceIn(0.0, 100.0)
-            asset.debtEbitda != 0.0 -> (100.0 - asset.debtEbitda.coerceIn(0.0, 6.0) * 12.0).coerceIn(0.0, 100.0)
-            else -> 0.0
-        }
-        listOf(profitability, income, valuation, leverage).filter { it > 0.0 }.average().let { if (it.isNaN()) 0.0 else it }.coerceIn(0.0, 100.0)
-    }
-    val barValues = remember(asset) {
-        listOf(
-            asset.dy.coerceIn(0.0, 20.0).toFloat(),
-            asset.roe.coerceIn(0.0, 40.0).toFloat(),
-            asset.roic.coerceIn(0.0, 40.0).toFloat(),
-            asset.margins.coerceIn(0.0, 40.0).toFloat(),
-            asset.payout.coerceIn(0.0, 100.0).toFloat()
-        )
-    }
-    val donutData = remember(asset, qualityScore) {
-        val filled = qualityScore.toFloat().coerceIn(0f, 100f)
-        listOf("Score" to filled, "A medir" to (100f - filled).coerceAtLeast(0f))
-    }
-
-    Surface(
-        color = DarkSurfaceElevated,
-        shape = RoundedCornerShape(18.dp),
-        border = BorderStroke(1.dp, BorderColor.copy(alpha = 0.06f)),
-        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text(
-                        text = "PAINEL VISUAL DO ATIVO",
-                        color = GoldPrimary,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 1.sp
-                    )
-                    Text(
-                        text = "Gráficos derivados dos dados recebidos pelo Valorae Proxy",
-                        color = TextSecondary,
-                        fontSize = 10.sp
-                    )
-                }
-                Text(
-                    text = "${String.format("%.0f", qualityScore)} pts",
-                    color = if (qualityScore >= 70.0) SuccessGreen else if (qualityScore >= 45.0) GoldPrimary else DangerRed,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Black
-                )
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(modifier = Modifier.weight(0.9f).height(150.dp), contentAlignment = Alignment.Center) {
-                    PieChart(
-                        data = donutData,
-                        colors = listOf(GoldPrimary, BorderColor.copy(alpha = 0.18f)),
-                        centerText = "VALORAE",
-                        centerSubtext = "Score",
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-                Column(modifier = Modifier.weight(1.1f)) {
-                    Text("Indicadores-chave", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    CustomBarChart(
-                        values = barValues,
-                        modifier = Modifier.fillMaxWidth().height(130.dp),
-                        barColor = GoldPrimary
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(
-                text = if (barValues.any { it > 0f }) "Barras: DY, ROE, ROIC, margem e payout quando disponíveis." else "O Proxy ainda não retornou indicadores suficientes para preencher todos os gráficos.",
-                color = TextSecondary,
-                fontSize = 10.sp
-            )
-        }
     }
 }
 
