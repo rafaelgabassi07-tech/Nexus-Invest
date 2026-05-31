@@ -53,6 +53,8 @@ import com.example.viewmodel.AssetSummary
 import com.example.viewmodel.PortfolioSummary
 import com.example.network.B3AssetData
 import com.example.network.AssetChartBundle
+import com.example.network.B3NetworkService
+import com.example.viewmodel.PortfolioAnalyticsState
 import kotlinx.coroutines.launch
 
 @Composable
@@ -75,6 +77,8 @@ fun DashboardScreen(
     onAssetClick: (String) -> Unit,
     onPortfolioClick: () -> Unit = {},
     updateStatus: com.example.network.UpdateManager.UpdateStatus = com.example.network.UpdateManager.UpdateStatus.Idle,
+    analytics: PortfolioAnalyticsState = PortfolioAnalyticsState(),
+    onOpenRankings: () -> Unit = {},
     onUpdateAvailable: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -125,6 +129,14 @@ fun DashboardScreen(
             // 1. Portfolio Value Summary Widget
             item {
                 PortfolioHeaderCard(summary, hideValues, onClick = onPortfolioClick)
+            }
+
+            item {
+                HomeMarketMoversPreview(
+                    ranking = analytics.liveMarketRanking,
+                    assetData = cachedAssetData,
+                    onOpenRankings = onOpenRankings
+                )
             }
 
             // 2. Diversification Ratio Widget
@@ -1114,12 +1126,8 @@ fun AddTransactionDialog(
                         onValueChange = { 
                             val newTicker = it.trim().uppercase()
                             ticker = newTicker
-                            if (newTicker.length >= 5) {
-                                if (newTicker.endsWith("11") && !newTicker.startsWith("BOVA") && !newTicker.startsWith("SMAL")) {
-                                    type = "FII"
-                                } else if (newTicker.last().isDigit()) {
-                                    type = "ACAO"
-                                }
+                            if (newTicker.length >= 5 && newTicker.last().isDigit()) {
+                                type = if (B3NetworkService.inferIsFii(newTicker)) "FII" else "ACAO"
                             }
                         },
                         placeholder = { Text("Ex: PETR4, MXRF11") },

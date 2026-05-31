@@ -18,15 +18,15 @@ VALORAE_DIRECT_FALLBACK_ENABLED=false
 
 O app usa `B3NetworkService` como camada única de rede para ativos, gráficos e notícias:
 
-- `POST /api/assets` para atualizar carteira em lote.
-- `GET /api/asset` para análise/detalhe de ativo.
-- `GET /api/asset/history` para gráficos históricos.
-- `GET /api/news` para notícias por ativo.
-- `GET /api/market/indices` para ticker de mercado.
-- `POST /api/portfolio/analyze` para análise consolidada, equilíbrio, renda e risco.
-- `POST /api/portfolio/history` para evolução de patrimônio.
-- `GET /api/market/ipca` para Rentabilidade vs IPCA+.
-- `POST/GET /api/portfolio/next-dividends` para agenda de dividendos.
+- `GET /api/v1/assets` para atualizar carteira em lote com `tickers`, `view=app`, `profile=portfolio` e `timeoutMs`.
+- `GET /api/v1/asset` para análise/detalhe de ativo com `profile=turbo` ou `profile=max&complete=1`.
+- `GET /api/v1/asset/history` para gráficos históricos.
+- `GET /api/v1/news` para notícias por ativo.
+- `GET /api/v1/market/indices` para ticker de mercado.
+- `POST /api/v1/portfolio/analyze` para análise consolidada, equilíbrio, renda e risco.
+- `POST /api/v1/portfolio/history` para evolução de patrimônio.
+- `GET /api/v1/market/ipca` para Rentabilidade vs IPCA+.
+- `POST/GET /api/v1/portfolio/next-dividends` para agenda de dividendos.
 
 Os dados recebidos do Proxy são normalizados para `B3AssetData`, `ChartPoint`, `NewsItem`, `PortfolioProxyAnalysis`, `PortfolioHistoryPoint`, `IpcaPoint` e `DividendEvent`, alimentando as páginas, cards e gráficos do app.
 
@@ -55,8 +55,8 @@ Este pacote preserva as correções anteriores e adiciona nova camada de estabil
 
 - classificação automática de FIIs por ticker e payload do Proxy;
 - comparação de índices normalizada para retorno percentual quando o Proxy entrega preço/nível bruto;
-- leitura em lote mais flexível quando `/api/assets` retorna objeto indexado por ticker;
-- fallback dedicado de dividendos via `/api/asset/dividends` para alimentar proventos, DY histórico e agenda;
+- leitura em lote mais flexível quando `/api/v1/assets` retorna objeto indexado por ticker;
+- fallback dedicado de dividendos via `/api/v1/asset/dividends` para alimentar proventos, DY histórico e agenda;
 - histórico de carteira com limite proporcional ao range solicitado;
 - headers dinâmicos usando `BuildConfig.VERSION_NAME`.
 

@@ -106,17 +106,66 @@ fun AssetChartBundlePanel(
             )
         }
 
-        if (isFii) {
-            FiiGeneralTab(bundle)
-            FiiDividendTab(bundle)
-            FiiPatrimonialTab(bundle)
-            FiiComparisonTab(bundle)
+        val tabTitles = if (isFii) {
+            listOf("Visão Geral", "Rendimentos", "Patrimonial", "Comparação")
         } else {
-            StockAnalysisTab(bundle)
-            StockDividendTab(bundle)
-            StockComparisonTab(bundle)
-            StockDreTab(bundle)
-            StockBusinessTab(bundle)
+            listOf("Análise", "Dividendos", "Comparação", "DRE", "Negócios")
+        }
+        var selectedTab by remember(bundle.ticker, bundle.range, isFii) { mutableIntStateOf(0) }
+        val safeSelectedTab = selectedTab.coerceIn(0, tabTitles.lastIndex.coerceAtLeast(0))
+
+        ScrollableTabRow(
+            selectedTabIndex = safeSelectedTab,
+            edgePadding = 0.dp,
+            containerColor = Color.Transparent,
+            contentColor = GoldPrimary,
+            divider = {},
+            indicator = { tabPositions ->
+                if (tabPositions.isNotEmpty()) {
+                    TabRowDefaults.SecondaryIndicator(
+                        modifier = Modifier.tabIndicatorOffset(tabPositions[safeSelectedTab]),
+                        color = GoldPrimary
+                    )
+                }
+            }
+        ) {
+            tabTitles.forEachIndexed { index, title ->
+                Tab(
+                    selected = safeSelectedTab == index,
+                    onClick = { selectedTab = index },
+                    text = {
+                        Text(
+                            text = title,
+                            fontSize = 12.sp,
+                            fontWeight = if (safeSelectedTab == index) FontWeight.Black else FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                )
+            }
+        }
+
+        AnimatedContent(
+            targetState = safeSelectedTab,
+            label = "AssetChartBundleTab"
+        ) { tab ->
+            if (isFii) {
+                when (tab) {
+                    0 -> FiiGeneralTab(bundle)
+                    1 -> FiiDividendTab(bundle)
+                    2 -> FiiPatrimonialTab(bundle)
+                    else -> FiiComparisonTab(bundle)
+                }
+            } else {
+                when (tab) {
+                    0 -> StockAnalysisTab(bundle)
+                    1 -> StockDividendTab(bundle)
+                    2 -> StockComparisonTab(bundle)
+                    3 -> StockDreTab(bundle)
+                    else -> StockBusinessTab(bundle)
+                }
+            }
         }
     }
 }
@@ -299,30 +348,32 @@ fun StockDreTab(bundle: AssetChartBundle) {
 fun StockBusinessTab(bundle: AssetChartBundle) {
     Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
         ChartCardContainer(title = "Faturamento por Negócio (%)") {
-            if (bundle.revenueByBusiness.isNotEmpty()) {
-                val latestYear = bundle.revenueByBusiness.keys.sorted().lastOrNull().orEmpty()
-                val points = bundle.revenueByBusiness[latestYear] ?: emptyList()
+            val latestEntry = bundle.revenueByBusiness.entries
+                .sortedBy { it.key }
+                .lastOrNull { normalizeBreakdownPoints(it.value).isNotEmpty() }
+            if (latestEntry != null) {
                 AssetBreakdownDonutChart(
-                    title = "Origem Faturamento ($latestYear)",
-                    points = points,
+                    title = "Origem Faturamento (${latestEntry.key})",
+                    points = latestEntry.value,
                     modifier = Modifier.height(200.dp)
                 )
             } else {
-                EmptyChartState("Sem divisão de negócio", "Divisões em segmentos operacionais indisponíveis.")
+                EmptyChartState("Sem divisão de negócio", "O Proxy não retornou percentuais válidos de segmentos operacionais para este ativo.")
             }
         }
 
         ChartCardContainer(title = "Faturamento por Região (%)") {
-            if (bundle.revenueByRegion.isNotEmpty()) {
-                val latestYear = bundle.revenueByRegion.keys.sorted().lastOrNull().orEmpty()
-                val points = bundle.revenueByRegion[latestYear] ?: emptyList()
+            val latestEntry = bundle.revenueByRegion.entries
+                .sortedBy { it.key }
+                .lastOrNull { normalizeBreakdownPoints(it.value).isNotEmpty() }
+            if (latestEntry != null) {
                 AssetBreakdownDonutChart(
-                    title = "Divisão Geográfica ($latestYear)",
-                    points = points,
+                    title = "Divisão Geográfica (${latestEntry.key})",
+                    points = latestEntry.value,
                     modifier = Modifier.height(200.dp)
                 )
             } else {
-                EmptyChartState("Sem divisão regional", "Geografia de receita indisponível para este ativo.")
+                EmptyChartState("Sem divisão regional", "O Proxy não retornou percentuais válidos de geografia de receita para este ativo.")
             }
         }
     }

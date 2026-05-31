@@ -44,7 +44,29 @@ data class PortfolioAnalyticsState(
     val portfolioHistory: List<PortfolioHistoryPoint> = emptyList(),
     val ipcaSeries: List<IpcaPoint> = emptyList(),
     val dividendEvents: List<DividendEvent> = emptyList(),
+    val portfolioRanking: MarketRankingSnapshot? = null,
+    val liveMarketRanking: MarketRankingSnapshot? = null,
+    val stockMarketRanking: MarketRankingSnapshot? = null,
+    val fiiMarketRanking: MarketRankingSnapshot? = null,
     val source: String = "Aguardando carteira",
+    val lastUpdated: Long = 0L
+)
+
+data class ProxyHealthUiState(
+    val status: String = "Verificando",
+    val isOnline: Boolean = false,
+    val isUsingCache: Boolean = false,
+    val lastCheckedAt: Long = 0L,
+    val diagnostics: ProxyDiagnosticsSummary? = null
+)
+
+
+data class ProxyCapabilitiesUiState(
+    val isLoading: Boolean = false,
+    val selectedTicker: String = "",
+    val assetCapabilities: AssetProxyCapabilities? = null,
+    val portfolioCapabilities: PortfolioProxyCapabilities? = null,
+    val error: String = "",
     val lastUpdated: Long = 0L
 )
 
@@ -312,20 +334,24 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
                     } else {
                         if (sharesBefore > 0) {
                             val avg = costBasisBefore / sharesBefore
-                            sharesBefore -= tx.quantity
-                            costBasisBefore -= (tx.quantity * avg)
+                            val qtySold = tx.quantity.coerceAtMost(sharesBefore).coerceAtLeast(0.0)
+                            sharesBefore -= qtySold
+                            costBasisBefore -= (qtySold * avg)
                         }
                     }
                 }
                 
+                val qtySold = sale.quantity.coerceAtMost(sharesBefore.coerceAtLeast(0.0)).coerceAtLeast(0.0)
+                if (qtySold <= 0.0) return@forEach
                 val avgCost = if (sharesBefore > 0) costBasisBefore / sharesBefore else 0.0
-                val profit = (sale.purchasePrice - avgCost) * sale.quantity
+                val profit = (sale.purchasePrice - avgCost) * qtySold
+                val saleVolume = qtySold * sale.purchasePrice
                 
                 if (sale.type == "ACAO") {
-                    sVolume += (sale.quantity * sale.purchasePrice)
+                    sVolume += saleVolume
                     sProfit += profit
                 } else {
-                    fVolume += (sale.quantity * sale.purchasePrice)
+                    fVolume += saleVolume
                     fProfit += profit
                 }
             }
@@ -426,6 +452,45 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
     private val _portfolioAnalytics = MutableStateFlow(PortfolioAnalyticsState())
     val portfolioAnalytics: StateFlow<PortfolioAnalyticsState> = _portfolioAnalytics.asStateFlow()
 
+    private val _proxyHealth = MutableStateFlow(ProxyHealthUiState())
+    val proxyHealth: StateFlow<ProxyHealthUiState> = _proxyHealth.asStateFlow()
+
+
+    private val _proxyCapabilities = MutableStateFlow(ProxyCapabilitiesUiState())
+    val proxyCapabilities: StateFlow<ProxyCapabilitiesUiState> = _proxyCapabilities.asStateFlow()
+
+    private var newsJob: Job? = null
+    private var proxyHealthJob: Job? = null
+    private var marketRankingsJob: Job? = null
+    private var proxyCapabilitiesJob: Job? = null
+    private var searchAssetJob: Job? = null
+    private var chartRangeJob: Job? = null
+    private var lastNewsRefreshAt = 0L
+    private var lastMarketRankingsRefreshAt = 0L
+    private var lastProxyHealthRefreshAt = 0L
+    private var lastPortfolioAnalyticsRefreshAt = 0L
+    private var lastPortfolioAnalyticsSignature = ""
+    private var lastPriceFetchSignature = ""
+    private var lastPriceFetchAt = 0L
+    private var inFlightPriceFetchSignature = ""
+    private var proxyCapabilitiesRequestToken = 0L
+    private var lastSearchTicker = ""
+    private var lastSearchAt = 0L
+
+    private companion object {
+        const val PRICE_CACHE_SOFT_TTL_MS = 2 * 60 * 1000L
+        const val NEWS_SOFT_TTL_MS = 10 * 60 * 1000L
+        const val MARKET_RANKINGS_SOFT_TTL_MS = 5 * 60 * 1000L
+        const val PROXY_HEALTH_SOFT_TTL_MS = 90 * 1000L
+        const val PORTFOLIO_ANALYTICS_SOFT_TTL_MS = 2 * 60 * 1000L
+        const val PROXY_CAPABILITIES_SOFT_TTL_MS = 30 * 60 * 1000L
+        const val ASSET_SEARCH_SOFT_TTL_MS = 90 * 1000L
+    }
+
+    private fun isFresh(lastUpdatedAt: Long, ttlMs: Long): Boolean {
+        return lastUpdatedAt > 0L && System.currentTimeMillis() - lastUpdatedAt < ttlMs
+    }
+
     private fun normalizeAssetRange(range: String): String {
         return when (range.trim().lowercase(java.util.Locale.ROOT)) {
             "1d", "d1" -> "1D"
@@ -457,8 +522,21 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
             }
         }
         
-        // Initial news feed load
-        fetchGlobalNews()
+        // Abertura leve: a UI não fica bloqueada por notícias/rankings/diagnósticos.
+        // As chamadas remotas são escalonadas e respeitam TTL para evitar rajadas no Proxy/Vercel Free.
+        refreshProxyHealth()
+        viewModelScope.launch {
+            delay(600)
+            fetchGlobalNews(force = false)
+        }
+        viewModelScope.launch {
+            delay(1200)
+            refreshLiveMarketRankings(force = false)
+        }
+
+        // Proxy+ é carregado sob demanda ao abrir a página/ao tocar em Atualizar.
+        // Evita disparar dezenas de endpoints avançados na abertura do app, preservando
+        // fluidez, bateria e compatibilidade com Vercel Free.
 
         viewModelScope.launch {
             @OptIn(kotlinx.coroutines.FlowPreview::class)
@@ -468,7 +546,14 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
                     if (summaries.isNotEmpty()) {
                         refreshPortfolioAnalytics(summaries, txs)
                     } else {
-                        _portfolioAnalytics.value = PortfolioAnalyticsState(source = "Aguardando carteira")
+                        val current = _portfolioAnalytics.value
+                        _portfolioAnalytics.value = PortfolioAnalyticsState(
+                            liveMarketRanking = current.liveMarketRanking,
+                            stockMarketRanking = current.stockMarketRanking,
+                            fiiMarketRanking = current.fiiMarketRanking,
+                            source = if (current.liveMarketRanking != null || current.stockMarketRanking != null || current.fiiMarketRanking != null) "Rankings de mercado do Valorae Proxy" else "Aguardando carteira",
+                            lastUpdated = current.lastUpdated
+                        )
                     }
                 }
         }
@@ -539,6 +624,109 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
         }
     }
 
+
+    private fun currentProxyPositions(): List<PortfolioProxyPosition> {
+        val summaries = assetSummaries.value
+        val txs = transactions.value
+        val firstPurchaseByTicker = txs
+            .filter { !it.isSell && it.quantity > 0.0 }
+            .groupBy { it.ticker.trim().uppercase(java.util.Locale.ROOT) }
+            .mapValues { (_, list) -> list.minOfOrNull { it.date } ?: 0L }
+        return summaries.map { summary ->
+            val key = summary.ticker.trim().uppercase(java.util.Locale.ROOT)
+            PortfolioProxyPosition(
+                ticker = summary.ticker,
+                quantity = summary.sharesCount,
+                averagePrice = summary.averageCost,
+                type = summary.type,
+                currentPrice = summary.currentPrice,
+                totalInvested = summary.totalInvested,
+                firstPurchaseAt = firstPurchaseByTicker[key] ?: 0L
+            )
+        }.filter { it.quantity > 0.0 }
+    }
+
+    fun refreshProxyCapabilities(ticker: String? = null, force: Boolean = true) {
+        val selected = (ticker ?: searchTickerInput.value.ifBlank { assetSummaries.value.firstOrNull()?.ticker.orEmpty() })
+            .trim()
+            .uppercase(java.util.Locale.ROOT)
+        val current = _proxyCapabilities.value
+        if (proxyCapabilitiesJob?.isActive == true) {
+            if (force || current.selectedTicker != selected) {
+                proxyCapabilitiesJob?.cancel()
+            } else {
+                return
+            }
+        }
+        if (!force && current.selectedTicker == selected && current.lastUpdated > 0L && isFresh(current.lastUpdated, PROXY_CAPABILITIES_SOFT_TTL_MS)) return
+        if (!force && current.assetCapabilities != null && current.portfolioCapabilities != null && current.selectedTicker == selected) return
+        val requestToken = System.currentTimeMillis()
+        proxyCapabilitiesRequestToken = requestToken
+        proxyCapabilitiesJob = viewModelScope.launch {
+            _proxyCapabilities.value = current.copy(isLoading = true, error = "", selectedTicker = selected)
+            val positions = currentProxyPositions()
+            val watchlist = (positions.map { it.ticker } + listOf(selected)).filter { it.isNotBlank() }.distinct()
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val assetDeferred = if (selected.isNotBlank()) {
+                        async { B3NetworkService.fetchAssetProxyCapabilities(selected, positions.any { it.ticker.equals(selected, true) && it.type.equals("FII", true) }, bypassCache = force) }
+                    } else null
+                    val portfolioDeferred = async { B3NetworkService.fetchPortfolioProxyCapabilities(positions, watchlist, bypassCache = force) }
+                    assetDeferred?.await() to portfolioDeferred.await()
+                }
+            }
+            result.onSuccess { (assetCaps, portfolioCaps) ->
+                if (requestToken == proxyCapabilitiesRequestToken) {
+                    _proxyCapabilities.value = ProxyCapabilitiesUiState(
+                        isLoading = false,
+                        selectedTicker = selected,
+                        assetCapabilities = assetCaps,
+                        portfolioCapabilities = portfolioCaps,
+                        error = if (assetCaps == null && portfolioCaps == null) "O Proxy não retornou módulos avançados para o contexto atual." else "",
+                        lastUpdated = System.currentTimeMillis()
+                    )
+                }
+            }.onFailure { e ->
+                if (requestToken == proxyCapabilitiesRequestToken) {
+                    _proxyCapabilities.value = current.copy(
+                        isLoading = false,
+                        selectedTicker = selected,
+                        error = e.message ?: "Falha ao consultar recursos avançados do Proxy",
+                        lastUpdated = System.currentTimeMillis()
+                    )
+                }
+            }
+        }
+    }
+
+    fun refreshProxyHealth(force: Boolean = false) {
+        if (proxyHealthJob?.isActive == true) return
+        if (!force && isFresh(lastProxyHealthRefreshAt, PROXY_HEALTH_SOFT_TTL_MS) && _proxyHealth.value.lastCheckedAt > 0L) return
+        proxyHealthJob = viewModelScope.launch {
+            val diagnostics = withContext(Dispatchers.IO) {
+                runCatching { B3NetworkService.fetchProxyDiagnosticsSummary() }.getOrNull()
+            }
+            lastProxyHealthRefreshAt = System.currentTimeMillis()
+            _proxyHealth.value = if (diagnostics != null) {
+                ProxyHealthUiState(
+                    status = diagnostics.state,
+                    isOnline = diagnostics.ready,
+                    isUsingCache = diagnostics.usingLocalCache,
+                    lastCheckedAt = diagnostics.lastCheckedAt,
+                    diagnostics = diagnostics
+                )
+            } else {
+                ProxyHealthUiState(
+                    status = if (_cachedAssetData.value.isNotEmpty()) "Usando cache local" else "Offline",
+                    isOnline = false,
+                    isUsingCache = _cachedAssetData.value.isNotEmpty(),
+                    lastCheckedAt = System.currentTimeMillis(),
+                    diagnostics = null
+                )
+            }
+        }
+    }
+
     fun forceRefresh() {
         viewModelScope.launch {
             _isRefreshing.value = true
@@ -547,9 +735,15 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
                 if (distinctTickers.isNotEmpty()) {
                     triggerBatchedPriceFetch(distinctTickers, showSecondaryLoading = true)
                 }
-                fetchGlobalNews()
+                refreshProxyHealth(force = true)
+                fetchGlobalNews(force = true)
                 if (assetSummaries.value.isNotEmpty()) {
                     refreshPortfolioAnalytics(assetSummaries.value, transactions.value, force = true)
+                } else {
+                    refreshLiveMarketRankings(force = true, full = true)
+                }
+                if (_proxyCapabilities.value.lastUpdated > 0L) {
+                    refreshProxyCapabilities(force = true)
                 }
             } catch (e: Exception) {
                 android.util.Log.e("PortfolioViewModel", "Erro ao atualizar dados do app", e)
@@ -559,21 +753,64 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
         }
     }
 
+    fun refreshLiveMarketRankings(force: Boolean = false, full: Boolean = false) {
+        val currentState = _portfolioAnalytics.value
+        val hasEnoughData = if (full) {
+            currentState.liveMarketRanking != null && currentState.stockMarketRanking != null && currentState.fiiMarketRanking != null
+        } else {
+            currentState.liveMarketRanking != null
+        }
+        if (!force && hasEnoughData && isFresh(lastMarketRankingsRefreshAt, MARKET_RANKINGS_SOFT_TTL_MS)) return
+        if (marketRankingsJob?.isActive == true) {
+            if (full) marketRankingsJob?.cancel() else return
+        }
+        marketRankingsJob = viewModelScope.launch {
+            val (live, stock, fii) = withContext(Dispatchers.IO) {
+                coroutineScope {
+                    val liveDeferred = async { runCatching { B3NetworkService.fetchLiveStockRankings() }.getOrNull() }
+                    if (full) {
+                        val stockDeferred = async { runCatching { B3NetworkService.fetchStockFundamentalRankings() }.getOrNull() }
+                        val fiiDeferred = async { runCatching { B3NetworkService.fetchFiiFundamentalRankings() }.getOrNull() }
+                        Triple(liveDeferred.await(), stockDeferred.await(), fiiDeferred.await())
+                    } else {
+                        Triple(liveDeferred.await(), currentState.stockMarketRanking, currentState.fiiMarketRanking)
+                    }
+                }
+            }
+            lastMarketRankingsRefreshAt = System.currentTimeMillis()
+            val current = _portfolioAnalytics.value
+            _portfolioAnalytics.value = current.copy(
+                isLoading = false,
+                liveMarketRanking = live ?: current.liveMarketRanking,
+                stockMarketRanking = stock ?: current.stockMarketRanking,
+                fiiMarketRanking = fii ?: current.fiiMarketRanking,
+                source = if (current.analysis != null || current.portfolioRanking != null) current.source else "Rankings de mercado do Valorae Proxy",
+                lastUpdated = System.currentTimeMillis()
+            )
+        }
+    }
+
     private suspend fun triggerBatchedPriceFetch(tickers: List<String>, showSecondaryLoading: Boolean) {
+        val normalizedTickers = tickers.map { it.trim().uppercase() }.filter { it.isNotBlank() }.distinct()
+        val signature = normalizedTickers.sorted().joinToString(",")
+        val sameTickerSet = signature.isNotBlank() && signature == lastPriceFetchSignature
+        val cacheStillFresh = sameTickerSet && isFresh(lastPriceFetchAt, PRICE_CACHE_SOFT_TTL_MS)
+        if (!showSecondaryLoading && cacheStillFresh) return
+        if (!showSecondaryLoading && signature.isNotBlank() && signature == inFlightPriceFetchSignature) return
+        if (signature.isNotBlank()) inFlightPriceFetchSignature = signature
         if (showSecondaryLoading) _isLoadingPrices.value = true
         try {
             val updated = withContext(Dispatchers.IO) {
                 val currentCache = _cachedAssetData.value
                 val updatedMap = java.util.concurrent.ConcurrentHashMap<String, B3AssetData>(currentCache)
+                val shouldRefreshExisting = showSecondaryLoading || (sameTickerSet && !cacheStillFresh)
 
-                val tickersToFetch = tickers
-                    .map { it.trim().uppercase() }
-                    .distinct()
-                    .filter { showSecondaryLoading || !currentCache.containsKey(it) }
+                val tickersToFetch = normalizedTickers
+                    .filter { shouldRefreshExisting || !currentCache.containsKey(it) }
 
                 if (tickersToFetch.isNotEmpty()) {
                     val batch = runCatching {
-                        B3NetworkService.fetchAssetsData(tickersToFetch, bypassCache = showSecondaryLoading)
+                        B3NetworkService.fetchAssetsData(tickersToFetch, bypassCache = showSecondaryLoading || shouldRefreshExisting)
                     }.getOrDefault(emptyMap())
                     batch.forEach { (ticker, data) ->
                         updatedMap[ticker] = data
@@ -582,27 +819,35 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
 
                 updatedMap.toMap()
             }
+            if (signature.isNotBlank()) {
+                lastPriceFetchSignature = signature
+                lastPriceFetchAt = System.currentTimeMillis()
+            }
             _cachedAssetData.value = updated
         } catch (e: Exception) {
             android.util.Log.e("PortfolioViewModel", "Erro ao atualizar cotações em lote", e)
         } finally {
+            if (signature.isNotBlank() && inFlightPriceFetchSignature == signature) inFlightPriceFetchSignature = ""
             if (showSecondaryLoading) _isLoadingPrices.value = false
         }
     }
 
-    fun fetchGlobalNews() {
-        viewModelScope.launch {
+    fun fetchGlobalNews(force: Boolean = false) {
+        if (!force && _newsFeed.value.isNotEmpty() && isFresh(lastNewsRefreshAt, NEWS_SOFT_TTL_MS)) return
+        if (newsJob?.isActive == true) return
+        newsJob = viewModelScope.launch {
             _isLoadingNews.value = true
             try {
                 val news = withContext(Dispatchers.IO) {
-                    // If user has tickers, fetch customized news for foremost picker or generic news
                     val userTicker = transactions.value.firstOrNull()?.ticker
                     runCatching { B3NetworkService.fetchNews(userTicker ?: "") }.getOrDefault(emptyList())
                 }
                 _newsFeed.value = news
+                lastNewsRefreshAt = System.currentTimeMillis()
             } catch (e: Exception) {
                 android.util.Log.e("PortfolioViewModel", "Erro ao carregar notícias", e)
-                _newsFeed.value = emptyList()
+                // Preserve o último bloco bom de notícias; uma atualização manual que falha não deve apagar a Home.
+                if (_newsFeed.value.isEmpty()) _newsFeed.value = emptyList()
             } finally {
                 _isLoadingNews.value = false
             }
@@ -640,54 +885,81 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
         val clean = ticker.trim().uppercase()
         if (clean.isEmpty()) return
 
-        viewModelScope.launch {
+        val previousTicker = _searchQueryResult.value?.ticker?.uppercase(java.util.Locale.ROOT)
+        if (previousTicker != null && previousTicker != clean) {
+            _searchQueryResult.value = null
+            _searchQueryHistory.value = emptyList()
+            _searchQueryNews.value = emptyList()
+        }
+
+        if (clean == lastSearchTicker && isFresh(lastSearchAt, ASSET_SEARCH_SOFT_TTL_MS) && _searchQueryResult.value?.ticker.equals(clean, ignoreCase = true)) {
+            loadAssetChartBundle(clean, _searchQueryRange.value)
+            return
+        }
+
+        searchAssetJob?.cancel()
+        searchAssetJob = viewModelScope.launch {
             _isSearchingAsset.value = true
+            lastSearchTicker = clean
             try {
                 val info = withContext(Dispatchers.IO) {
-                    runCatching { B3NetworkService.fetchAssetData(clean) }.getOrNull()
+                    withTimeoutOrNull(6_500) { runCatching { B3NetworkService.fetchAssetData(clean) }.getOrNull() }
                 }
+                if (!isActive || lastSearchTicker != clean) return@launch
                 _searchQueryResult.value = info
 
                 if (info != null) {
-                    // Fetch historic chart point & dedicated news for selected asset in parallel on Dispatchers.IO
+                    // Fetch historic chart point & dedicated news for selected asset in parallel, but with bounded waits.
+                    val normalizedRange = _searchQueryRange.value.ifBlank { "1Y" }
                     val (history, news) = coroutineScope {
                         val historyDeferred = async(Dispatchers.IO) {
-                            runCatching { B3NetworkService.fetchHistoricalChart(clean, "1y") }.getOrDefault(emptyList())
+                            withTimeoutOrNull(7_000) { runCatching { B3NetworkService.fetchHistoricalChart(clean, normalizedRange) }.getOrDefault(emptyList()) }.orEmpty()
                         }
                         val newsDeferred = async(Dispatchers.IO) {
-                            runCatching { B3NetworkService.fetchNews(clean) }.getOrDefault(emptyList())
+                            withTimeoutOrNull(5_000) { runCatching { B3NetworkService.fetchNews(clean) }.getOrDefault(emptyList()) }.orEmpty()
                         }
                         historyDeferred.await() to newsDeferred.await()
                     }
+                    if (!isActive || lastSearchTicker != clean) return@launch
                     _searchQueryHistory.value = history
                     _searchQueryNews.value = news
-                    loadAssetChartBundle(clean, "1Y")
+                    loadAssetChartBundle(clean, normalizedRange)
+                    lastSearchAt = System.currentTimeMillis()
                 } else {
                     _searchQueryHistory.value = emptyList()
                     _searchQueryNews.value = emptyList()
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 android.util.Log.e("PortfolioViewModel", "Erro ao analisar ativo $clean", e)
-                _searchQueryResult.value = null
-                _searchQueryHistory.value = emptyList()
-                _searchQueryNews.value = emptyList()
+                if (lastSearchTicker == clean) {
+                    _searchQueryResult.value = null
+                    _searchQueryHistory.value = emptyList()
+                    _searchQueryNews.value = emptyList()
+                }
             } finally {
-                _isSearchingAsset.value = false
+                if (lastSearchTicker == clean) _isSearchingAsset.value = false
             }
         }
     }
 
     fun changeSearchChartRange(range: String) {
         val ticker = searchQueryResult.value?.ticker ?: return
-        _searchQueryRange.value = normalizeAssetRange(range)
+        val normalized = normalizeAssetRange(range)
+        _searchQueryRange.value = normalized
 
-        viewModelScope.launch {
+        chartRangeJob?.cancel()
+        chartRangeJob = viewModelScope.launch {
             try {
                 val history = withContext(Dispatchers.IO) {
-                    runCatching { B3NetworkService.fetchHistoricalChart(ticker, normalizeAssetRange(range)) }.getOrDefault(emptyList())
+                    withTimeoutOrNull(7_000) { runCatching { B3NetworkService.fetchHistoricalChart(ticker, normalized) }.getOrDefault(emptyList()) }.orEmpty()
                 }
+                if (!isActive || !_searchQueryRange.value.equals(normalized, ignoreCase = true)) return@launch
                 _searchQueryHistory.value = history
-                loadAssetChartBundle(ticker, normalizeAssetRange(range))
+                loadAssetChartBundle(ticker, normalized)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 android.util.Log.e("PortfolioViewModel", "Erro ao trocar período do gráfico de $ticker", e)
             }
@@ -698,7 +970,7 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
         val summaries = assetSummaries.value
         val txs = transactions.value
         if (summaries.isEmpty()) {
-            _portfolioAnalytics.value = PortfolioAnalyticsState(source = "Aguardando carteira")
+            refreshLiveMarketRankings(force = force)
             return
         }
         viewModelScope.launch {
@@ -713,54 +985,255 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
     ) {
         if (!force && _portfolioAnalytics.value.isLoading) return
         _portfolioAnalytics.value = _portfolioAnalytics.value.copy(isLoading = true)
+        val firstPurchaseByTicker = txs
+            .filter { !it.isSell && it.quantity > 0.0 }
+            .groupBy { it.ticker.trim().uppercase(java.util.Locale.ROOT) }
+            .mapValues { (_, list) -> list.minOfOrNull { it.date } ?: 0L }
         val positions = summaries.map { summary ->
+            val key = summary.ticker.trim().uppercase(java.util.Locale.ROOT)
             PortfolioProxyPosition(
                 ticker = summary.ticker,
                 quantity = summary.sharesCount,
                 averagePrice = summary.averageCost,
                 type = summary.type,
                 currentPrice = summary.currentPrice,
-                totalInvested = summary.totalInvested
+                totalInvested = summary.totalInvested,
+                firstPurchaseAt = firstPurchaseByTicker[key] ?: 0L
             )
         }.filter { it.quantity > 0.0 }
+
+        val analyticsSignature = positions.joinToString("|") { p ->
+            "${p.ticker}:${p.quantity}:${p.averagePrice}:${p.currentPrice}:${p.totalInvested}:${p.firstPurchaseAt}"
+        } + "#tx=${txs.size}#max=${txs.maxOfOrNull { it.date } ?: 0L}"
+        if (!force && analyticsSignature == lastPortfolioAnalyticsSignature && isFresh(lastPortfolioAnalyticsRefreshAt, PORTFOLIO_ANALYTICS_SOFT_TTL_MS)) {
+            _portfolioAnalytics.value = _portfolioAnalytics.value.copy(isLoading = false)
+            return
+        }
+        lastPortfolioAnalyticsSignature = analyticsSignature
+        lastPortfolioAnalyticsRefreshAt = System.currentTimeMillis()
 
         val result = try {
             withContext(Dispatchers.IO) {
                 coroutineScope {
-                    val analysisDeferred = async { runCatching { B3NetworkService.fetchPortfolioAnalysis(positions) }.getOrNull() }
-                    val historyDeferred = async { runCatching { B3NetworkService.fetchPortfolioHistory(positions, "1Y") }.getOrDefault(emptyList()) }
-                    val ipcaDeferred = async { runCatching { B3NetworkService.fetchIpcaSeries(12) }.getOrDefault(emptyList()) }
-                    val dividendsDeferred = async { runCatching { B3NetworkService.fetchNextDividends(positions) }.getOrDefault(emptyList()) }
+                    val analysisDeferred = async { withTimeoutOrNull(5_500) { runCatching { B3NetworkService.fetchPortfolioAnalysis(positions) }.getOrNull() } }
+                    val historyDeferred = async { withTimeoutOrNull(5_500) { runCatching { B3NetworkService.fetchPortfolioHistory(positions, "1Y") }.getOrDefault(emptyList()) }.orEmpty() }
+                    val ipcaDeferred = async { withTimeoutOrNull(4_000) { runCatching { B3NetworkService.fetchIpcaSeries(12) }.getOrDefault(emptyList()) }.orEmpty() }
+                    val dividendsDeferred = async { withTimeoutOrNull(5_500) { runCatching { B3NetworkService.fetchNextDividends(positions) }.getOrDefault(emptyList()) }.orEmpty() }
+                    val portfolioRankingDeferred = async { withTimeoutOrNull(5_000) { runCatching { B3NetworkService.fetchPortfolioRankings(positions) }.getOrNull() } }
 
                     val remoteAnalysis = analysisDeferred.await()
                     val remoteHistory = historyDeferred.await()
                     val remoteIpca = ipcaDeferred.await()
                     val remoteDividends = dividendsDeferred.await()
+                    val remotePortfolioRanking = portfolioRankingDeferred.await()
+
+                    val firstPortfolioMillis = firstPortfolioPurchaseMillis(txs)
+                    val localHistory = buildLocalPortfolioHistory(txs, summaries)
+                    val ageAdjustedHistory = normalizePortfolioHistoryForAge(remoteHistory, firstPortfolioMillis).ifEmpty { localHistory }
+                    val ageMonths = portfolioAgeMonths(firstPortfolioMillis).coerceIn(1, 120)
+                    val ageAdjustedIpca = normalizeIpcaForPortfolioAge(
+                        points = remoteIpca,
+                        firstPortfolioMillis = firstPortfolioMillis,
+                        targetMonths = ageAdjustedHistory.size.coerceAtLeast(ageMonths)
+                    ).ifEmpty { buildIpcaFallbackSeries(ageMonths) }
+                    val eligibleDividends = sanitizeDividendEventsForPortfolio(remoteDividends, txs, summaries)
+                    val currentMarketState = _portfolioAnalytics.value
 
                     PortfolioAnalyticsState(
                         isLoading = false,
                         analysis = remoteAnalysis ?: buildLocalPortfolioAnalysis(summaries),
-                        portfolioHistory = remoteHistory.ifEmpty { buildLocalPortfolioHistory(txs, summaries) },
-                        ipcaSeries = remoteIpca.ifEmpty { buildIpcaFallbackSeries(12) },
-                        dividendEvents = remoteDividends.ifEmpty { buildLocalDividendEvents(summaries) },
-                        source = if (remoteAnalysis != null || remoteHistory.isNotEmpty() || remoteIpca.isNotEmpty() || remoteDividends.isNotEmpty()) "Valorae Proxy + carteira local" else "Carteira local + indicadores disponíveis",
+                        portfolioHistory = ageAdjustedHistory,
+                        ipcaSeries = ageAdjustedIpca,
+                        dividendEvents = eligibleDividends.ifEmpty { buildLocalDividendEvents(summaries) },
+                        portfolioRanking = remotePortfolioRanking ?: currentMarketState.portfolioRanking,
+                        liveMarketRanking = currentMarketState.liveMarketRanking,
+                        stockMarketRanking = currentMarketState.stockMarketRanking,
+                        fiiMarketRanking = currentMarketState.fiiMarketRanking,
+                        source = if (remoteAnalysis != null || remoteHistory.isNotEmpty() || remoteIpca.isNotEmpty() || remoteDividends.isNotEmpty() || remotePortfolioRanking != null) "Valorae Proxy + carteira local ajustado à carteira" else "Carteira local + indicadores disponíveis",
                         lastUpdated = System.currentTimeMillis()
                     )
                 }
             }
         } catch (e: Exception) {
             android.util.Log.e("PortfolioViewModel", "Erro ao atualizar analytics da carteira", e)
+            val currentMarketState = _portfolioAnalytics.value
             PortfolioAnalyticsState(
                 isLoading = false,
                 analysis = buildLocalPortfolioAnalysis(summaries),
                 portfolioHistory = buildLocalPortfolioHistory(txs, summaries),
-                ipcaSeries = buildIpcaFallbackSeries(12),
+                ipcaSeries = buildIpcaFallbackSeries(portfolioAgeMonths(firstPortfolioPurchaseMillis(txs))),
                 dividendEvents = buildLocalDividendEvents(summaries),
+                portfolioRanking = currentMarketState.portfolioRanking,
+                liveMarketRanking = currentMarketState.liveMarketRanking,
+                stockMarketRanking = currentMarketState.stockMarketRanking,
+                fiiMarketRanking = currentMarketState.fiiMarketRanking,
                 source = "Carteira local + fallback seguro",
                 lastUpdated = System.currentTimeMillis()
             )
         }
         _portfolioAnalytics.value = result
+    }
+
+    private fun firstPortfolioPurchaseMillis(txs: List<Transaction>): Long {
+        return txs.filter { !it.isSell && it.quantity > 0.0 }.minOfOrNull { it.date }
+            ?: txs.minOfOrNull { it.date }
+            ?: System.currentTimeMillis()
+    }
+
+    private fun portfolioMonthStartMillis(firstMillis: Long): Long {
+        val cal = java.util.Calendar.getInstance().apply {
+            timeInMillis = firstMillis
+            set(java.util.Calendar.DAY_OF_MONTH, 1)
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        return cal.timeInMillis
+    }
+
+    private fun portfolioAgeMonths(firstMillis: Long): Int {
+        val start = java.util.Calendar.getInstance().apply { timeInMillis = portfolioMonthStartMillis(firstMillis) }
+        val end = java.util.Calendar.getInstance()
+        val months = (end.get(java.util.Calendar.YEAR) - start.get(java.util.Calendar.YEAR)) * 12 +
+            (end.get(java.util.Calendar.MONTH) - start.get(java.util.Calendar.MONTH)) + 1
+        return months.coerceAtLeast(1)
+    }
+
+    private fun pointMillisFromProxyTimestamp(timestamp: Long): Long {
+        if (timestamp <= 0L) return 0L
+        return if (timestamp > 10_000_000_000L) timestamp else timestamp * 1000L
+    }
+
+    private fun normalizePortfolioHistoryForAge(
+        points: List<PortfolioHistoryPoint>,
+        firstPortfolioMillis: Long
+    ): List<PortfolioHistoryPoint> {
+        if (points.isEmpty()) return emptyList()
+        val start = portfolioMonthStartMillis(firstPortfolioMillis)
+        return points
+            .filter { pointMillisFromProxyTimestamp(it.timestamp) >= start }
+            .sortedBy { pointMillisFromProxyTimestamp(it.timestamp) }
+            .takeLast(60)
+    }
+
+    private fun normalizeIpcaForPortfolioAge(
+        points: List<IpcaPoint>,
+        firstPortfolioMillis: Long,
+        targetMonths: Int
+    ): List<IpcaPoint> {
+        if (points.isEmpty()) return emptyList()
+        val start = portfolioMonthStartMillis(firstPortfolioMillis)
+        val filtered = points
+            .filter { pointMillisFromProxyTimestamp(it.timestamp) >= start }
+            .sortedBy { pointMillisFromProxyTimestamp(it.timestamp) }
+            .takeLast(targetMonths.coerceIn(1, 120))
+        if (filtered.isEmpty()) return emptyList()
+
+        val hasMonthly = filtered.any { it.monthlyPercent != 0.0 }
+        if (hasMonthly) {
+            var accumulated = 0.0
+            return filtered.map { point ->
+                val monthly = point.monthlyPercent
+                accumulated = (((1.0 + accumulated / 100.0) * (1.0 + monthly / 100.0)) - 1.0) * 100.0
+                point.copy(accumulatedPercent = accumulated)
+            }
+        }
+
+        val base = filtered.firstOrNull()?.accumulatedPercent ?: 0.0
+        return filtered.map { point ->
+            point.copy(accumulatedPercent = (point.accumulatedPercent - base).coerceAtLeast(0.0))
+        }
+    }
+
+    private fun parsePortfolioDateMillis(value: String): Long {
+        if (value.isBlank()) return 0L
+        val raw = value.trim()
+        raw.toLongOrNull()?.let { return if (it > 10_000_000_000L) it else it * 1000L }
+        val normalized = raw
+            .replace(Regex("\\s+"), " ")
+            .replace("às", " ", ignoreCase = true)
+            .trim()
+        val patterns = listOf(
+            "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+            "yyyy-MM-dd'T'HH:mm:ss'Z'",
+            "yyyy-MM-dd'T'HH:mm:ssXXX",
+            "yyyy-MM-dd HH:mm:ss",
+            "dd/MM/yyyy HH:mm:ss",
+            "dd/MM/yyyy HH:mm",
+            "dd/MM/yyyy",
+            "dd/MM/yy",
+            "yyyy-MM-dd",
+            "yyyy/MM/dd",
+            "dd-MM-yyyy",
+            "MM/yyyy",
+            "yyyy-MM"
+        )
+        for (pattern in patterns) {
+            try {
+                val locale = if (pattern.startsWith("yyyy")) java.util.Locale.US else java.util.Locale("pt", "BR")
+                val sdf = java.text.SimpleDateFormat(pattern, locale)
+                sdf.isLenient = false
+                if (pattern.contains("'Z'") || pattern.contains("XXX")) {
+                    sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+                }
+                return sdf.parse(normalized)?.time ?: 0L
+            } catch (_: Exception) {}
+        }
+        return 0L
+    }
+
+    private fun endOfDayMillis(millis: Long): Long {
+        if (millis <= 0L) return 0L
+        return java.util.Calendar.getInstance().apply {
+            timeInMillis = millis
+            set(java.util.Calendar.HOUR_OF_DAY, 23)
+            set(java.util.Calendar.MINUTE, 59)
+            set(java.util.Calendar.SECOND, 59)
+            set(java.util.Calendar.MILLISECOND, 999)
+        }.timeInMillis
+    }
+
+    private fun sharesOwnedAt(txs: List<Transaction>, ticker: String, millis: Long): Double {
+        val key = ticker.trim().uppercase(java.util.Locale.ROOT)
+        if (key.isBlank()) return 0.0
+        return txs
+            .asSequence()
+            .filter { it.ticker.trim().uppercase(java.util.Locale.ROOT) == key && it.date <= millis }
+            .fold(0.0) { acc, tx -> if (tx.isSell) acc - tx.quantity else acc + tx.quantity }
+            .coerceAtLeast(0.0)
+    }
+
+    private fun sanitizeDividendEventsForPortfolio(
+        events: List<DividendEvent>,
+        txs: List<Transaction>,
+        summaries: List<AssetSummary>
+    ): List<DividendEvent> {
+        if (events.isEmpty()) return emptyList()
+        val currentQty = summaries.associateBy({ it.ticker.trim().uppercase(java.util.Locale.ROOT) }, { it.sharesCount })
+        return events.mapNotNull { event ->
+            val ticker = event.ticker.trim().uppercase(java.util.Locale.ROOT)
+            if (ticker.isBlank()) return@mapNotNull null
+            val rawDate = parsePortfolioDateMillis(event.dateCom).takeIf { it > 0L }
+                ?: parsePortfolioDateMillis(event.paymentDate).takeIf { it > 0L }
+            val eligibleShares = if (rawDate != null) {
+                sharesOwnedAt(txs, ticker, endOfDayMillis(rawDate))
+            } else {
+                currentQty[ticker] ?: event.quantity
+            }.coerceAtLeast(0.0)
+            if (rawDate != null && eligibleShares <= 0.0001) return@mapNotNull null
+
+            val amountFromUnit = if (event.valuePerShare > 0.0 && eligibleShares > 0.0) event.valuePerShare * eligibleShares else 0.0
+            val proratedAmount = if (amountFromUnit > 0.0) amountFromUnit
+                else if (event.estimatedAmount > 0.0 && event.quantity > 0.0 && eligibleShares > 0.0) event.estimatedAmount * (eligibleShares / event.quantity)
+                else event.estimatedAmount
+            if (proratedAmount <= 0.0 && event.valuePerShare <= 0.0) return@mapNotNull null
+            event.copy(
+                quantity = if (eligibleShares > 0.0) eligibleShares else event.quantity,
+                estimatedAmount = proratedAmount.coerceAtLeast(0.0),
+                status = event.status.ifBlank { if (rawDate == null) "Estimado" else "Elegível pela carteira" }
+            )
+        }.distinctBy { listOf(it.ticker, it.dateCom, it.paymentDate, it.valuePerShare).joinToString("|") }
     }
 
     private fun buildLocalPortfolioAnalysis(summaries: List<AssetSummary>): PortfolioProxyAnalysis {
@@ -828,9 +1301,16 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
         }.sortedByDescending { it.estimatedAmount }
     }
 
+    private data class LocalPositionSnapshot(
+        var shares: Double = 0.0,
+        var costBasis: Double = 0.0
+    )
+
     private fun buildLocalPortfolioHistory(txs: List<Transaction>, summaries: List<AssetSummary>): List<PortfolioHistoryPoint> {
         if (txs.isEmpty()) return emptyList()
-        val first = txs.minOfOrNull { it.date } ?: return emptyList()
+        val first = txs.filter { !it.isSell && it.quantity > 0.0 }.minOfOrNull { it.date }
+            ?: txs.minOfOrNull { it.date }
+            ?: return emptyList()
         val now = System.currentTimeMillis()
         val start = java.util.Calendar.getInstance().apply {
             timeInMillis = first
@@ -842,32 +1322,46 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
         }
         val end = java.util.Calendar.getInstance().apply { timeInMillis = now }
         val currentPriceByTicker = summaries.associateBy({ it.ticker.uppercase() }, { it.currentPrice })
+        val averagePriceByTicker = summaries.associateBy({ it.ticker.uppercase() }, { it.averageCost })
         val out = mutableListOf<PortfolioHistoryPoint>()
         val cursor = start.clone() as java.util.Calendar
         var guard = 0
-        while (!cursor.after(end) && guard < 60) {
+        while (!cursor.after(end) && guard < 120) {
             val monthEnd = (cursor.clone() as java.util.Calendar).apply {
                 set(java.util.Calendar.DAY_OF_MONTH, getActualMaximum(java.util.Calendar.DAY_OF_MONTH))
                 set(java.util.Calendar.HOUR_OF_DAY, 23)
                 set(java.util.Calendar.MINUTE, 59)
                 set(java.util.Calendar.SECOND, 59)
+                set(java.util.Calendar.MILLISECOND, 999)
             }.timeInMillis
-            var invested = 0.0
-            val quantities = linkedMapOf<String, Double>()
+
+            val positions = linkedMapOf<String, LocalPositionSnapshot>()
             txs.filter { it.date <= monthEnd }.sortedBy { it.date }.forEach { tx ->
                 val key = tx.ticker.uppercase()
-                if (tx.isSell) {
-                    quantities[key] = (quantities[key] ?: 0.0) - tx.quantity
-                    invested -= tx.quantity * tx.purchasePrice
-                } else {
-                    quantities[key] = (quantities[key] ?: 0.0) + tx.quantity
-                    invested += tx.quantity * tx.purchasePrice
+                val snapshot = positions.getOrPut(key) { LocalPositionSnapshot() }
+                val qty = tx.quantity.takeIf { it.isFinite() && it > 0.0 } ?: return@forEach
+                val price = tx.purchasePrice.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
+                if (!tx.isSell) {
+                    snapshot.shares += qty
+                    snapshot.costBasis += qty * price
+                } else if (snapshot.shares > 0.0) {
+                    val sold = qty.coerceAtMost(snapshot.shares)
+                    val avgCost = if (snapshot.shares > 0.0) snapshot.costBasis / snapshot.shares else 0.0
+                    snapshot.shares -= sold
+                    snapshot.costBasis -= sold * avgCost
+                    if (snapshot.shares <= 0.0001) {
+                        snapshot.shares = 0.0
+                        snapshot.costBasis = 0.0
+                    }
                 }
             }
-            invested = invested.coerceAtLeast(0.0)
-            val markedValue = quantities.entries.sumOf { (ticker, qty) ->
-                val price = currentPriceByTicker[ticker] ?: summaries.firstOrNull { it.ticker.uppercase() == ticker }?.averageCost ?: 0.0
-                qty.coerceAtLeast(0.0) * price
+
+            val invested = positions.values.sumOf { it.costBasis.coerceAtLeast(0.0) }
+            val markedValue = positions.entries.sumOf { (ticker, pos) ->
+                val price = currentPriceByTicker[ticker]
+                    ?: averagePriceByTicker[ticker]
+                    ?: if (pos.shares > 0.0) pos.costBasis / pos.shares else 0.0
+                pos.shares.coerceAtLeast(0.0) * price
             }
             if (invested > 0.0 || markedValue > 0.0) {
                 val ret = if (invested > 0.0) (markedValue - invested) / invested * 100.0 else 0.0
@@ -885,7 +1379,7 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
             cursor.add(java.util.Calendar.MONTH, 1)
             guard++
         }
-        return out.takeLast(24)
+        return out.takeLast(60)
     }
 
     private fun buildIpcaFallbackSeries(months: Int): List<IpcaPoint> {
@@ -946,6 +1440,93 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
         return sb.toString()
     }
 
+    private fun parseImportedNumber(value: Any?): Double {
+        if (value == null || value == JSONObject.NULL) return 0.0
+        if (value is Number) return value.toDouble().takeIf { it.isFinite() } ?: 0.0
+        var raw = value.toString().trim()
+        if (raw.isBlank() || raw == "--" || raw == "-") return 0.0
+        raw = raw
+            .replace("R$", "", ignoreCase = true)
+            .replace("%", "")
+            .replace("−", "-")
+            .trim()
+        var clean = raw.replace(Regex("[^0-9,.-]"), "")
+        if (clean.isBlank() || clean == "-" || clean == "." || clean == ",") return 0.0
+        val lastComma = clean.lastIndexOf(',')
+        val lastDot = clean.lastIndexOf('.')
+        clean = when {
+            lastComma >= 0 && lastDot >= 0 && lastComma > lastDot -> clean.replace(".", "").replace(',', '.')
+            lastComma >= 0 && lastDot >= 0 -> clean.replace(",", "")
+            lastComma >= 0 && clean.indexOf(',') != lastComma -> clean.replace(",", "")
+            lastComma >= 0 -> clean.replace(".", "").replace(',', '.')
+            lastDot >= 0 && clean.indexOf('.') != lastDot -> clean.replace(".", "")
+            else -> clean
+        }
+        return clean.toDoubleOrNull()?.takeIf { it.isFinite() } ?: 0.0
+    }
+
+    private fun excelSerialDateToMillis(serial: Double): Long {
+        if (!serial.isFinite() || serial < 20_000.0 || serial > 80_000.0) return 0L
+        val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply {
+            set(java.util.Calendar.YEAR, 1899)
+            set(java.util.Calendar.MONTH, java.util.Calendar.DECEMBER)
+            set(java.util.Calendar.DAY_OF_MONTH, 30)
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        return cal.timeInMillis + (serial * 86_400_000L).toLong()
+    }
+
+    private fun parseImportedDateMillis(value: Any?): Long {
+        if (value == null || value == JSONObject.NULL) return 0L
+        if (value is Number) {
+            val n = value.toDouble()
+            if (!n.isFinite() || n <= 0.0) return 0L
+            if (n > 10_000_000_000L) return n.toLong()
+            if (n > 1_000_000_000L) return (n * 1000L).toLong()
+            excelSerialDateToMillis(n).takeIf { it > 0L }?.let { return it }
+        }
+        val raw = value.toString().trim()
+        if (raw.isBlank()) return 0L
+        raw.toLongOrNull()?.let { n ->
+            return when {
+                n in 20_000L..80_000L -> excelSerialDateToMillis(n.toDouble())
+                n > 10_000_000_000L -> n
+                n > 1_000_000_000L -> n * 1000L
+                else -> 0L
+            }
+        }
+        raw.replace(',', '.').toDoubleOrNull()?.let { excelSerialDateToMillis(it).takeIf { ts -> ts > 0L }?.let { ts -> return ts } }
+        val normalized = raw.replace("às", " ", ignoreCase = true).replace(Regex("\\s+"), " ").trim()
+        val patterns = listOf(
+            "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
+            "yyyy-MM-dd'T'HH:mm:ssXXX",
+            "yyyy-MM-dd'T'HH:mm:ss'Z'",
+            "yyyy-MM-dd HH:mm:ss",
+            "yyyy-MM-dd",
+            "dd/MM/yyyy HH:mm:ss",
+            "dd/MM/yyyy HH:mm",
+            "dd/MM/yyyy",
+            "dd/MM/yy",
+            "dd-MM-yyyy",
+            "yyyy/MM/dd"
+        )
+        for (pattern in patterns) {
+            try {
+                val locale = if (pattern.startsWith("yyyy")) java.util.Locale.US else java.util.Locale("pt", "BR")
+                val sdf = java.text.SimpleDateFormat(pattern, locale).apply {
+                    isLenient = false
+                    if (pattern.contains("'Z'") || pattern.contains("XXX")) timeZone = java.util.TimeZone.getTimeZone("UTC")
+                }
+                val parsed = sdf.parse(normalized)
+                if (parsed != null) return parsed.time
+            } catch (_: Exception) {}
+        }
+        return 0L
+    }
+
     fun importTransactionsFromJson(json: String, clearExisting: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -955,31 +1536,47 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
                     trimmed.startsWith("[") -> JSONArray(trimmed)
                     trimmed.startsWith("{") -> {
                         val obj = JSONObject(trimmed)
-                        obj.optJSONArray("transactions") ?: obj.optJSONArray("items") ?: JSONArray().put(obj)
+                        obj.optJSONArray("transactions")
+                            ?: obj.optJSONArray("items")
+                            ?: obj.optJSONArray("movements")
+                            ?: obj.optJSONArray("movimentacoes")
+                            ?: JSONArray().put(obj)
                     }
                     else -> JSONArray()
                 }
 
                 for (i in 0 until arr.length()) {
                     val item = arr.optJSONObject(i) ?: continue
-                    val ticker = item.optString("ticker", "").trim().uppercase()
+                    val ticker = listOf(
+                        item.optString("ticker", ""),
+                        item.optString("symbol", ""),
+                        item.optString("ativo", ""),
+                        item.optString("codigo", ""),
+                        item.optString("código", "")
+                    ).firstOrNull { it.isNotBlank() }?.trim()?.uppercase(java.util.Locale.ROOT)?.replace(".SA", "") ?: ""
                     if (ticker.isBlank()) continue
-                    val quantity = item.optDouble("quantity", Double.NaN).takeIf { it.isFinite() } ?: continue
-                    val purchasePrice = item.optDouble("purchasePrice", item.optDouble("price", 0.0)).takeIf { it.isFinite() } ?: 0.0
-                    val date = item.optLong("date", System.currentTimeMillis())
-                    val type = item.optString("type", if (B3NetworkService.inferIsFii(ticker)) "FII" else "ACAO")
+                    val quantity = parseImportedNumber(item.opt("quantity").takeUnless { it == null || it == JSONObject.NULL } ?: item.opt("quantidade") ?: item.opt("qtd") ?: item.opt("shares"))
+                    if (quantity <= 0.0) continue
+                    val purchasePrice = parseImportedNumber(item.opt("purchasePrice").takeUnless { it == null || it == JSONObject.NULL } ?: item.opt("price") ?: item.opt("preco") ?: item.opt("preço") ?: item.opt("valorUnitario") ?: item.opt("valor_unitario"))
+                    val parsedDate = parseImportedDateMillis(item.opt("date").takeUnless { it == null || it == JSONObject.NULL } ?: item.opt("data") ?: item.opt("tradeDate") ?: item.opt("dateStr"))
+                    val operationText = listOf("operation", "operacao", "operação", "movimentacao", "movimentação", "side", "tipoOperacao", "tipo")
+                        .mapNotNull { key -> item.optString(key, "").takeIf { it.isNotBlank() } }
+                        .joinToString(" ")
+                        .lowercase(java.util.Locale.ROOT)
+                    val isSell = item.optBoolean("isSell", false) || operationText.contains("venda") || operationText == "v" || operationText.contains("sell")
+                    val type = item.optString("type", if (B3NetworkService.inferIsFii(ticker)) "FII" else "ACAO").uppercase(java.util.Locale.ROOT)
                     parsedList.add(
                         Transaction(
                             ticker = ticker,
-                            name = item.optString("name", ticker),
+                            name = item.optString("name", item.optString("nome", ticker)),
                             quantity = quantity,
                             purchasePrice = purchasePrice,
-                            date = date,
-                            type = type,
-                            isSell = item.optBoolean("isSell", false),
-                            broker = item.optString("broker", ""),
-                            sector = item.optString("sector", ""),
-                            notes = item.optString("notes", "")
+                            date = if (parsedDate > 0L) parsedDate else System.currentTimeMillis(),
+                            type = if (type == "FII") "FII" else "ACAO",
+                            isSell = isSell,
+                            broker = item.optString("broker", item.optString("corretora", "")),
+                            sector = item.optString("sector", item.optString("setor", "")),
+                            notes = item.optString("notes", item.optString("observacoes", ""))
                         )
                     )
                 }
@@ -1005,7 +1602,6 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
             }
         }
     }
-
 
     fun importFromB3Spreadsheet(text: String, onComplete: (Int) -> Unit = {}) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -1082,13 +1678,11 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
                         }
                         
                         if (colQty != -1 && colQty < parts.size) {
-                            val str = parts[colQty]
-                            qty = if (str.contains(",")) str.replace(".", "").replace(",", ".").toDoubleOrNull() ?: 0.0 else str.toDoubleOrNull() ?: 0.0
+                            qty = parseImportedNumber(parts[colQty])
                         }
                         
                         if (colPrice != -1 && colPrice < parts.size) {
-                            val str = parts[colPrice]
-                            price = if (str.contains(",")) str.replace(".", "").replace(",", ".").toDoubleOrNull() ?: 0.0 else str.toDoubleOrNull() ?: 0.0
+                            price = parseImportedNumber(parts[colPrice])
                         }
                         
                         if (colType != -1 && colType < parts.size) {
@@ -1099,20 +1693,8 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
                         }
                         
                         if (colDate != -1 && colDate < parts.size) {
-                            val dateStr = parts[colDate]
-                            try {
-                                val formats = listOf("dd/MM/yyyy", "yyyy-MM-dd", "dd/MM/yy")
-                                for (fmt in formats) {
-                                    try {
-                                        val sdf = java.text.SimpleDateFormat(fmt, java.util.Locale.getDefault())
-                                        val parsed = sdf.parse(dateStr)
-                                        if (parsed != null) {
-                                            dateMillis = parsed.time
-                                            break
-                                        }
-                                    } catch (e: Exception) {}
-                                }
-                            } catch (e: Exception) {}
+                            val parsedDate = parseImportedDateMillis(parts[colDate])
+                            if (parsedDate > 0L) dateMillis = parsedDate
                         }
                         
                         if (colBroker != -1 && colBroker < parts.size) {
@@ -1139,8 +1721,8 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
 
                         if (qty == 0.0) {
                             for (p in parts) {
-                                val d = if (p.contains(",")) p.replace(".", "").replace(",", ".").toDoubleOrNull() else p.toDoubleOrNull()
-                                if (d != null && d > 0.0 && d % 1.0 == 0.0 && d < 1000000) {
+                                val d = parseImportedNumber(p)
+                                if (d > 0.0 && d % 1.0 == 0.0 && d < 1_000_000.0 && parseImportedDateMillis(p) == 0L) {
                                     qty = d
                                     break
                                 }
@@ -1149,8 +1731,8 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
 
                         if (price == 0.0) {
                             for (p in parts) {
-                                val d = if (p.contains(",")) p.replace(".", "").replace(",", ".").toDoubleOrNull() else p.toDoubleOrNull()
-                                if (d != null && d > 0.0 && d != qty) {
+                                val d = parseImportedNumber(p)
+                                if (d > 0.0 && d != qty && d < 1_000_000.0 && parseImportedDateMillis(p) == 0L) {
                                     price = d
                                 }
                             }

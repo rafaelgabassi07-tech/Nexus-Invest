@@ -1,19 +1,17 @@
 {
-  "latestVersionCode": 7,
-  "versionName": "1.1.4",
-  "downloadUrl": "https://github.com/rafaelgabassi07-tech/app-atualizacoes/releases/download/v1.1.4/VALORAE-7.apk",
-  "releaseDate": "2026-05-27",
+  "latestVersionCode": 11,
+  "versionName": "1.1.8",
+  "downloadUrl": "https://github.com/rafaelgabassi07-tech/app-atualizacoes/releases/download/v1.1.8/VALORAE-11.apk",
+  "releaseDate": "2026-05-30",
   "isMandatory": false,
   "minRequiredVersionCode": 1,
   "fileSize": "24.2 MB",
   "changelog": [
-    "Integração completa com o Valorae Proxy em produção",
-    "Aprimoramento das telas críticas de Análise de Ativo e Detalhes",
-    "Gráficos históricos reais e normatização de períodos no temporizador de gráficos",
-    "Nova agenda de dividendos consumindo /api/portfolio/next-dividends",
-    "Equilíbrio de Carteira alimentado por dados estruturados do Proxy (/api/portfolio/analyze)",
-    "Evolução do Patrimônio integrada com /api/portfolio/history ou recálculo local resiliente",
-    "Rentabilidade real vs IPCA+ acumulado do Banco Central via endpoint dedicado (/api/market/ipca)",
-    "Remoção de mockups e otimização total de layouts e espaçamento Material 3"
+    "Auditoria completa v1.1.8 de todos os receptores do Proxy, endpoints, parsers, cache e benchmarks de compatibilidade",
+    "Remoção da aba técnica Proxy+ da barra inferior para simplificar a experiência",
+    "Diagnóstico do VALORAE redesenhado em Configurações com linguagem amigável e detalhes técnicos recolhidos",
+    "Correção do desbloqueio biométrico com validação de disponibilidade, confirmação antes de ativar e proteção contra travamento",
+    "Proteção para estados antigos de navegação abrirem a tela inicial em vez da página removida",
+    "Preservação da integração do APK com o VALORAE Proxy e dos contratos de dados já auditados"
   ]
 }

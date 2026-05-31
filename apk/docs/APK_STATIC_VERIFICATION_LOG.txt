@@ -1,0 +1,14 @@
+OK - BuildConfig VALORAE_API_BASE_URL: app/build.gradle.kts
+OK - BuildConfig VALORAE_PROXY_BASE_URL: app/build.gradle.kts
+OK - BuildConfig VALORAE_PUBLIC_BASE_URL: app/build.gradle.kts
+OK - Ready v1: app/src/main/java/com/example/network/B3NetworkService.kt
+OK - Asset v1: app/src/main/java/com/example/network/B3NetworkService.kt
+OK - Assets batch v1: app/src/main/java/com/example/network/B3NetworkService.kt
+OK - Source status v1: app/src/main/java/com/example/network/B3NetworkService.kt
+OK - Release readiness v1: app/src/main/java/com/example/network/B3NetworkService.kt
+OK - Integration manifest v1: app/src/main/java/com/example/network/B3NetworkService.kt
+OK - Snapshot cache: app/src/main/java/com/example/network/B3NetworkService.kt
+OK - Partial handling: app/src/main/java/com/example/network/B3NetworkService.kt
+OK - Diagnostics screen: app/src/main/java/com/example/ui/screens/SettingsScreen.kt
+OK - Startup initialize: app/src/main/java/com/example/MainActivity.kt
+OK - Proxy health state: app/src/main/java/com/example/viewmodel/PortfolioViewModel.kt

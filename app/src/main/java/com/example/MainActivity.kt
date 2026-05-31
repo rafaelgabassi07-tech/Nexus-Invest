@@ -18,14 +18,15 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Newspaper
+import androidx.compose.material.icons.filled.Leaderboard
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Newspaper
+import androidx.compose.material.icons.outlined.Leaderboard
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.automirrored.outlined.TrendingUp
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -40,7 +41,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.zIndex
@@ -63,6 +64,8 @@ import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import com.example.ui.screens.AnalysisScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.NewsScreen
+import com.example.ui.screens.RankingsScreen
+import com.example.network.B3NetworkService
 import com.example.ui.theme.*
 import com.example.viewmodel.PortfolioViewModel
 import com.example.viewmodel.PortfolioViewModelFactory
@@ -74,6 +77,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        B3NetworkService.initialize(applicationContext)
         
         // Initialize local database database context dependencies manually (simple injection)
         val database = AppDatabase.getDatabase(this)
@@ -104,12 +108,10 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             val biometricEnabled = biometricEnabledState.value ?: false
 
             val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-            DisposableEffect(lifecycleOwner, biometricEnabled) {
+            DisposableEffect(lifecycleOwner, biometricEnabled, isAppUnlocked) {
                 val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-                    if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
-                        if (biometricEnabled) {
-                            isAppUnlocked = false
-                        }
+                    if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP && biometricEnabled && isAppUnlocked) {
+                        isAppUnlocked = false
                     }
                 }
                 lifecycleOwner.lifecycle.addObserver(observer)
@@ -138,9 +140,24 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 val context = androidx.compose.ui.platform.LocalContext.current
                 val updateManager = remember { com.example.network.UpdateManager(context) }
                 val updateStatus by updateManager.updateStatus.collectAsStateWithLifecycle()
+                val appScope = rememberCoroutineScope()
+                val authCapabilities = androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG or androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
+                val canUseDeviceAuth = remember(biometricEnabledState.value) {
+                    androidx.biometric.BiometricManager.from(context).canAuthenticate(authCapabilities) == androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS
+                }
+
+                LaunchedEffect(biometricEnabledState.value, canUseDeviceAuth) {
+                    if (biometricEnabledState.value == true && !canUseDeviceAuth) {
+                        themePreferences.setBiometricEnabled(false)
+                        isAppUnlocked = true
+                    }
+                }
 
                 // Persist navigation states even when app is locked
                 var activePage by rememberSaveable { mutableIntStateOf(0) }
+                LaunchedEffect(activePage) {
+                    if (activePage !in 0..4) activePage = 0
+                }
                 var showSettings by rememberSaveable { mutableStateOf(false) }
                 var showNotifications by rememberSaveable { mutableStateOf(false) }
                 var showingPortfolioDetail by rememberSaveable { mutableStateOf(false) }
@@ -152,7 +169,13 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 if (!isAppUnlocked) {
                     LockScreen(
                         biometricEnabled = biometricEnabledState.value,
-                        onUnlock = { isAppUnlocked = true }
+                        onUnlock = { isAppUnlocked = true },
+                        onDisableBiometric = {
+                            appScope.launch {
+                                themePreferences.setBiometricEnabled(false)
+                                isAppUnlocked = true
+                            }
+                        }
                     )
                 } else {
                     // Collect state reactively with lifecycle awareness
@@ -173,11 +196,16 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     val assetChartBundles by viewModel.assetChartBundles.collectAsStateWithLifecycle()
                     val isLoadingChartBundle by viewModel.isLoadingChartBundle.collectAsStateWithLifecycle()
                     val notificationsList by viewModel.notifications.collectAsStateWithLifecycle()
+                    val proxyHealth by viewModel.proxyHealth.collectAsStateWithLifecycle()
+                    val portfolioAnalytics by viewModel.portfolioAnalytics.collectAsStateWithLifecycle()
 
                     val favoriteTickers by themePreferences.favoriteTickers.collectAsStateWithLifecycle(emptyList())
                     val favoriteScope = rememberCoroutineScope()
 
                     LaunchedEffect(Unit) {
+                        // Verificação de atualização não deve competir com carteira, rankings e cache no boot.
+                        // O UpdateManager também aplica TTL de 12h; a checagem manual em Configurações força refresh.
+                        kotlinx.coroutines.delay(4_500)
                         updateManager.checkForUpdate("https://raw.githubusercontent.com/rafaelgabassi07-tech/app-atualizacoes/refs/heads/main/update.json")
                     }
 
@@ -412,6 +440,39 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                     ),
                                     actions = {
                                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.padding(end = 4.dp)) {
+                                            val proxyChipColor = when {
+                                                proxyHealth.isOnline -> SuccessGreen
+                                                proxyHealth.isUsingCache -> WarningOrange
+                                                proxyHealth.status.equals("Parcial", ignoreCase = true) -> WarningOrange
+                                                else -> DangerRed
+                                            }
+                                            Surface(
+                                                modifier = Modifier
+                                                    .height(26.dp)
+                                                    .clickable { viewModel.refreshProxyHealth() },
+                                                color = proxyChipColor.copy(alpha = 0.12f),
+                                                shape = RoundedCornerShape(50),
+                                                border = BorderStroke(1.dp, proxyChipColor.copy(alpha = 0.35f))
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 8.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
+                                                    Box(Modifier.size(6.dp).background(proxyChipColor, CircleShape))
+                                                    Text(
+                                                        text = when {
+                                                            proxyHealth.isOnline -> "Proxy"
+                                                            proxyHealth.isUsingCache -> "Cache"
+                                                            proxyHealth.status.equals("Parcial", true) -> "Parcial"
+                                                            else -> "Offline"
+                                                        },
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Black,
+                                                        color = proxyChipColor
+                                                    )
+                                                }
+                                            }
                                             if (updateStatus is com.example.network.UpdateManager.UpdateStatus.UpdateAvailable) {
                                                 IconButton(
                                                     onClick = { showSystemUpdateCenter = true },
@@ -509,6 +570,33 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                     )
 
                                     NavigationBarItem(
+                                        selected = activePage == 1,
+                                        onClick = { activePage = 1 },
+                                        icon = {
+                                            Icon(
+                                                imageVector = if (activePage == 1) Icons.Filled.Leaderboard else Icons.Outlined.Leaderboard,
+                                                contentDescription = "Rankings",
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                        },
+                                        label = {
+                                            Text(
+                                                text = "Rankings",
+                                                fontSize = 10.5.sp,
+                                                fontWeight = if (activePage == 1) FontWeight.ExtraBold else FontWeight.Medium,
+                                                letterSpacing = 0.2.sp
+                                            )
+                                        },
+                                        colors = NavigationBarItemDefaults.colors(
+                                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                        )
+                                    )
+
+                                    NavigationBarItem(
                                         selected = activePage == 2,
                                         onClick = { activePage = 2 },
                                         icon = { 
@@ -588,6 +676,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                             unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                                         )
                                     )
+
                                 }
                             }
                         },
@@ -634,9 +723,19 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                             },
                                             onPortfolioClick = { showingPortfolioDetail = true },
                                             updateStatus = updateStatus,
+                                            analytics = portfolioAnalytics,
+                                            onOpenRankings = { activePage = 1 },
                                             onUpdateAvailable = { showStartupUpdateDialog = true }
                                         )
                                     }
+                                    1 -> RankingsScreen(
+                                        viewModel = viewModel,
+                                        onAssetClick = { ticker ->
+                                            viewModel.searchTickerInput.value = ticker
+                                            viewModel.searchAndAnalyzeAsset(ticker)
+                                            activePage = 2
+                                        }
+                                    )
                                     2 -> {
                                         AnalysisScreen(
                                             tickerInput = tickerInput,
@@ -663,6 +762,37 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                         news = newsFeed,
                                         isLoadingNews = isLoadingNews,
                                         onRefreshNews = { viewModel.fetchGlobalNews() }
+                                    )
+                                    else -> DashboardScreen(
+                                        summary = portfolioSummary,
+                                        assets = assetSummaries,
+                                        transactions = transactions,
+                                        cachedAssetData = cachedAssetData,
+                                        assetChartBundles = assetChartBundles,
+                                        isLoadingChartBundle = isLoadingChartBundle,
+                                        onLoadAssetChartBundle = { ticker, range -> viewModel.loadAssetChartBundle(ticker, range) },
+                                        chartHistory = chartHistory,
+                                        chartRange = chartRange,
+                                        onRangeChange = { range -> viewModel.changeSearchChartRange(range) },
+                                        isSearchingChart = isSearchingAsset,
+                                        hideValues = hideValues,
+                                        onAddTransaction = { ticker, qty, prc, type, broker, sector, date, notes, isSell ->
+                                            viewModel.insertTransaction(ticker, qty, prc, type, broker, sector, date, notes, isSell)
+                                        },
+                                        onDeleteTransaction = { tx -> viewModel.deleteTransaction(tx) },
+                                        onUpdateTransaction = { id, ticker, qty, prc, type, broker, sector, date, notes, isSell ->
+                                            viewModel.updateTransaction(id, ticker, qty, prc, type, broker, sector, date, notes, isSell)
+                                        },
+                                        onAssetClick = { ticker ->
+                                            viewModel.searchTickerInput.value = ticker
+                                            viewModel.searchAndAnalyzeAsset(ticker)
+                                            activePage = 2
+                                        },
+                                        onPortfolioClick = { showingPortfolioDetail = true },
+                                        updateStatus = updateStatus,
+                                        analytics = portfolioAnalytics,
+                                        onOpenRankings = { activePage = 1 },
+                                        onUpdateAvailable = { showStartupUpdateDialog = true }
                                     )
                                 }
                             }
@@ -698,52 +828,92 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 @Composable
 fun LockScreen(
     biometricEnabled: Boolean?,
-    onUnlock: () -> Unit
+    onUnlock: () -> Unit,
+    onDisableBiometric: () -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val activity = context as? androidx.fragment.app.FragmentActivity
+    val authenticators = remember {
+        androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG or
+            androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
+    }
+    val canAuthenticate = remember(biometricEnabled) {
+        androidx.biometric.BiometricManager.from(context).canAuthenticate(authenticators) ==
+            androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS
+    }
 
-    val authenticateDevice = {
-        if (activity != null && biometricEnabled == true) {
-            val executor = androidx.core.content.ContextCompat.getMainExecutor(context)
-            val biometricPrompt = androidx.biometric.BiometricPrompt(
-                activity,
-                executor,
-                object : androidx.biometric.BiometricPrompt.AuthenticationCallback() {
-                    override fun onAuthenticationSucceeded(result: androidx.biometric.BiometricPrompt.AuthenticationResult) {
-                        super.onAuthenticationSucceeded(result)
-                        onUnlock()
-                    }
-                    override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                        super.onAuthenticationError(errorCode, errString)
-                        // Allow user to manually tap button if they dismiss
-                    }
-                }
-            )
+    var isPromptRunning by rememberSaveable { mutableStateOf(false) }
+    var statusMessage by rememberSaveable { mutableStateOf("Protegendo seus dados de carteira") }
+    var lastError by rememberSaveable { mutableStateOf("") }
 
-            val promptInfo = androidx.biometric.BiometricPrompt.PromptInfo.Builder()
-                .setTitle("Desbloqueio VALORAE")
-                .setSubtitle("Autentique-se para acessar seu portfólio")
-                .setAllowedAuthenticators(androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG or androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL)
-                .build()
-
-            try {
-                biometricPrompt.authenticate(promptInfo)
-            } catch (e: Throwable) {
-                // If device lacks secure lock entirely or it failed to show
-            }
-        } else {
-            // Unlocked if somehow it's not enabled but lock screen shows
+    fun showAuthenticationPrompt() {
+        if (biometricEnabled != true) {
             onUnlock()
+            return
+        }
+        if (!canAuthenticate) {
+            lastError = "A biometria/PIN do Android não está disponível agora. O bloqueio será desativado para evitar travamento do app."
+            onDisableBiometric()
+            return
+        }
+        if (activity == null || isPromptRunning) return
+
+        isPromptRunning = true
+        statusMessage = "Aguardando autenticação do Android"
+        lastError = ""
+
+        val executor = androidx.core.content.ContextCompat.getMainExecutor(context)
+        val biometricPrompt = androidx.biometric.BiometricPrompt(
+            activity,
+            executor,
+            object : androidx.biometric.BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: androidx.biometric.BiometricPrompt.AuthenticationResult) {
+                    super.onAuthenticationSucceeded(result)
+                    isPromptRunning = false
+                    statusMessage = "Acesso liberado"
+                    onUnlock()
+                }
+
+                override fun onAuthenticationFailed() {
+                    super.onAuthenticationFailed()
+                    lastError = "Não foi possível reconhecer. Tente novamente ou use o PIN/padrão do aparelho."
+                }
+
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    super.onAuthenticationError(errorCode, errString)
+                    isPromptRunning = false
+                    statusMessage = "Autenticação necessária para abrir o VALORAE"
+                    lastError = errString.toString().ifBlank { "Autenticação cancelada ou indisponível." }
+                }
+            }
+        )
+
+        val promptInfo = androidx.biometric.BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Desbloqueio VALORAE")
+            .setSubtitle("Use biometria, PIN, senha ou padrão do aparelho")
+            .setAllowedAuthenticators(authenticators)
+            .build()
+
+        try {
+            biometricPrompt.authenticate(promptInfo)
+        } catch (e: Throwable) {
+            isPromptRunning = false
+            lastError = e.message ?: "Não foi possível abrir a autenticação do Android."
         }
     }
 
-    LaunchedEffect(biometricEnabled) {
-        if (biometricEnabled == true) {
-            kotlinx.coroutines.delay(300)
-            authenticateDevice()
-        } else if (biometricEnabled == false) {
-            onUnlock()
+    LaunchedEffect(biometricEnabled, canAuthenticate) {
+        when (biometricEnabled) {
+            true -> {
+                if (canAuthenticate) {
+                    kotlinx.coroutines.delay(250)
+                    showAuthenticationPrompt()
+                } else {
+                    onDisableBiometric()
+                }
+            }
+            false -> onUnlock()
+            null -> statusMessage = "Carregando preferências de segurança"
         }
     }
 
@@ -793,31 +963,52 @@ fun LockScreen(
                 color = Color.White.copy(alpha = 0.4f)
             )
 
-            Spacer(modifier = Modifier.height(48.dp))
+            Spacer(modifier = Modifier.height(42.dp))
+
+            Text(
+                text = statusMessage,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White.copy(alpha = 0.68f),
+                textAlign = TextAlign.Center,
+                lineHeight = 20.sp
+            )
+
+            if (lastError.isNotBlank()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = lastError,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = DangerRed.copy(alpha = 0.9f),
+                    textAlign = TextAlign.Center,
+                    lineHeight = 18.sp
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
             
-            Box(modifier = Modifier.height(56.dp), contentAlignment = Alignment.Center) {
-                if (biometricEnabled == true) {
-                    // Try again button only shown if they dismissed the prompt implicitly, usually they'd see the prompt.
-                    // But to look like a loading screen, we just show an indicator, or a subtle clickable text.
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            if (biometricEnabled == true && canAuthenticate) {
+                Button(
+                    onClick = { showAuthenticationPrompt() },
+                    enabled = !isPromptRunning,
+                    shape = RoundedCornerShape(18.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = GoldPrimary, contentColor = Color.Black),
+                    modifier = Modifier.fillMaxWidth().height(52.dp)
+                ) {
+                    if (isPromptRunning) {
                         CircularProgressIndicator(
-                            color = GoldPrimary,
-                            modifier = Modifier.size(24.dp)
+                            color = Color.Black,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(18.dp)
                         )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "Toque para autenticar",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White.copy(alpha = 0.3f),
-                            modifier = Modifier.clickable { authenticateDevice() }
-                        )
+                        Spacer(Modifier.width(10.dp))
                     }
-                } else {
-                    CircularProgressIndicator(
-                        color = GoldPrimary,
-                        modifier = Modifier.size(24.dp)
-                    )
+                    Text("Desbloquear", fontWeight = FontWeight.Black)
                 }
+            } else {
+                CircularProgressIndicator(
+                    color = GoldPrimary,
+                    modifier = Modifier.size(24.dp)
+                )
             }
         }
     }

@@ -10,17 +10,19 @@ required_service = [
     'X-Valorae-Client-Version',
     'X-Valorae-Environment',
     'fun fetchAssetsData(',
-    '"/api/asset"',
-    '"/api/assets"',
-    '"/api/asset/history"',
-    '"/api/news"',
-    '"/api/market/indices"',
-    '"/api/portfolio/analyze"',
-    '"/api/portfolio/history"',
-    '"/api/market/ipca"',
-    '"/api/portfolio/next-dividends"',
-    '"/api/health"',
-    '"/api/ready"',
+    '"/api/v1/asset"',
+    '"/api/v1/assets"',
+    '"/api/v1/asset/history"',
+    '"/api/v1/asset/dividends"',
+    '"/api/v1/news"',
+    '"/api/v1/market/indices"',
+    '"/api/v1/portfolio/analyze"',
+    '"/api/v1/portfolio/history"',
+    '"/api/v1/market/ipca"',
+    '"/api/v1/portfolio/next-dividends"',
+    '"/api/v1/ready"',
+    '"/api/v1/release/readiness"',
+    '"/api/v1/source/status"',
     '"/api/observability"',
     '"/api/fields"',
     '"/api/openapi"',
@@ -100,7 +102,7 @@ for needle in ['defaultChartDescription', 'filterComparisonSeries', 'comparisonW
 for risky in ['filterYears * 12', 'takeLast(filterYears * 12)']:
     if risky in asset_charts:
         missing.append(f'AssetCharts ainda contém filtro arriscado com overflow: {risky}')
-for needle in ['"/api/compare"', 'fetchProxyComparisonSeries', 'parseComparisonSeriesFromObject', 'mergeComparisonSeries']:
+for needle in ['"/api/v1/compare"', 'fetchProxyComparisonSeries', 'parseComparisonSeriesFromObject', 'mergeComparisonSeries']:
     if needle not in text:
         missing.append(f'B3NetworkService sem fallback robusto de comparação: {needle}')
 
@@ -139,6 +141,27 @@ for needle in ['return false', 'Fallback direto desativado', 'Histórico direto 
 if 'valorae-proxy.vercel.app' in text and '!lower.contains("valorae-proxy.vercel.app")' not in text:
     missing.append('B3NetworkService pode aceitar host antigo valorae-proxy.vercel.app')
 
+# Testes não devem mascarar contratos antigos nem bater em endpoint legado.
+unit_test = (root / 'app/src/test/java/com/example/ExampleUnitTest.kt').read_text(encoding='utf-8')
+if '/api/asset?ticker=' in unit_test or '/api/assets' in unit_test:
+    missing.append('ExampleUnitTest ainda referencia rotas legadas /api/asset ou /api/assets')
+if '/api/v1/asset?ticker=' not in unit_test:
+    missing.append('ExampleUnitTest sem cobertura explícita do contrato /api/v1/asset')
+
+# O APK deve aceitar apenas HTTPS para o Proxy em runtime e build time.
+build_gradle = (root / 'app/build.gradle.kts').read_text(encoding='utf-8')
+if '!value.startsWith("https://")' not in build_gradle:
+    missing.append('app/build.gradle.kts ainda permite URL não HTTPS para o Proxy')
+if 'if (!value.startsWith("https://")) return false' not in text:
+    missing.append('B3NetworkService ainda permite URL não HTTPS para o Proxy')
+
+cloud_sync = (root / 'app/src/main/java/com/example/network/CloudSyncManager.kt').read_text(encoding='utf-8')
+settings_screen = (root / 'app/src/main/java/com/example/ui/screens/SettingsScreen.kt').read_text(encoding='utf-8')
+if 'return false' not in cloud_sync and 'cleanUrl.startsWith("https://")' not in cloud_sync:
+    missing.append('CloudSyncManager não valida HTTPS quando sincronização externa opcional estiver configurada')
+if 'Sincronização externa direta foi removida da UI' not in settings_screen or 'Nenhuma chamada a Supabase' not in settings_screen:
+    missing.append('SettingsScreen ainda expõe sincronização externa direta em vez de backup local seguro')
+
 charts_core = (root / 'app/src/main/java/com/example/ui/components/Charts.kt').read_text(encoding='utf-8')
 for needle in ['resampleFloatSeries', 'cleanPortfolioValues', 'alignedIpcaValues']:
     if needle not in charts_core:
@@ -147,16 +170,19 @@ for needle in ['resampleFloatSeries', 'cleanPortfolioValues', 'alignedIpcaValues
 versions = (root / 'gradle/libs.versions.toml').read_text(encoding='utf-8')
 if 'kotlin = "2.2.10"' in versions and 'googleDevtoolsKsp = "2.2.10-2.0.2"' not in versions:
     missing.append('libs.versions.toml com KSP incompatível com Kotlin 2.2.10')
-for needle in ['runCatching { B3NetworkService.fetchAssetData(clean) }', 'finally {\n                _isSearchingAsset.value = false', 'JSONObject()\n                    .put("ticker", tx.ticker)']:
+for needle in ['runCatching { B3NetworkService.fetchAssetData(clean) }', 'JSONObject()\n                    .put("ticker", tx.ticker)']:
     if needle not in vm:
         missing.append(f'PortfolioViewModel sem hardening recente: {needle}')
+if 'if (lastSearchTicker == clean) _isSearchingAsset.value = false' not in vm and 'finally {\n                _isSearchingAsset.value = false' not in vm:
+    missing.append('PortfolioViewModel sem finalização segura do loading de análise')
+
 
 
 # Continuação 5: custo médio móvel, range explícito de bundle, IPCA composto e sanitização de build.
 for needle in ['remainingCostBasis', 'avgBeforeSale', 'remainingCostBasis -= qtySold * avgBeforeSale']:
     if needle not in vm:
         missing.append(f'PortfolioViewModel sem custo médio móvel seguro: {needle}')
-for needle in ['fun safeValoraeProxyUrl', 'lower.contains("valorae-proxy.vercel.app")']:
+for needle in ['fun safeValoraeProxyUrl', '!value.startsWith("https://")', 'lower.contains("valorae-proxy.vercel.app")', 'lower.contains("10.0.2.2")']:
     if needle not in (root / 'app/build.gradle.kts').read_text(encoding='utf-8'):
         missing.append(f'app/build.gradle.kts sem sanitização contra host legado: {needle}')
 for needle in ['positionsCacheSignature', 'portfolio_history_${normalizedRange}_${positionsCacheSignature(positions)}', 'next_dividends_${positionsCacheSignature(positions)}']:
@@ -202,7 +228,7 @@ for needle in ['testFiiNormalizedFieldsBecomeIndicatorCards', 'Patrimônio Líqu
 
 
 # Continuação 8: gráficos/FIIs devem pedir payload completo e aceitar blocos normalizados/dividendos em objeto.
-for needle in ['"profile" to "analysis"', '"view" to "analysis"', 'addIndicatorWithDisplay("Preço Atual"', 'normalizedDisplay', 'addIndicatorsFromObject(normalized)', 'dividendSection', 'ultimos12Meses', 'last12Months', 'fiiDistribution12m.isEmpty() && dividendMonthly.isNotEmpty()']:
+for needle in ['"profile" to "max"', '"complete" to "1"', 'addIndicatorWithDisplay("Preço Atual"', 'normalizedDisplay', 'addIndicatorsFromObject(normalized)', 'dividendSection', 'ultimos12Meses', 'last12Months', 'fiiDistribution12m.isEmpty() && dividendMonthly.isNotEmpty()']:
     if needle not in text:
         missing.append(f'Continuação 8 ausente em B3NetworkService: {needle}')
 if '"lean" to "1"' in text:
@@ -223,6 +249,19 @@ for needle in ['Completa o grid com indicadores vindos do bundle avançado', 'ch
 for needle in ['testMergedRootAndResultsNormalizedForFii', 'testFundamentalistIndicatorAlternativeShapesAreParsed']:
     if needle not in parser_test:
         missing.append(f'Testes sem cobertura da continuação 9: {needle}')
+
+for needle in ['legacyAppCompat', 'officialAppContractVersion', '21.12.54-total-apk-proxy-contract', 'testProxyV211254LegacyCompatContractIsParsed']:
+    joined_contract = text + '\n' + parser_test
+    if needle not in joined_contract:
+        missing.append(f'Contrato APK/Proxy v21.12.54 sem cobertura: {needle}')
+
+
+for needle in ['testRevenueBreakdownParsesHighchartsAndApexShapes', 'testRevenueBreakdownPreservesYearMappedProxyShapes', 'testRevenueBreakdownParsesAppContractFieldValueShape']:
+    if needle not in parser_test:
+        missing.append(f'Testes sem cobertura de faturamento região/negócio: {needle}')
+for needle in ['parseBreakdownPointsFromObject', 'shouldParseObjectAsSingleBreakdown', 'hasUsableBreakdownMap']:
+    if needle not in text:
+        missing.append(f'Parser de faturamento região/negócio sem hardening: {needle}')
 
 if wrapper_warnings:
     print("WARNINGS:", *wrapper_warnings, sep="\n- ")

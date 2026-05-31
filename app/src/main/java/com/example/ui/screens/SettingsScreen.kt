@@ -57,7 +57,7 @@ import com.example.data.LightVariant
 import com.example.data.ThemePreferences
 
 private enum class SettingsPage {
-    MAIN, UPDATES, DISPLAY, ABOUT, SECURITY, NOTIFICATIONS, DATA_BACKUP, HELP, DARF_GUIDE
+    MAIN, UPDATES, DISPLAY, ABOUT, SECURITY, NOTIFICATIONS, DATA_BACKUP, HELP, DARF_GUIDE, PROXY_DIAGNOSTICS
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -93,6 +93,7 @@ fun SettingsScreen(
                             SettingsPage.DATA_BACKUP -> "Backup e Dados"
                             SettingsPage.HELP -> "Central de Ajuda"
                             SettingsPage.DARF_GUIDE -> "Guia de DARF e Tributação"
+                            SettingsPage.PROXY_DIAGNOSTICS -> "Diagnóstico do Proxy"
                         },
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
@@ -155,6 +156,7 @@ fun SettingsScreen(
                     SettingsPage.DATA_BACKUP -> DataBackupPage(viewModel)
                     SettingsPage.HELP -> HelpGuidePage()
                     SettingsPage.DARF_GUIDE -> DarfGuidePage(viewModel)
+                    SettingsPage.PROXY_DIAGNOSTICS -> ProxyDiagnosticsPage(viewModel)
                 }
             }
         }
@@ -264,6 +266,13 @@ private fun MainSettingsPage(
                         "NOVA VERSÃO DISPONÍVEL" else "Sua plataforma está atualizada",
                     hasBadge = updateStatus is UpdateManager.UpdateStatus.UpdateAvailable,
                     onClick = { onNavigate(SettingsPage.UPDATES) }
+                )
+                HorizontalDivider(color = BorderColor.copy(alpha = 0.12f), thickness = 1.5.dp)
+                SettingsItem(
+                    icon = Icons.Outlined.CloudDone,
+                    title = "Diagnóstico do Proxy",
+                    subtitle = "URL, readiness, fontes, cache local e erros recentes",
+                    onClick = { onNavigate(SettingsPage.PROXY_DIAGNOSTICS) }
                 )
                 HorizontalDivider(color = BorderColor.copy(alpha = 0.12f), thickness = 1.5.dp)
                 SettingsItem(
@@ -387,6 +396,224 @@ private fun MainSettingsPage(
         
         Spacer(modifier = Modifier.height(80.dp))
     }
+}
+
+
+@Composable
+private fun ProxyDiagnosticsPage(viewModel: com.example.viewmodel.PortfolioViewModel) {
+    val proxyHealth by viewModel.proxyHealth.collectAsStateWithLifecycle()
+    val diagnostics = proxyHealth.diagnostics
+    var showTechnicalDetails by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        viewModel.refreshProxyHealth(force = true)
+    }
+
+    val stateColor = when {
+        proxyHealth.isOnline -> SuccessGreen
+        proxyHealth.isUsingCache -> WarningOrange
+        proxyHealth.status.equals("Parcial", true) -> WarningOrange
+        else -> DangerRed
+    }
+    val readableStatus = when {
+        proxyHealth.isOnline -> "Conectado"
+        proxyHealth.isUsingCache -> "Usando cache"
+        proxyHealth.status.equals("Parcial", true) -> "Parcial"
+        else -> "Sem conexão"
+    }
+    val userMessage = when {
+        proxyHealth.isOnline -> "O app está recebendo dados do VALORAE Proxy normalmente."
+        proxyHealth.isUsingCache -> "O Proxy não respondeu agora, mas o app está preservando os últimos dados válidos."
+        proxyHealth.status.equals("Parcial", true) -> "Algumas fontes externas podem estar lentas. Carteira, cache e dados já recebidos continuam protegidos."
+        else -> "Não foi possível confirmar o Proxy. Toque em Atualizar ou verifique a internet antes de novas consultas."
+    }
+    val averageResponseText = diagnostics?.averageResponseMs
+        ?.takeIf { it > 0L }
+        ?.let { "${it} ms" }
+        ?: "sem amostras"
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Surface(
+            color = DarkSurface,
+            shape = RoundedCornerShape(26.dp),
+            border = BorderStroke(1.2.dp, stateColor.copy(alpha = 0.28f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .background(stateColor.copy(alpha = 0.12f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(Modifier.size(14.dp).background(stateColor, CircleShape))
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Text("Diagnóstico do VALORAE", fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSurface)
+                        Text(readableStatus, fontSize = 13.sp, color = stateColor, fontWeight = FontWeight.ExtraBold)
+                    }
+                    Button(
+                        onClick = { viewModel.refreshProxyHealth(force = true) },
+                        shape = RoundedCornerShape(16.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 9.dp)
+                    ) { Text("Atualizar", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                }
+                Text(
+                    text = userMessage,
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 18.sp
+                )
+            }
+        }
+
+        DiagnosticUserCard(
+            title = "Recebimento de dados",
+            value = if (proxyHealth.isOnline || proxyHealth.isUsingCache || proxyHealth.status.equals("Parcial", true)) "Operacional" else "Aguardando Proxy",
+            detail = when {
+                proxyHealth.isOnline -> "Consultas de ativos, notícias, gráficos e carteira podem usar o Proxy."
+                proxyHealth.isUsingCache -> "O app evita apagar dados bons quando o Proxy ou fontes externas falham."
+                proxyHealth.status.equals("Parcial", true) -> "Blocos opcionais podem ficar vazios temporariamente sem quebrar a tela."
+                else -> "Sem resposta recente. Novas consultas podem mostrar fallback ou mensagem de indisponibilidade."
+            },
+            color = stateColor
+        )
+
+        DiagnosticUserCard(
+            title = "Cache e proteção contra perda",
+            value = diagnostics?.let { "${it.bestSnapshotEntries} snapshots" } ?: "Não carregado",
+            detail = diagnostics?.let {
+                "${it.cacheEntries} entradas em memória, ${it.updatedAssets} ativos atualizados e ${it.partialResponses} respostas parciais preservadas."
+            } ?: "Abra esta tela com internet para medir cache, fontes e readiness.",
+            color = if ((diagnostics?.bestSnapshotEntries ?: 0) > 0) SuccessGreen else WarningOrange
+        )
+
+        DiagnosticUserCard(
+            title = "Última verificação",
+            value = diagnostics?.lastCheckedAt?.let { formatDiagnosticTime(it) } ?: "Nunca",
+            detail = "Tempo médio de resposta: $averageResponseText.",
+            color = MaterialTheme.colorScheme.primary
+        )
+
+        Surface(
+            color = DarkSurface,
+            shape = RoundedCornerShape(22.dp),
+            border = BorderStroke(1.2.dp, BorderColor.copy(alpha = 0.12f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable { showTechnicalDetails = !showTechnicalDetails },
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("DETALHES TÉCNICOS", fontSize = 11.sp, fontWeight = FontWeight.Black, color = GoldPrimary, letterSpacing = 1.sp)
+                        Text("Contrato, URL, fontes, métricas e erros recentes", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(
+                        imageVector = if (showTechnicalDetails) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                AnimatedVisibility(visible = showTechnicalDetails) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        diagnostics?.let { data ->
+                            DiagnosticSection(
+                                title = "Conexão",
+                                rows = listOf(
+                                    "URL do Proxy" to data.baseUrl,
+                                    "Readiness" to if (data.ready) "Online" else data.state,
+                                    "Última verificação" to formatDiagnosticTime(data.lastCheckedAt),
+                                    "Tempo médio" to if (data.averageResponseMs > 0L) "${data.averageResponseMs} ms" else "Sem amostras"
+                                )
+                            )
+                            DiagnosticSection(
+                                title = "Fontes e Cache",
+                                rows = listOf(
+                                    "Status das fontes" to data.sourceStatus,
+                                    "Métricas do servidor" to data.metricsStatus,
+                                    "Cache em memória" to "${data.cacheEntries} entradas",
+                                    "Últimos snapshots bons" to "${data.bestSnapshotEntries} ativos",
+                                    "Ativos atualizados" to data.updatedAssets.toString(),
+                                    "Respostas parciais" to data.partialResponses.toString(),
+                                    "Cache local em uso" to if (data.usingLocalCache) "Sim" else "Não"
+                                )
+                            )
+                            DiagnosticSection(
+                                title = "Erros recentes",
+                                rows = if (data.recentErrors.isEmpty()) listOf("Estado" to "Nenhum erro recente registrado")
+                                else data.recentErrors.mapIndexed { index, error -> "#${index + 1}" to error }
+                            )
+                        } ?: DiagnosticSection(
+                            title = "Diagnóstico",
+                            rows = listOf(
+                                "Estado" to "Ainda sem resposta do Proxy",
+                                "Ação" to "Toque em Atualizar para consultar readiness, fontes e métricas."
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiagnosticUserCard(title: String, value: String, detail: String, color: Color) {
+    Surface(
+        color = DarkSurface,
+        shape = RoundedCornerShape(22.dp),
+        border = BorderStroke(1.2.dp, BorderColor.copy(alpha = 0.12f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(Modifier.padding(top = 4.dp).size(10.dp).background(color, CircleShape))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(title, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                Text(value, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Black)
+                Text(detail, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = 17.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiagnosticSection(title: String, rows: List<Pair<String, String>>) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+        shape = RoundedCornerShape(18.dp),
+        border = BorderStroke(1.dp, BorderColor.copy(alpha = 0.10f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(title.uppercase(), fontSize = 11.sp, fontWeight = FontWeight.Black, color = GoldPrimary, letterSpacing = 1.sp)
+            rows.forEach { (label, value) ->
+                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(value.ifBlank { "—" }, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold, lineHeight = 16.sp)
+                }
+            }
+        }
+    }
+}
+
+private fun formatDiagnosticTime(value: Long): String {
+    if (value <= 0L) return "Nunca"
+    return java.text.SimpleDateFormat("dd/MM HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(value))
 }
 
 @Composable
@@ -1127,22 +1354,81 @@ private fun SettingsItem(
 @Composable
 private fun SecuritySettingsPage(themePreferences: ThemePreferences) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val activity = context as? androidx.fragment.app.FragmentActivity
     val scope = rememberCoroutineScope()
     val biometricManager = androidx.biometric.BiometricManager.from(context)
-    val authenticators = androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG or androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
-    val canAuthenticate = remember { 
-        biometricManager.canAuthenticate(authenticators) == androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS 
-    }
-    
+    val authenticators = androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG or
+        androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
+    val canAuthenticate = biometricManager.canAuthenticate(authenticators) == androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS
     val biometricEnabled by themePreferences.biometricEnabled.collectAsStateWithLifecycle(initialValue = false)
     val hideValues by themePreferences.hideValues.collectAsStateWithLifecycle(initialValue = false)
+    var securityFeedback by remember { mutableStateOf<String?>(null) }
+    var isConfirmingAuth by remember { mutableStateOf(false) }
+
+    LaunchedEffect(biometricEnabled, canAuthenticate) {
+        if (biometricEnabled && !canAuthenticate) {
+            themePreferences.setBiometricEnabled(false)
+            securityFeedback = "Bloqueio desativado: o Android não possui biometria, PIN, senha ou padrão disponível agora."
+        }
+    }
+
+    fun requestAuthenticationToEnable() {
+        if (!canAuthenticate) {
+            securityFeedback = "Configure biometria, PIN, senha ou padrão no Android antes de ativar o bloqueio."
+            Toast.makeText(context, securityFeedback ?: "", Toast.LENGTH_LONG).show()
+            return
+        }
+        if (activity == null) {
+            securityFeedback = "Não foi possível abrir a autenticação do Android nesta tela."
+            return
+        }
+        if (isConfirmingAuth) return
+        isConfirmingAuth = true
+        securityFeedback = "Confirme sua identidade para ativar o bloqueio do VALORAE."
+
+        val executor = androidx.core.content.ContextCompat.getMainExecutor(context)
+        val prompt = androidx.biometric.BiometricPrompt(
+            activity,
+            executor,
+            object : androidx.biometric.BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: androidx.biometric.BiometricPrompt.AuthenticationResult) {
+                    super.onAuthenticationSucceeded(result)
+                    isConfirmingAuth = false
+                    scope.launch { themePreferences.setBiometricEnabled(true) }
+                    securityFeedback = "Bloqueio ativado. O app exigirá biometria, PIN, senha ou padrão ao voltar do segundo plano."
+                }
+
+                override fun onAuthenticationFailed() {
+                    super.onAuthenticationFailed()
+                    securityFeedback = "Autenticação não reconhecida. Tente novamente."
+                }
+
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    super.onAuthenticationError(errorCode, errString)
+                    isConfirmingAuth = false
+                    securityFeedback = errString.toString().ifBlank { "Ativação cancelada." }
+                }
+            }
+        )
+        val promptInfo = androidx.biometric.BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Ativar bloqueio VALORAE")
+            .setSubtitle("Use biometria, PIN, senha ou padrão do aparelho")
+            .setAllowedAuthenticators(authenticators)
+            .build()
+        try {
+            prompt.authenticate(promptInfo)
+        } catch (e: Throwable) {
+            isConfirmingAuth = false
+            securityFeedback = e.message ?: "Falha ao abrir a autenticação do Android."
+        }
+    }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
             .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Text(
             text = "AUTENTICAÇÃO DO DISPOSITIVO",
@@ -1154,32 +1440,55 @@ private fun SecuritySettingsPage(themePreferences: ThemePreferences) {
 
         Surface(
             color = MaterialTheme.colorScheme.surfaceVariant,
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(22.dp),
             border = BorderStroke(1.dp, Color.White.copy(alpha = 0.04f))
         ) {
-            Column {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(
-                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(text = "Desbloqueio Nativos", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
-                        Text(text = "Exigir Biometria, PIN ou Padrão do celular", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        if (!canAuthenticate) {
-                            Text(text = "Nenhuma segurança configurada no dispositivo", style = MaterialTheme.typography.labelSmall, color = DangerRed)
-                        }
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(text = "Bloqueio seguro do app", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = "Exige biometria, PIN, senha ou padrão do Android para abrir o VALORAE após sair do app.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 17.sp
+                        )
+                        Text(
+                            text = if (canAuthenticate) "Disponível neste aparelho" else "Configure um bloqueio de tela no Android para ativar",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (canAuthenticate) SuccessGreen else DangerRed,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                     Switch(
-                        checked = biometricEnabled, 
-                        onCheckedChange = { 
-                            if (canAuthenticate) {
-                                scope.launch { themePreferences.setBiometricEnabled(it) } 
+                        checked = biometricEnabled,
+                        onCheckedChange = { checked ->
+                            if (!checked) {
+                                scope.launch { themePreferences.setBiometricEnabled(false) }
+                                securityFeedback = "Bloqueio do app desativado."
                             } else {
-                                Toast.makeText(context, "Configure biometria ou PIN no Android primeiro", Toast.LENGTH_LONG).show()
+                                requestAuthenticationToEnable()
                             }
                         },
-                        enabled = canAuthenticate
+                        enabled = canAuthenticate || biometricEnabled
                     )
+                }
+                securityFeedback?.let { message ->
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (message.contains("ativado", ignoreCase = true) || message.contains("Disponível", ignoreCase = true)) SuccessGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 17.sp
+                    )
+                }
+                if (isConfirmingAuth) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Text("Aguardando autenticação do Android…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
         }
@@ -1204,8 +1513,8 @@ private fun SecuritySettingsPage(themePreferences: ThemePreferences) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(text = "Ocultar Valores Sensíveis", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
-                    Text(text = "Mascarar saldo total e portfólio", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(text = "Ocultar valores sensíveis", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                    Text(text = "Mascarar saldo total, preço médio e evolução da carteira", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Switch(
                     checked = hideValues, 
@@ -2206,289 +2515,51 @@ private fun DataBackupPage(viewModel: com.example.viewmodel.PortfolioViewModel) 
             }
         }
 
-        // Card Cloud Sync: Integração Supabase
+        // Card: Política de backup local. Sincronização externa direta foi removida da UI
+        // para manter o APK leve, privado e sem dependência de banco/serviço pago.
         Surface(
             color = MaterialTheme.colorScheme.surface,
             shape = RoundedCornerShape(24.dp),
             tonalElevation = 1.dp
         ) {
-            val prefs = remember { context.getSharedPreferences("cloud_sync_prefs", android.content.Context.MODE_PRIVATE) }
-            var syncUserId by remember { mutableStateOf(prefs.getString("sync_user_id", "") ?: "") }
-            var cryptoPassphrase by remember { mutableStateOf(prefs.getString("crypto_passphrase", "") ?: "") }
-            var passphraseVisible by remember { mutableStateOf(false) }
-            var connectionStatusSupabase by remember { mutableStateOf("Não verificado") }
-            var isTestingSupabase by remember { mutableStateOf(false) }
-            var isBackingUp by remember { mutableStateOf(false) }
-            var isRestoring by remember { mutableStateOf(false) }
-
-            LaunchedEffect(Unit) {
-                if (syncUserId.isEmpty()) {
-                    val randomId = "v_" + UUID.randomUUID().toString().substring(0, 8)
-                    syncUserId = randomId
-                    prefs.edit().putString("sync_user_id", randomId).apply()
-                }
-            }
-
             Column(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        imageVector = Icons.Filled.Cloud,
+                        imageVector = Icons.Outlined.CloudUpload,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(24.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
-                        text = "Sincronização em Nuvem",
+                        text = "Backup local seguro",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                 }
 
                 Text(
-                    text = "Suporte unificado ao Supabase (Banco de Dados em Nuvem). Seu portfólio seguro em qualquer lugar com criptografia ponta-a-ponta.",
+                    text = "A carteira permanece local no aparelho. Para evitar serviços pagos, banco externo ou sincronização direta fora do VALORAE Proxy, a sincronização em nuvem foi ocultada. Use Exportar JSON/CSV para backup manual e Importar Arquivo para restaurar.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 18.sp
                 )
 
-                // Indicação de Status de Configuração das Chaves de Ambiente do Gradle
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                        .padding(12.dp)
                 ) {
-                    val isSupaConfigured = com.example.network.CloudSyncManager.isCloudConfigured()
-
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .background(
-                                if (isSupaConfigured) SuccessGreen.copy(alpha = 0.08f) else MaterialTheme.colorScheme.error.copy(alpha = 0.08f),
-                                RoundedCornerShape(12.dp)
-                            )
-                            .border(
-                                1.dp,
-                                if (isSupaConfigured) SuccessGreen.copy(alpha = 0.2f) else MaterialTheme.colorScheme.error.copy(alpha = 0.2f),
-                                RoundedCornerShape(12.dp)
-                            )
-                            .padding(8.dp)
-                    ) {
-                        Column {
-                            Text("Supabase DB", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                            Text(
-                                if (isSupaConfigured) "Integrado (.env Ativo)" else "Pendente (Configurações)",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (isSupaConfigured) SuccessGreen else MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
-                }
-
-                // Identificador Único do Usuário
-                OutlinedTextField(
-                    modifier = Modifier.fillMaxWidth().testTag("sync_user_id_field"),
-                    value = syncUserId,
-                    onValueChange = {
-                        syncUserId = it
-                        prefs.edit().putString("sync_user_id", it).apply()
-                    },
-                    label = { Text("ID de Sincronização Única") },
-                    placeholder = { Text("Ex: v_7a4b0d21") },
-                    textStyle = MaterialTheme.typography.bodyMedium,
-                    leadingIcon = { Icon(Icons.Default.VpnKey, contentDescription = null, modifier = Modifier.size(20.dp)) },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp)
-                )
-
-                // Frase-senha para criptografia local Client-Side (AES-256 Zero Knowledge)
-                OutlinedTextField(
-                    modifier = Modifier.fillMaxWidth().testTag("crypto_passphrase_field"),
-                    value = cryptoPassphrase,
-                    onValueChange = {
-                        cryptoPassphrase = it
-                        prefs.edit().putString("crypto_passphrase", it).apply()
-                    },
-                    label = { Text("Senha / PIN de Criptografia de Backup") },
-                    placeholder = { Text("Frase secreta opcional para codificação das transações") },
-                    textStyle = MaterialTheme.typography.bodyMedium,
-                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
-                    trailingIcon = {
-                        val image = if (passphraseVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff
-                        IconButton(onClick = { passphraseVisible = !passphraseVisible }) {
-                            Icon(imageVector = image, contentDescription = null)
-                        }
-                    },
-                    visualTransformation = if (passphraseVisible) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp)
-                )
-                Text(
-                    text = "🔒 Proteção militar AES-256 GCM: Caso defina uma senha de backup, suas transações são criptografadas diretamente no seu celular antes de serem enviadas para a nuvem. Nem mesmo os administradores do banco de dados poderão visualizar seus ativos.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
-                    lineHeight = 13.sp
-                )
-
-                // Botões de Teste de Conexões de Rede Real-time
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedButton(
-                        modifier = Modifier.weight(1f),
-                        onClick = {
-                            if (isTestingSupabase) return@OutlinedButton
-                            isTestingSupabase = true
-                            scope.launch {
-                                val result = com.example.network.CloudSyncManager.testSupabaseConnection()
-                                result.fold(
-                                    onSuccess = { msg ->
-                                        connectionStatusSupabase = "Ativo"
-                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                    },
-                                    onFailure = { err ->
-                                        connectionStatusSupabase = "Erro"
-                                        Toast.makeText(context, err.message, Toast.LENGTH_LONG).show()
-                                    }
-                                )
-                                isTestingSupabase = false
-                            }
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        contentPadding = PaddingValues(vertical = 12.dp)
-                    ) {
-                        if (isTestingSupabase) {
-                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        } else {
-                            Icon(Icons.Filled.NetworkCheck, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Testar Supabase", style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                }
-
-                // Botões de Sincronização Ativa: Backup e Restauração
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Button(
-                        modifier = Modifier.weight(1f).testTag("backup_supabase_button"),
-                        enabled = !isBackingUp && !isRestoring && com.example.network.CloudSyncManager.isCloudConfigured(),
-                        shape = RoundedCornerShape(12.dp),
-                        onClick = {
-                            isBackingUp = true
-                            scope.launch {
-                                try {
-                                    val result = com.example.network.CloudSyncManager.backupData(
-                                        userId = syncUserId,
-                                        transactions = transactions,
-                                        passPhrase = cryptoPassphrase.takeIf { it.isNotBlank() }
-                                    )
-                                    result.fold(
-                                        onSuccess = { msg ->
-                                            successMsg = msg
-                                            showSuccessBanner = true
-                                        },
-                                        onFailure = { err ->
-                                            errorMsg = "Erro ao efetuar backup: ${err.message}"
-                                            showErrorBanner = true
-                                        }
-                                    )
-                                } catch (e: Exception) {
-                                    errorMsg = "Erro inesperado: ${e.message}"
-                                    showErrorBanner = true
-                                } finally {
-                                    isBackingUp = false
-                                }
-                            }
-                        }
-                    ) {
-                        if (isBackingUp) {
-                            CircularProgressIndicator(modifier = Modifier.size(18.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
-                        } else {
-                            Icon(Icons.Filled.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Nuvem Backup", style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-
-                    Button(
-                        modifier = Modifier.weight(1f).testTag("restore_supabase_button"),
-                        enabled = !isBackingUp && !isRestoring && com.example.network.CloudSyncManager.isCloudConfigured(),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
-                        shape = RoundedCornerShape(12.dp),
-                        onClick = {
-                            isRestoring = true
-                            scope.launch {
-                                try {
-                                    val result = com.example.network.CloudSyncManager.restoreData(
-                                        userId = syncUserId,
-                                        passPhrase = cryptoPassphrase.takeIf { it.isNotBlank() }
-                                    )
-                                    result.fold(
-                                        onSuccess = { list ->
-                                            // Serialize list and feed into import to avoid any manual mapping errors
-                                            val arr = org.json.JSONArray()
-                                            list.forEach { t ->
-                                                arr.put(org.json.JSONObject().apply {
-                                                    put("ticker", t.ticker)
-                                                    put("name", t.name)
-                                                    put("quantity", t.quantity)
-                                                    put("purchasePrice", t.purchasePrice)
-                                                    put("date", t.date)
-                                                    put("type", t.type)
-                                                    put("isSell", t.isSell)
-                                                    put("broker", t.broker)
-                                                    put("sector", t.sector)
-                                                    put("notes", t.notes)
-                                                })
-                                            }
-                                            viewModel.importTransactionsFromJson(arr.toString(), clearOnImport)
-                                            successMsg = "Backup da nuvem selecionado e restaurado com sucesso! ${list.size} transações recarregadas."
-                                            showSuccessBanner = true
-                                        },
-                                        onFailure = { err ->
-                                            errorMsg = "Controle de restauração falhou: ${err.message}"
-                                            showErrorBanner = true
-                                        }
-                                    )
-                                } catch (e: Exception) {
-                                    errorMsg = "Erro inesperado: ${e.message}"
-                                    showErrorBanner = true
-                                } finally {
-                                    isRestoring = false
-                                }
-                            }
-                        }
-                    ) {
-                        if (isRestoring) {
-                            CircularProgressIndicator(modifier = Modifier.size(18.dp), color = MaterialTheme.colorScheme.onSecondary, strokeWidth = 2.dp)
-                        } else {
-                            Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Restaurar Nuvem", style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                }
-
-                // Dica caso queira habilitar o DB
-                if (!com.example.network.CloudSyncManager.isCloudConfigured()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
-                            .padding(10.dp)
-                    ) {
-                        Text(
-                            text = "💡 Para sincronizar remotamente, configure \"SUPABASE_URL\" e \"SUPABASE_ANON_KEY\" usando o painel Secrets na barra lateral do AI Studio e reinicie a compilação. Use o script SQL abaixo para criar a tabela no editor SQL do Supabase.",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                    Text(
+                        text = "Nenhuma chamada a Supabase, Firebase, banco externo ou serviço pago é feita por esta tela. O Proxy continua sendo o backend/API central para dados financeiros.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        lineHeight = 15.sp
+                    )
                 }
             }
         }

@@ -1,0 +1,21 @@
+INSTRUÇÕES STUDIO / GEMINI — CONTINUAÇÃO 9 SEM PATCH
+
+Envie o ZIP da continuação 9 como projeto principal.
+Não envie patch.
+
+Arquivos úteis no ZIP:
+- RELATORIO_CONTINUACAO_9_DADOS_FUNDAMENTALISTAS_GRAFICOS_VALORAE.md
+- PROMPT_GEMINI_3_5_FLASH_CONTINUACAO_9_VALORAE.md
+- BUILD_VALIDATION_LOG_CONTINUACAO_9_VALORAE.txt
+
+Use somente o Valorae Proxy oficial:
+https://servidor-valorae.vercel.app/api
+
+Não use host antigo.
+Não faça scraping direto no app.
+Não adicione recursos pagos.
+
+Compile com:
+./gradlew clean assembleDebug
+
+Se o Studio preferir o wrapper oficial, regenere o Gradle Wrapper antes de compilar.

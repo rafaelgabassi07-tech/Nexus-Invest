@@ -1,48 +1,41 @@
 package com.example
 
 import com.example.network.B3NetworkService
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
-import java.io.File
-import java.util.concurrent.TimeUnit
 
 class ExampleUnitTest {
   @Test
-  fun fetchProxyAssetJson() {
-    val client = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .build()
+  fun proxyAssetRequestUsesV1ContractAndRequiredHeaders() {
     val request = Request.Builder()
-        .url("https://servidor-valorae.vercel.app/api/asset?ticker=PETR4")
+        .url("https://servidor-valorae.vercel.app/api/v1/asset?ticker=PETR4&view=app&profile=turbo")
         .addHeader("Accept", "application/json")
         .addHeader("User-Agent", "VALORAE-Investidor-Portfolio/1.1.4 Android")
+        .addHeader("x-valorae-app", "VALORAE Investidor")
+        .addHeader("x-valorae-client", "valorae-investidor-android")
+        .addHeader("x-valorae-build", "1.1.4-7")
+        .addHeader("x-valorae-platform", "android")
         .addHeader("X-Valorae-Client-Id", "valorae-investidor-android")
-        .addHeader("X-Valorae-Client-Version", "21.5.13")
+        .addHeader("X-Valorae-Client-Version", "1.1.4")
         .addHeader("X-Valorae-Environment", "production")
-        .addHeader("X-Valorae-App", "VALORAE")
-        .addHeader("X-Valorae-Consumer", "investidor-portfolio")
         .build()
-    try {
-        client.newCall(request).execute().use { response ->
-            val body = response.body?.string() ?: "Empty body"
-            val file = File("response_petr4.json")
-            file.writeText(body)
-            println("Response written to: ${file.absolutePath}")
-            println("Status code: ${response.code}")
-        }
-    } catch (e: Exception) {
-        e.printStackTrace()
-    }
+
+    assertEquals("https", request.url.scheme)
+    assertTrue(request.url.encodedPath.endsWith("/api/v1/asset"))
+    assertEquals("PETR4", request.url.queryParameter("ticker"))
+    assertEquals("app", request.url.queryParameter("view"))
+    assertEquals("turbo", request.url.queryParameter("profile"))
+    assertEquals("VALORAE Investidor", request.header("x-valorae-app"))
+    assertEquals("android", request.header("x-valorae-platform"))
   }
 
   @Test
   fun testRequiredHeadersAndBaseUrl() {
     val base = "https://servidor-valorae.vercel.app"
     assertEquals("https://servidor-valorae.vercel.app", base)
+    assertTrue(base.startsWith("https://"))
   }
 
   @Test
@@ -59,5 +52,7 @@ class ExampleUnitTest {
       "warnings": ["Alguns dados fundamentalistas indisponíveis no momento"]
     }""")
     assertNotNull(incompletePayload)
+    assertEquals("PARTIAL", incompletePayload.optString("status"))
+    assertEquals(28.50, B3NetworkService.parseLocaleFinancialNumber("28,50"), 0.001)
   }
 }

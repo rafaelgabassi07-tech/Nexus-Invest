@@ -1,0 +1,55 @@
+OK - Raio-X: qualidade do ativo
+OK - Raio-X: plano de ação
+OK - Raio-X: mapa de fontes
+OK - Central FII: renda
+OK - Central FII: vacância
+OK - Central FII: checklist
+OK - Carteira: rebalanceamento dedicado
+OK - Carteira: risco dedicado
+OK - Carteira: renda dedicada
+OK - Radar / Watchlist
+OK - Diagnóstico: maturidade do motor
+OK - Diagnóstico: cache stats
+OK - ViewModel expõe refresh de capacidades
+OK - UI Proxy+ criada
+OK - Proxy+ conectado na navegação
+Valorae Proxy recommendations implementation audit OK
+Valorae Proxy capabilities audit OK
+OK - B3NetworkService consome ranking de mercado
+OK - B3NetworkService expõe ranking personalizado da carteira
+OK - Ranking da carteira funciona com 1 ativo
+OK - B3NetworkService expõe ranking ao vivo de ações
+OK - Parser aceita rankings por critérios e perfis
+OK - Portfolio analytics captura inteligência do Proxy
+OK - ViewModel carrega rankings junto dos Insights
+OK - Estado de Insights armazena rankings
+OK - Rankings possui página própria na barra inferior
+OK - Rankings não contaminam proventos/IPCA históricos
+OK - UI renderiza ação/inteligência da carteira
+OK - UI mostra categorias amplas de mercado quando altas/baixas não vêm
+OK - Início exibe cards de altas/baixas do dia
+OK - ViewModel carrega ranking ao vivo sem depender da carteira
+OK - Parser preserva preço e variação separados nos movers
+OK - Página de rankings tem containers estilo Investidor10
+OK - Home usa cache local para preencher preço faltante em baixas
+OK - Ranking ao vivo enriquece preço faltante pelo batch /api/v1/assets
+OK - Rankings selecionam categoria carregada após resposta assíncrona
+Valorae Proxy integration audit OK
+Valorae Insights logic audit OK
+OK - Insights calcula quantidade elegível em dividendos
+OK - Evolução de proventos recebe transações
+OK - Agenda de dividendos filtra por elegibilidade
+OK - Agenda não reaproveita eventos antigos quando não há futuro
+OK - Agenda local remove datas-com antigas
+OK - Barras de diversificação são clampadas em 0..1
+OK - Top pagadores respeita período e existência da carteira
+OK - Fallback de top pagadores soma mês a mês por quantidade histórica
+OK - Parser de datas dos Insights aceita ISO e formato brasileiro curto
+OK - KPIs da agenda usam eventos elegíveis
+OK - Histórico remoto é ajustado ao início da carteira
+OK - IPCA é rebaseado ao período da carteira
+OK - Fallback visual de IPCA/Carteira respeita idade da carteira
+OK - Tabela IPCA alinha séries antes de calcular juros reais
+OK - Proventos remotos são saneados por posição na data
+OK - Histórico local usa custo médio móvel após vendas
+OK - Payload de carteira envia firstPurchaseAt opcional

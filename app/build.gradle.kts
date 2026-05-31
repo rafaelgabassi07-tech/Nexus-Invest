@@ -35,11 +35,13 @@ fun safeValoraeProxyUrl(raw: String, fallback: String): String {
   val lower = value.lowercase()
   return if (
     value.isBlank() ||
-    !value.startsWith("http") ||
+    !value.startsWith("https://") ||
     lower.contains("valorae-proxy.vercel.app") ||
     lower.contains("your-backend") ||
     lower.contains("seu-dominio") ||
-    lower.contains("localhost")
+    lower.contains("localhost") ||
+    lower.contains("10.0.2.2") ||
+    lower.contains("127.0.0.1")
   ) {
     fallback
   } else {
@@ -74,8 +76,8 @@ android {
     applicationId = "com.aistudio.valorae.nbqpyl"
     minSdk = 24
     targetSdk = 36
-    versionCode = 7
-    versionName = "1.1.4"
+    versionCode = 11
+    versionName = "1.1.8"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -84,15 +86,20 @@ android {
     val fallbackProxyUrl = "https://servidor-valorae.vercel.app"
     val valoraeUrl = safeValoraeProxyUrl(
       valoraeConfigValue(
-        "VALORAE_PROXY_BASE_URL",
-        valoraeConfigValue("VERCEL_BACKEND_URL", fallbackProxyUrl)
+        "VALORAE_API_BASE_URL",
+        valoraeConfigValue(
+          "VALORAE_PROXY_BASE_URL",
+          valoraeConfigValue("VALORAE_PUBLIC_BASE_URL", valoraeConfigValue("VERCEL_BACKEND_URL", fallbackProxyUrl))
+        )
       ),
       fallbackProxyUrl
     )
     val valoraeClientId = valoraeConfigValue("VALORAE_PROXY_CLIENT_ID", "valorae-investidor-android")
     val valoraeFallbackEnabled = valoraeConfigValue("VALORAE_DIRECT_FALLBACK_ENABLED", "false")
 
+    buildConfigField("String", "VALORAE_API_BASE_URL", "\"$valoraeUrl\"")
     buildConfigField("String", "VALORAE_PROXY_BASE_URL", "\"$valoraeUrl\"")
+    buildConfigField("String", "VALORAE_PUBLIC_BASE_URL", "\"$valoraeUrl\"")
     buildConfigField("String", "VALORAE_PROXY_CLIENT_ID", "\"$valoraeClientId\"")
     buildConfigField("String", "VALORAE_DIRECT_FALLBACK_ENABLED", "\"$valoraeFallbackEnabled\"")
   }
@@ -140,7 +147,9 @@ android {
 secrets {
   propertiesFileName = ".env"
   defaultPropertiesFileName = ".env.example"
+  ignoreList.add("VALORAE_API_BASE_URL")
   ignoreList.add("VALORAE_PROXY_BASE_URL")
+  ignoreList.add("VALORAE_PUBLIC_BASE_URL")
   ignoreList.add("VALORAE_PROXY_CLIENT_ID")
   ignoreList.add("VALORAE_DIRECT_FALLBACK_ENABLED")
 }

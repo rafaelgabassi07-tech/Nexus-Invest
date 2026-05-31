@@ -31,20 +31,35 @@ class UpdateManager(private val context: Context) {
     private var currentRetrofit: Retrofit? = null
     private var currentApi: UpdateApiService? = null
 
-    suspend fun checkForUpdate(fullUrl: String) {
+    private companion object {
+        const val UPDATE_CHECK_PREFS = "valorae_update_check"
+        const val LAST_UPDATE_CHECK_AT = "last_update_check_at"
+        const val UPDATE_CHECK_TTL_MS = 12 * 60 * 60 * 1000L
+    }
+
+    suspend fun checkForUpdate(fullUrl: String, force: Boolean = false) {
         try {
-            _updateStatus.value = UpdateStatus.Checking
-            
-            if (fullUrl.isEmpty() || fullUrl.contains("seusite-atualizacao.vercel.app")) {
+            val cleanUrl = fullUrl.trim()
+            if (cleanUrl.isEmpty() || cleanUrl.contains("seusite-atualizacao.vercel.app") || !cleanUrl.startsWith("https://")) {
                 _updateStatus.value = UpdateStatus.UpToDate
                 return
             }
+
+            val prefs = context.getSharedPreferences(UPDATE_CHECK_PREFS, Context.MODE_PRIVATE)
+            val lastCheckAt = prefs.getLong(LAST_UPDATE_CHECK_AT, 0L)
+            val now = System.currentTimeMillis()
+            if (!force && lastCheckAt > 0L && now - lastCheckAt < UPDATE_CHECK_TTL_MS) {
+                _updateStatus.value = UpdateStatus.UpToDate
+                return
+            }
+
+            _updateStatus.value = UpdateStatus.Checking
             
             // Handle cases where the full URL to the json file is passed
-            val baseUrl = if (fullUrl.endsWith("/update.json")) {
-                fullUrl.substring(0, fullUrl.lastIndexOf("/update.json") + 1)
+            val baseUrl = if (cleanUrl.endsWith("/update.json")) {
+                cleanUrl.substring(0, cleanUrl.lastIndexOf("/update.json") + 1)
             } else {
-                if (fullUrl.endsWith("/")) fullUrl else "$fullUrl/"
+                if (cleanUrl.endsWith("/")) cleanUrl else "$cleanUrl/"
             }
             
             // Rebuild only if baseUrl changes
@@ -67,6 +82,7 @@ class UpdateManager(private val context: Context) {
             )
             android.util.Log.d("UpdateManager", "Update info received: $updateInfo")
 
+            prefs.edit().putLong(LAST_UPDATE_CHECK_AT, now).apply()
             if (updateInfo.versionCode > BuildConfig.VERSION_CODE) {
                 _updateStatus.value = UpdateStatus.UpdateAvailable(updateInfo)
             } else {
@@ -78,9 +94,15 @@ class UpdateManager(private val context: Context) {
     }
 
     fun startDownload(updateInfo: AppUpdateInfo) {
+        val downloadUrl = updateInfo.downloadUrl.trim()
+        if (!downloadUrl.startsWith("https://")) {
+            _updateStatus.value = UpdateStatus.Error("URL de download inválida: apenas HTTPS é permitido.")
+            return
+        }
+
         _updateStatus.value = UpdateStatus.Downloading(updateInfo)
 
-        val request = DownloadManager.Request(Uri.parse(updateInfo.downloadUrl))
+        val request = DownloadManager.Request(Uri.parse(downloadUrl))
             .setTitle("Atualizando app...")
             .setDescription("Baixando nova versão: ${updateInfo.versionName}")
             .setMimeType("application/vnd.android.package-archive")
@@ -109,7 +131,7 @@ class UpdateManager(private val context: Context) {
             context,
             onComplete,
             IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
-            ContextCompat.RECEIVER_EXPORTED
+            ContextCompat.RECEIVER_NOT_EXPORTED
         )
     }
 

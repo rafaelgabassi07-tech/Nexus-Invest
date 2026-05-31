@@ -44,10 +44,10 @@ object CloudSyncManager {
      * Helper to verify if cloud configurations are active.
      */
     fun isCloudConfigured(): Boolean {
-        return supabaseUrl.isNotEmpty() && 
-               supabaseKey.isNotEmpty() && 
-               !supabaseUrl.contains("your-project") && 
-               !supabaseKey.contains("YOUR")
+        // Desativado por política do VALORAE APK: a carteira não deve depender nem oferecer
+        // integração direta com banco externo/serviço potencialmente pago. Backups devem ser
+        // locais ou passar por contratos seguros do Valorae Proxy em implementação futura.
+        return false
     }
 
     /**

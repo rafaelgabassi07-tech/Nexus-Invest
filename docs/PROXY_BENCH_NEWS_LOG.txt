@@ -1,0 +1,29 @@
+
+> valorae-proxy@21.12.0 bench:news
+> node scripts/benchmark-news-reliability-v21-12-52.js
+
+{
+  "version": "21.12.52-news-reliability-upgrade",
+  "fetchCount": 6,
+  "cold": {
+    "avg": 5.748,
+    "median": 5.339,
+    "p95": 7.649,
+    "min": 4.967,
+    "max": 7.649
+  },
+  "hot": {
+    "avg": 0.011,
+    "median": 0.007,
+    "p95": 0.046,
+    "min": 0.003,
+    "max": 0.118
+  },
+  "hotCacheStatus": "NEWS_CACHE_HIT",
+  "emptySemantics": {
+    "ok": false,
+    "code": "GOOGLE_NEWS_EMPTY",
+    "shouldKeepPreviousNews": true
+  },
+  "generatedAt": "2026-05-30T05:31:48.416Z"
+}

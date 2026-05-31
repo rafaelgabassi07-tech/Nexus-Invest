@@ -1,0 +1,19 @@
+BUILD VALIDATION LOG — VALORAE INVESTIDOR
+
+Comandos executados:
+
+1) python3 scripts/verify_valorae_proxy_integration.py
+Resultado:
+Valorae Proxy integration audit OK
+
+2) ./gradlew clean assembleDebug
+Resultado:
+Error: Invalid or corrupt jarfile /mnt/data/audit7/gradle/wrapper/gradle-wrapper.jar
+
+Conclusão:
+O código foi corrigido e a auditoria estática/integração passou, mas o APK não pôde ser recompilado neste ambiente porque o Gradle wrapper dentro do ZIP está corrompido. É necessário regenerar/substituir o gradle-wrapper.jar no Android Studio/Gemini e então executar:
+
+./gradlew clean assembleDebug
+
+Observação:
+O APK antigo foi removido do ZIP corrigido para evitar instalação de build desatualizada.

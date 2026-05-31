@@ -225,6 +225,7 @@ class B3NetworkServiceParserTest {
         assertTrue(bundle.dividendYearly.isNotEmpty())
         assertTrue(bundle.dividendYieldHistory.isNotEmpty())
         assertTrue(bundle.indicatorCards.any { it.label == "Preço Atual" && it.value == 10.0 })
+        println("Available indicator cards: ${bundle.indicatorCards.map { it.label to it.value }}")
         assertTrue(bundle.indicatorCards.any { it.label == "Cotistas" })
     }
 
@@ -317,6 +318,174 @@ class B3NetworkServiceParserTest {
         assertTrue(bundle.indicatorCards.any { it.label == "Dividend Yield" && it.value == 6.1 })
         assertTrue(bundle.indicatorCards.any { it.label == "ROE" && it.value == 18.5 })
         assertTrue(bundle.indicatorCards.any { it.label == "Margem Líquida" && it.value == 22.1 })
+    }
+
+
+
+    @Test
+    fun testProxyV211254LegacyCompatContractIsParsed() {
+        val jsonString = """
+            {
+                "status": "OK",
+                "ticker": "MXRF11",
+                "type": "FII",
+                "officialAppContractVersion": "21.12.54-total-apk-proxy-contract",
+                "appPayload": {
+                    "type": "FII",
+                    "quote": {"price": 9.87, "priceDisplay": "R$ 9,87", "dividendYield": 12.3},
+                    "metrics": {
+                        "canonical": {
+                            "precoAtual": {"value": 9.87, "display": "R$ 9,87"},
+                            "dividendYield": {"value": 12.3, "display": "12,30%"},
+                            "pvp": {"value": 0.97},
+                            "valorPatrimonialCota": {"value": 10.17}
+                        }
+                    }
+                },
+                "legacyAppCompat": {
+                    "mirroredRoots": ["results", "normalized"],
+                    "normalized": {
+                        "yield12m": {"value": 12.3},
+                        "vacanciaFisica": {"value": 0.0}
+                    },
+                    "results": {
+                        "financialSummary": {
+                            "patrimonioLiquido": {"value": 2500000000}
+                        },
+                        "indicadoresAvancados": {
+                            "p_vp": {"value": 0.97},
+                            "dividend_yield_last_12_months": {"value": 12.3}
+                        },
+                        "informacoesFundo": {
+                            "numeroCotistas": "1.000.000",
+                            "cotasEmitidas": "250.000.000",
+                            "segmento": "Papel",
+                            "tipoFundo": "Fundo de Papel"
+                        }
+                    }
+                }
+            }
+        """.trimIndent()
+
+        val bundle = B3NetworkService.parseAssetChartBundle("MXRF11", true, JSONObject(jsonString), emptyList())
+
+        assertEquals("FII", bundle.type)
+        assertTrue(bundle.indicatorCards.any { it.label == "Preço Atual" && it.value == 9.87 })
+        assertTrue(bundle.indicatorCards.any { it.label == "Dividend Yield" && it.value == 12.3 })
+        assertTrue(bundle.indicatorCards.any { it.label == "P/VP" && it.value == 0.97 })
+        assertTrue(bundle.indicatorCards.any { it.label == "VPA" && it.value == 10.17 })
+        assertTrue(bundle.indicatorCards.any { it.label == "Patrimônio Líquido" && it.value == 2500000000.0 })
+        assertTrue(bundle.indicatorCards.any { it.label == "Yield 12M" && it.value == 12.3 })
+        assertTrue(bundle.indicatorCards.any { it.label == "Cotistas" })
+        assertTrue(bundle.fiiDistribution12m.any { it.label == "Yield 12M" && it.value == 12.3 })
+        assertTrue(bundle.fiiAssetDistribution["Ativos"]?.any { it.name == "Fundo de Papel" || it.name == "Papel" } == true)
+    }
+
+    @Test
+    fun testRevenueBreakdownParsesHighchartsAndApexShapes() {
+        val jsonString = """
+            {
+                "status": "OK",
+                "ticker": "TEST3",
+                "results": {
+                    "revenueGeography": {
+                        "series": [
+                            {
+                                "name": "Faturamento por região",
+                                "data": [
+                                    {"name": "Brasil", "y": 79.5},
+                                    {"name": "Exterior", "y": 20.5}
+                                ]
+                            }
+                        ]
+                    },
+                    "revenueSegment": {
+                        "labels": ["Exploração e Produção", "Refino", "Gás e Energia"],
+                        "series": [56.0, 32.5, 11.5]
+                    }
+                }
+            }
+        """.trimIndent()
+
+        val bundle = B3NetworkService.parseAssetChartBundle("TEST3", false, JSONObject(jsonString), emptyList())
+
+        assertTrue(bundle.revenueByRegion["Atual"]?.any { it.name == "Brasil" && it.valuePercent == 79.5 } == true)
+        assertTrue(bundle.revenueByRegion["Atual"]?.any { it.name == "Exterior" && it.valuePercent == 20.5 } == true)
+        assertTrue(bundle.revenueByBusiness["Atual"]?.any { it.name == "Exploração e Produção" && it.valuePercent == 56.0 } == true)
+        assertTrue(bundle.revenueByBusiness["Atual"]?.any { it.name == "Refino" && it.valuePercent == 32.5 } == true)
+    }
+
+    @Test
+    fun testRevenueBreakdownPreservesYearMappedProxyShapes() {
+        val jsonString = """
+            {
+                "status": "OK",
+                "ticker": "TEST3",
+                "results": {
+                    "sections": {
+                        "empresa": {
+                            "regioesReceita": {
+                                "2023": {"Brasil": {"value": 80}, "Exterior": {"value": 20}},
+                                "2024": {"Brasil": {"value": 75}, "Exterior": {"value": 25}}
+                            },
+                            "negociosReceita": {
+                                "2024": [
+                                    {"name": "Varejo", "percent": "60%"},
+                                    {"name": "Atacado", "percent": "40%"}
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+        """.trimIndent()
+
+        val bundle = B3NetworkService.parseAssetChartBundle("TEST3", false, JSONObject(jsonString), emptyList())
+
+        assertTrue(bundle.revenueByRegion["2024"]?.any { it.name == "Brasil" && it.valuePercent == 75.0 } == true)
+        assertTrue(bundle.revenueByRegion["2024"]?.any { it.name == "Exterior" && it.valuePercent == 25.0 } == true)
+        assertTrue(bundle.revenueByBusiness["2024"]?.any { it.name == "Varejo" && it.valuePercent == 60.0 } == true)
+        assertTrue(bundle.revenueByBusiness["2024"]?.any { it.name == "Atacado" && it.valuePercent == 40.0 } == true)
+    }
+
+    @Test
+    fun testRevenueBreakdownParsesAppContractFieldValueShape() {
+        val jsonString = """
+            {
+                "status": "OK",
+                "ticker": "TEST3",
+                "assetClassContract": {
+                    "groups": {
+                        "statements": {
+                            "fields": {
+                                "regioesReceita": {
+                                    "value": {
+                                        "labels": ["Brasil", "América Latina"],
+                                        "data": [88, 12]
+                                    }
+                                },
+                                "negociosReceita": {
+                                    "value": {
+                                        "series": [
+                                            {"data": [
+                                                {"name": "Software", "y": 70},
+                                                {"name": "Serviços", "y": 30}
+                                            ]}
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        """.trimIndent()
+
+        val bundle = B3NetworkService.parseAssetChartBundle("TEST3", false, JSONObject(jsonString), emptyList())
+
+        assertTrue(bundle.revenueByRegion["Atual"]?.any { it.name == "Brasil" && it.valuePercent == 88.0 } == true)
+        assertTrue(bundle.revenueByBusiness["Atual"]?.any { it.name == "Software" && it.valuePercent == 70.0 } == true)
+        assertTrue(bundle.revenueByBusiness["Atual"]?.any { it.name == "Serviços" && it.valuePercent == 30.0 } == true)
     }
 
 }
