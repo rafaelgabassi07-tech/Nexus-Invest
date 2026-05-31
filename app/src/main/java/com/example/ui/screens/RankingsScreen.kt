@@ -115,7 +115,7 @@ fun RankingsScreen(
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Black,
                 letterSpacing = 1.sp,
-                modifier = Modifier.padding(horizontal = 6.dp, top = 2.dp)
+                modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 2.dp)
             )
         }
 
@@ -178,7 +178,7 @@ fun RankingsScreen(
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Black,
                     letterSpacing = 1.sp,
-                    modifier = Modifier.padding(horizontal = 6.dp, top = 4.dp)
+                    modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 4.dp)
                 )
             }
             item { ProxyActionPlanSection(analytics.analysis) }
