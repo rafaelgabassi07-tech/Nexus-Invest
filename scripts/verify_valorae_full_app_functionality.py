@@ -27,10 +27,10 @@ checks = {
     'Análise de ativo carrega bundle avançado e notícias sem bloquear UI': 'loadAssetChartBundle(clean, normalizedRange)' in vm and 'withTimeoutOrNull' in vm and 'async(Dispatchers.IO)' in vm and 'AssetChartBundlePanel(' in analysis,
     'Insights respeita existência da carteira para dividendos/IPCA': 'eligibleDividendAmount' in charts and 'sharesOwnedAtInsightDate' in charts and 'portfolioAgeMonthsForInsights' in charts and 'normalizePortfolioHistoryForAge' in vm,
     'Ferramentas técnicas Proxy+ foram removidas da navegação inferior': 'ProxyToolsScreen(' not in main and 'activePage == 5' not in main and 'activePage !in 0..4' in main,
-    'Notícias usam Proxy e TTL': '/api/v1/news' in service and 'NEWS_SOFT_TTL_MS' in vm and 'fetchGlobalNews(force = false)' in vm,
+    'Notícias usam serviço central e TTL': '/api/v1/news' in service and 'NEWS_SOFT_TTL_MS' in vm and 'fetchGlobalNews(force = false)' in vm,
     'Diagnóstico usa readiness/status/métricas/cache': all(x in service for x in ['/api/v1/ready', '/api/v1/source/status', '/api/server/metrics', 'proxy_diagnostics_summary']),
     'Sem scraping direto no app Android': all(x not in service for x in ['query1.finance.yahoo.com', 'news.google.com/rss', 'investidor10.com.br/acoes', 'statusinvest.com.br']) and 'return false' in service and 'Fallback direto desativado' in service,
-    'Configurações preserva diagnóstico, tema e ferramentas locais': 'Diagnóstico do Proxy' in settings and 'ThemePreferences' in settings and 'Exportar' in settings and 'importar' in settings,
+    'Configurações preserva diagnóstico, tema e ferramentas locais': 'Diagnóstico do VALORAE' in settings and 'ThemePreferences' in settings and 'Exportar' in settings and 'importar' in settings,
 }
 failed = [name for name, ok in checks.items() if not ok]
 for name, ok in checks.items():

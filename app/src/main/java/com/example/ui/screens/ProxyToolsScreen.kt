@@ -97,7 +97,7 @@ fun ProxyToolsScreen(
                     Triple("Raio-X", "Qualidade, cobertura, fontes e plano de ação por ativo.", Icons.Outlined.Info),
                     Triple("FIIs", "Renda, vacância, patrimônio, comunicados e checklist.", Icons.Outlined.AccountBalanceWallet),
                     Triple("Carteira", "Rebalanceamento, risco, renda, eventos e alocação.", Icons.Outlined.PieChart),
-                    Triple("Radar", "Watchlist e oportunidades analisadas pelo Proxy.", Icons.Outlined.QueryStats)
+                    Triple("Radar", "Watchlist e oportunidades analisadas pelo VALORAE.", Icons.Outlined.QueryStats)
                 )
             )
         }
@@ -148,7 +148,7 @@ fun ProxyToolsScreen(
                 }
             }
             if (caps.diagnosticsSections.isNotEmpty()) {
-                item { SectionGroupTitle("DIAGNÓSTICO AVANÇADO DO PROXY", Icons.Outlined.Info) }
+                item { SectionGroupTitle("DIAGNÓSTICO AVANÇADO DOS DADOS", Icons.Outlined.Info) }
                 items(caps.diagnosticsSections, key = { "diag-${it.endpoint}-${it.title}" }) { section ->
                     CapabilitySectionCard(section = section)
                 }
@@ -157,7 +157,7 @@ fun ProxyToolsScreen(
 
         if (!state.isLoading && state.assetCapabilities == null && state.portfolioCapabilities == null && state.error.isBlank()) {
             item {
-                ProxyNoticeCard("Adicione um ativo ou toque em Atualizar para consultar os módulos avançados suportados pelo VALORAE Proxy.")
+                ProxyNoticeCard("Adicione um ativo ou toque em Atualizar para consultar os módulos avançados disponíveis.")
             }
         }
     }
@@ -179,10 +179,10 @@ private fun ProxyToolsHeader(isLoading: Boolean, lastUpdated: Long, onRefresh: (
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Icon(Icons.Outlined.Info, contentDescription = null, tint = GoldPrimary, modifier = Modifier.size(22.dp))
-                    Text("Proxy+", color = TextPrimary, fontSize = 24.sp, fontWeight = FontWeight.Black)
+                    Text("Dados avançados", color = TextPrimary, fontSize = 24.sp, fontWeight = FontWeight.Black)
                 }
                 Text(
-                    "Recursos avançados que o VALORAE Proxy já oferece para transformar a carteira em uma central analítica.",
+                    "Recursos avançados para transformar a carteira em uma central analítica.",
                     color = TextSecondary,
                     fontSize = 12.sp,
                     lineHeight = 17.sp,
@@ -229,7 +229,7 @@ private fun TickerCapabilitySearch(
             )
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                 Button(onClick = onAnalyze, modifier = Modifier.weight(1f), shape = RoundedCornerShape(16.dp)) {
-                    Text("Consultar Proxy")
+                    Text("Consultar dados")
                 }
                 OutlinedButton(onClick = onOpenAsset, modifier = Modifier.weight(1f), shape = RoundedCornerShape(16.dp)) {
                     Text("Abrir ativo")

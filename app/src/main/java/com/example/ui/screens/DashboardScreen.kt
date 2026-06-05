@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Add
@@ -31,6 +32,8 @@ import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.automirrored.outlined.TrendingUp
 import androidx.compose.material.icons.automirrored.outlined.TrendingDown
 import androidx.compose.material.icons.outlined.SystemUpdate
+import androidx.compose.material.icons.outlined.WifiOff
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -80,25 +83,9 @@ fun DashboardScreen(
     analytics: PortfolioAnalyticsState = PortfolioAnalyticsState(),
     onOpenRankings: () -> Unit = {},
     onUpdateAvailable: () -> Unit = {},
+    onRefreshRankings: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    var showAddDialog by remember { mutableStateOf(false) }
-    var editingTransaction by remember { mutableStateOf<Transaction?>(null) }
-    var transactionToDelete by remember { mutableStateOf<Transaction?>(null) }
-    var activeTab by remember { mutableIntStateOf(0) } // 0: Ativos, 1: Transações
-    var selectedAssetForDetail by remember { mutableStateOf<AssetSummary?>(null) }
-    
-    val acoes = remember(assets) { assets.filter { it.type == "ACAO" } }
-    val fiis = remember(assets) { assets.filter { it.type != "ACAO" } }
-    
-    val transactionsByMonth = remember(transactions) {
-        val cal = java.util.Calendar.getInstance()
-        transactions.sortedByDescending { it.date }.groupBy {
-            cal.timeInMillis = it.date
-            "${cal.get(java.util.Calendar.MONTH) + 1}/${cal.get(java.util.Calendar.YEAR)}"
-        }
-    }
-
     Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -106,7 +93,7 @@ fun DashboardScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // Screen Header
-            item {
+            item(key = "dashboard_header") {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -127,42 +114,35 @@ fun DashboardScreen(
             }
 
             // 1. Portfolio Value Summary Widget
-            item {
+            item(key = "portfolio_header") {
                 PortfolioHeaderCard(summary, hideValues, onClick = onPortfolioClick)
-            }
-
-            item {
-                HomeMarketMoversPreview(
-                    ranking = analytics.liveMarketRanking,
-                    assetData = cachedAssetData,
-                    onOpenRankings = onOpenRankings
-                )
             }
 
             // 2. Diversification Ratio Widget
             if (summary.totalInvested > 0.0) {
-                item {
-                    val stockAssetsCount = assets.count { it.type == "ACAO" || it.type.uppercase() == "ACAO" }
-                    val fiiAssetsCount = assets.count { it.type == "FII" || it.type.uppercase() == "FII" }
-                    
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = true,
-                        enter = androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(durationMillis = 600))
-                    ) {
-                        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "COMPOSIÇÃO DA CARTEIRA",
-                                    color = GoldPrimary,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Black,
-                                    letterSpacing = 1.sp
-                                )
-                                
+                item(key = "portfolio_composition") {
+                    val assetClassCounts = remember(assets) {
+                        val stocks = assets.count { it.type.equals("ACAO", ignoreCase = true) }
+                        val fiis = assets.count { it.type.equals("FII", ignoreCase = true) }
+                        stocks to fiis
+                    }
+                    val stockAssetsCount = assetClassCounts.first
+                    val fiiAssetsCount = assetClassCounts.second
+
+                    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "COMPOSIÇÃO DA CARTEIRA",
+                                color = GoldPrimary,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Black,
+                                letterSpacing = 1.sp
+                            )
+
                             Text(
                                 text = "${stockAssetsCount + fiiAssetsCount} ativos",
                                 color = TextSecondary,
@@ -170,9 +150,9 @@ fun DashboardScreen(
                                 fontWeight = FontWeight.Bold
                             )
                         }
-                        
+
                         Spacer(modifier = Modifier.height(8.dp))
-                        
+
                         SegmentedAllocationBar(
                             stockValue = if (summary.totalCurrentValue > 0) summary.totalStocksCurrent else summary.totalStocksInvested,
                             fiiValue = if (summary.totalCurrentValue > 0) summary.totalFiisCurrent else summary.totalFiisInvested
@@ -180,248 +160,21 @@ fun DashboardScreen(
                     }
                 }
             }
-        }
 
-        // Tabs Selector: Holdings vs raw transactional logs
-        item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp)
-            ) {
-                    TabButton(
-                        text = "Meus Ativos (${assets.size})",
-                        selected = activeTab == 0,
-                        onClick = { activeTab = 0 },
-                        modifier = Modifier.weight(1f)
-                    )
-                    TabButton(
-                        text = "Histórico de Compras",
-                        selected = activeTab == 1,
-                        onClick = { activeTab = 1 },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-
-            if (activeTab == 0) {
-                if (assets.isEmpty()) {
-                    item {
-                        EmptyStateWidget(
-                            title = "Carteira Vazia",
-                            desc = "Adicione fundos imobiliários e ações clicando no botão flutuante abaixo para iniciar seu acompanhamento de proventos!"
-                        )
-                    }
-                } else {
-                    if (acoes.isNotEmpty()) {
-                        item { 
-                            Text("Ações", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp)) 
-                        }
-                        itemsIndexed(items = acoes, key = { _, asset -> asset.ticker }) { index, asset ->
-                            HoldingsListItem(
-                                asset = asset,
-                                hideValues = hideValues,
-                                onClick = {
-                                    val tickerKey = asset.ticker.trim().uppercase()
-                                    onLoadAssetChartBundle(tickerKey, chartRange.ifBlank { "1Y" })
-                                    selectedAssetForDetail = asset
-                                }
-                            )
-                            if (index < acoes.size - 1) {
-                                HorizontalDivider(
-                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.08f),
-                                    thickness = 1.dp,
-                                    modifier = Modifier.padding(horizontal = 16.dp)
-                                )
-                            }
-                        }
-                    }
-                    if (fiis.isNotEmpty()) {
-                        item { 
-                            Text("FIIs", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp)) 
-                        }
-                        itemsIndexed(items = fiis, key = { _, asset -> asset.ticker }) { index, asset ->
-                            HoldingsListItem(
-                                asset = asset,
-                                hideValues = hideValues,
-                                onClick = {
-                                    val tickerKey = asset.ticker.trim().uppercase()
-                                    onLoadAssetChartBundle(tickerKey, chartRange.ifBlank { "1Y" })
-                                    selectedAssetForDetail = asset
-                                }
-                            )
-                            if (index < fiis.size - 1) {
-                                HorizontalDivider(
-                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.08f),
-                                    thickness = 1.dp,
-                                    modifier = Modifier.padding(horizontal = 16.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-            } else {
-                if (transactions.isEmpty()) {
-                    item {
-                        EmptyStateWidget(
-                            title = "Nenhuma transação cadastrada",
-                            desc = "Seu histórico de compras e vendas ficará registrado aqui. Adicione uma transação utilizando o botão (+)."
-                        )
-                    }
-                } else {
-                    transactionsByMonth.forEach { (monthYear, monthTxs) ->
-                        item(key = "header_$monthYear") {
-                            val totalMonth = monthTxs.sumOf { it.quantity * it.purchasePrice }
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(monthYear, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                Text("Total: R$ ${String.format("%.2f", totalMonth)}", color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                        
-                        itemsIndexed(items = monthTxs, key = { _, tx -> tx.id }) { index, tx ->
-                            TransactionHistoryItem(
-                                tx = tx,
-                                onEdit = { editingTransaction = tx },
-                                onDelete = { transactionToDelete = tx }
-                            )
-                            if (index < monthTxs.size - 1) {
-                                HorizontalDivider(
-                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.08f),
-                                    thickness = 1.dp,
-                                    modifier = Modifier.padding(horizontal = 16.dp)
-                                )
-                            }
-                        }
-                        
-                        item(key = "spacer_$monthYear") {
-                            Spacer(modifier = Modifier.height(8.dp))
-                        }
-                    }
-                }
-            }
-            
-            // Add spacing so bottom content is not clipped by Fab / navigation bars
-            item {
-                Spacer(modifier = Modifier.height(24.dp))
-            }
-        }
-
-    // Floating Action Button with entry animation
-    var fabVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(300)
-        fabVisible = true
-    }
-
-    // Fixed alignment for Floating Action Button
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(bottom = 16.dp, end = 16.dp),
-        contentAlignment = Alignment.BottomEnd
-    ) {
-        androidx.compose.animation.AnimatedVisibility(
-            visible = fabVisible,
-            enter = androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(durationMillis = 600))
-        ) {
-            FloatingActionButton(
-                onClick = { showAddDialog = true },
-                containerColor = GoldPrimary,
-                contentColor = Color.Black,
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.testTag("add_asset_fab")
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Add,
-                    contentDescription = "Adicionar Ativo",
-                    modifier = Modifier.size(24.dp)
+            item(key = "home_market_movers") {
+                HomeMarketMoversPreview(
+                    ranking = analytics.liveMarketRanking,
+                    assetData = cachedAssetData,
+                    onOpenRankings = onOpenRankings,
+                    onAssetClick = onAssetClick,
+                    isLoading = analytics.isLoading,
+                    onRetry = onRefreshRankings
                 )
             }
-        }
-    }
-
-        // Add Transaction Dialog Modal
-        if (showAddDialog || editingTransaction != null) {
-            AddTransactionDialog(
-                transactionToEdit = editingTransaction,
-                onDismiss = {
-                    showAddDialog = false
-                    editingTransaction = null
-                },
-                onConfirm = { ticker, quantity, price, type, broker, sector, purchaseDate, notes, isSell ->
-                    val tx = editingTransaction
-                    if (tx != null) {
-                        onUpdateTransaction(tx.id, ticker, quantity, price, type, broker, sector, purchaseDate, notes, isSell)
-                        editingTransaction = null
-                    } else {
-                        onAddTransaction(ticker, quantity, price, type, broker, sector, purchaseDate, notes, isSell)
-                        showAddDialog = false
-                    }
-                }
-            )
-        }
-
-        // Asset Detail Modal
-        selectedAssetForDetail?.let { selectedAsset ->
-            val filteredTxs = remember(transactions, selectedAsset.ticker) {
-                transactions.filter { it.ticker.trim().uppercase() == selectedAsset.ticker.trim().uppercase() }
-            }
-            
-            // Check if user still holds this asset
-            val currentAsset = assets.find { it.ticker.trim().uppercase() == selectedAsset.ticker.trim().uppercase() }
-            if (currentAsset == null) {
-                // Asset was deleted or has 0 shares
-                selectedAssetForDetail = null
-            } else {
-                val tickerKey = currentAsset.ticker.trim().uppercase()
-                val cachedBundle = assetChartBundles[tickerKey]
-                AssetDetailModal(
-                    asset = currentAsset,
-                    initialAssetData = cachedAssetData[tickerKey],
-                    initialChartBundle = cachedBundle,
-                    isLoadingInitialChartBundle = isLoadingChartBundle && cachedBundle == null,
-                    onLoadChartBundle = { ticker, range -> onLoadAssetChartBundle(ticker, range) },
-                    chartPoints = cachedBundle?.priceHistory.orEmpty(),
-                    chartRange = chartRange,
-                    onRangeChange = onRangeChange,
-                    transactions = filteredTxs,
-                    onDeleteTransaction = { onDeleteTransaction(it) },
-                    onEditTransaction = { editingTransaction = it },
-                    isSearching = isSearchingChart,
-                    onDismiss = {
-                        selectedAssetForDetail = null
-                    }
-                )
-            }
-        }
-        
-        // Delete Confirmation Dialog
-        if (transactionToDelete != null) {
-            AlertDialog(
-                onDismissRequest = { transactionToDelete = null },
-                title = { Text("Excluir Transação") },
-                text = { Text("Tem certeza que deseja excluir esta transação? Esta ação não pode ser desfeita.") },
-                confirmButton = {
-                    TextButton(onClick = {
-                        transactionToDelete?.let { onDeleteTransaction(it) }
-                        transactionToDelete = null
-                    }) {
-                        Text("Excluir", color = DangerRed)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { transactionToDelete = null }) {
-                        Text("Cancelar")
-                    }
-                }
-            )
         }
     }
 }
+
 
 @Composable
 fun TabButton(
@@ -919,6 +672,7 @@ fun EmptyStateWidget(title: String, desc: String) {
 @Composable
 fun AddTransactionDialog(
     transactionToEdit: Transaction? = null,
+    cachedAssetData: Map<String, com.example.network.B3AssetData> = emptyMap(),
     onDismiss: () -> Unit,
     onConfirm: (String, Double, Double, String, String, String, Long?, String, Boolean) -> Unit
 ) {
@@ -935,7 +689,7 @@ fun AddTransactionDialog(
     var price by remember {
         mutableStateOf(
             transactionToEdit?.purchasePrice?.let {
-                String.format(java.util.Locale.US, "%.2f", it)
+                String.format(java.util.Locale("pt", "BR"), "%,.2f", it)
             } ?: ""
         )
     }
@@ -956,13 +710,10 @@ fun AddTransactionDialog(
     val qVal = quantity.replace(",", ".").toDoubleOrNull() ?: 0.0
     val pVal = price.let {
         if (it.contains(",") && it.contains(".")) {
-            // Likely periodic format like 1.234,56
             it.replace(".", "").replace(",", ".").toDoubleOrNull()
         } else if (it.contains(",")) {
-            // Likely 1234,56
             it.replace(",", ".").toDoubleOrNull()
         } else {
-            // Likely 1234.56 or 1234
             it.toDoubleOrNull()
         }
     } ?: 0.0
@@ -979,345 +730,528 @@ fun AddTransactionDialog(
 
     var expandedType by remember { mutableStateOf(false) }
 
+    // Auto lookup and auto-fill price from proxy cache
+    LaunchedEffect(ticker) {
+        val upperTicker = ticker.trim().uppercase()
+        val asset = cachedAssetData[upperTicker]
+        if (asset != null) {
+            type = if (asset.isFii) "FII" else "ACAO"
+            if ((price.isBlank() || price == "0,00" || price == "0.00") && asset.price > 0.0) {
+                price = String.format(java.util.Locale("pt", "BR"), "%,.2f", asset.price)
+            }
+        }
+    }
+
+    val matchedAsset = remember(ticker, cachedAssetData) {
+        cachedAssetData[ticker.trim().uppercase()]
+    }
+
     androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismiss,
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        Surface(
+        Box(
             modifier = Modifier
-                .fillMaxSize(),
-            color = MaterialTheme.colorScheme.background // Solid background for full-screen like behavior or use white-ish
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.55f))
+                .clickable(onClick = onDismiss),
+            contentAlignment = Alignment.Center
         ) {
-            Column(
+            Surface(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .fillMaxWidth(0.92f)
+                    .widthIn(max = 480.dp)
+                    .clickable(enabled = false) {} // Prevent close on card clicking
                     .imePadding()
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                    .animateContentSize(),
+                color = DarkSurfaceElevated,
+                shape = RoundedCornerShape(22.dp),
+                border = BorderStroke(1.dp, Color(0xFF2C2C2C))
             ) {
-                // Header Row
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp, top = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                Column(
+                    modifier = Modifier
+                        .verticalScroll(rememberScrollState())
+                        .padding(20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Voltar", tint = TextPrimary)
-                    }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        text = if (transactionToEdit != null) "Editar Transação" else "Nova Transação",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Black,
-                        color = TextPrimary
-                    )
-                }
-                
-                // Compra/Venda Segmented Control (Investidor10 style)
-                Surface(
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, BorderColor.copy(alpha = 0.08f))
-                ) {
-                    Row(modifier = Modifier.padding(6.dp)) {
-                        // Compra
-                        Surface(
-                            modifier = Modifier.weight(1f).fillMaxHeight()
-                                .clip(RoundedCornerShape(12.dp))
-                                .clickable { isSell = false },
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (!isSell) SuccessGreen else Color.Transparent,
-                            tonalElevation = if (!isSell) 4.dp else 0.dp
-                        ) {
-                            Row(
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Outlined.TrendingUp,
-                                    contentDescription = null,
-                                    tint = if (!isSell) Color.White else SuccessGreen,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "Compra",
-                                    color = if (!isSell) Color.White else MaterialTheme.colorScheme.onSurface,
-                                    fontSize = 14.sp,
-                                    fontWeight = if (!isSell) FontWeight.Black else FontWeight.Medium
-                                )
-                            }
-                        }
-                        
-                        // Venda
-                        Surface(
-                            modifier = Modifier.weight(1f).fillMaxHeight()
-                                .clip(RoundedCornerShape(12.dp))
-                                .clickable { isSell = true },
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (isSell) DangerRed else Color.Transparent,
-                            tonalElevation = if (isSell) 4.dp else 0.dp
-                        ) {
-                            Row(
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Outlined.TrendingDown,
-                                    contentDescription = null,
-                                    tint = if (isSell) Color.White else DangerRed,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "Venda",
-                                    color = if (isSell) Color.White else MaterialTheme.colorScheme.onSurface,
-                                    fontSize = 14.sp,
-                                    fontWeight = if (isSell) FontWeight.Black else FontWeight.Medium
-                                )
-                            }
-                        }
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // Tipo de Ativo
-                Column(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
-                    Text("Tipo de ativo", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, modifier = Modifier.padding(bottom = 8.dp))
-                    ExposedDropdownMenuBox(
-                        expanded = expandedType,
-                        onExpandedChange = { expandedType = it }
+                    // Header Row
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        OutlinedTextField(
-                            value = if (type == "ACAO") "Ações" else "Fundos Imobiliários",
-                            onValueChange = {},
-                            readOnly = true,
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedType) },
-                            modifier = Modifier.fillMaxWidth().menuAnchor(type = MenuAnchorType.PrimaryNotEditable, enabled = true),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                                focusedBorderColor = MaterialTheme.colorScheme.primary
-                            ),
-                            shape = RoundedCornerShape(12.dp)
+                        Text(
+                            text = if (transactionToEdit != null) "Editar Transação" else "Nova Transação",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Black,
+                            color = TextPrimary
                         )
-                        ExposedDropdownMenu(
-                            expanded = expandedType,
-                            onDismissRequest = { expandedType = false }
+                        IconButton(
+                            onClick = onDismiss,
+                            modifier = Modifier
+                                .size(30.dp)
+                                .background(Color.White.copy(alpha = 0.04f), CircleShape)
                         ) {
-                            DropdownMenuItem(
-                                text = { Text("Ações") },
-                                onClick = { type = "ACAO"; expandedType = false }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Fundos Imobiliários") },
-                                onClick = { type = "FII"; expandedType = false }
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Fechar",
+                                tint = TextSecondary,
+                                modifier = Modifier.size(16.dp)
                             )
                         }
                     }
-                }
-                
-                // Ativo
-                Column(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-                    Text("Ativo", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, modifier = Modifier.padding(bottom = 4.dp))
-                    OutlinedTextField(
-                        value = ticker,
-                        onValueChange = { 
-                            val newTicker = it.trim().uppercase()
-                            ticker = newTicker
-                            if (newTicker.length >= 5 && newTicker.last().isDigit()) {
-                                type = if (B3NetworkService.inferIsFii(newTicker)) "FII" else "ACAO"
+                    
+                    // Compra/Venda Segmented Pill Control
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFF141414),
+                        border = BorderStroke(1.dp, Color(0xFF222222))
+                    ) {
+                        Row(modifier = Modifier.padding(4.dp)) {
+                            // Compra
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { isSell = false },
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (!isSell) SuccessGreen.copy(alpha = 0.15f) else Color.Transparent,
+                                border = BorderStroke(1.dp, if (!isSell) SuccessGreen.copy(alpha = 0.4f) else Color.Transparent)
+                            ) {
+                                Row(
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Outlined.TrendingUp,
+                                        contentDescription = null,
+                                        tint = if (!isSell) SuccessGreen else TextSecondary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Compra",
+                                        color = if (!isSell) SuccessGreen else TextSecondary,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
-                        },
-                        placeholder = { Text("Ex: PETR4, MXRF11") },
-                        modifier = Modifier.fillMaxWidth(),
-                        keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Next),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                            focusedBorderColor = MaterialTheme.colorScheme.primary
-                        ),
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                }
-
-                // Row: Data de Compra | Quantidade
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(if (isSell) "Data de Venda" else "Data de Compra", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, modifier = Modifier.padding(bottom = 4.dp))
+                            
+                            // Venda
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { isSell = true },
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isSell) DangerRed.copy(alpha = 0.15f) else Color.Transparent,
+                                border = BorderStroke(1.dp, if (isSell) DangerRed.copy(alpha = 0.4f) else Color.Transparent)
+                            ) {
+                                Row(
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Outlined.TrendingDown,
+                                        contentDescription = null,
+                                        tint = if (isSell) DangerRed else TextSecondary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Venda",
+                                        color = if (isSell) DangerRed else TextSecondary,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(14.dp))
+                    
+                    // Tipo de Ativo Selector
+                    Column(modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
+                        Text(
+                            "TIPO DE ATIVO",
+                            color = GoldPrimary,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.5.sp,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+                        ExposedDropdownMenuBox(
+                            expanded = expandedType,
+                            onExpandedChange = { expandedType = it }
+                        ) {
+                            OutlinedTextField(
+                                value = if (type == "ACAO") "Ações (Renda Variável)" else "Fundos de Investimento Imobiliário (FII)",
+                                onValueChange = {},
+                                readOnly = true,
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedType) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor(type = MenuAnchorType.PrimaryNotEditable, enabled = true),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    unfocusedBorderColor = Color(0xFF262626),
+                                    focusedBorderColor = GoldPrimary,
+                                    unfocusedTextColor = Color.White,
+                                    focusedTextColor = Color.White
+                                ),
+                                textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                            ExposedDropdownMenu(
+                                expanded = expandedType,
+                                onDismissRequest = { expandedType = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Ações (B3)", fontSize = 13.sp) },
+                                    onClick = { type = "ACAO"; expandedType = false }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Fundos Imobiliários (FII)", fontSize = 13.sp) },
+                                    onClick = { type = "FII"; expandedType = false }
+                                )
+                            }
+                        }
+                    }
+                    
+                    // Ativo
+                    Column(modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
+                        Text(
+                            "TICKER DO ATIVO",
+                            color = GoldPrimary,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.5.sp,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
                         OutlinedTextField(
-                            value = dateStr,
-                            onValueChange = { dateStr = it },
+                            value = ticker,
+                            onValueChange = { 
+                                val newTicker = it.trim().uppercase()
+                                ticker = newTicker
+                                if (newTicker.length >= 5 && newTicker.last().isDigit()) {
+                                    type = if (B3NetworkService.inferIsFii(newTicker)) "FII" else "ACAO"
+                                }
+                            },
+                            placeholder = { Text("Ex: PETR4, MXRF11", color = TextSecondary, fontSize = 13.sp) },
                             modifier = Modifier.fillMaxWidth(),
                             keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Next),
-                            trailingIcon = {
-                                IconButton(onClick = { showDatePicker = true }) {
-                                    Icon(Icons.Outlined.Edit, "Selecionar Data")
+                            colors = OutlinedTextFieldDefaults.colors(
+                                unfocusedBorderColor = Color(0xFF262626),
+                                focusedBorderColor = GoldPrimary,
+                                unfocusedTextColor = Color.White,
+                                focusedTextColor = Color.White
+                            ),
+                            textStyle = LocalTextStyle.current.copy(fontSize = 13.sp, fontWeight = FontWeight.Bold),
+                            singleLine = true,
+                            shape = RoundedCornerShape(10.dp)
+                        )
+                    }
+
+                    // Live Metadata Preview Card (Satisfies accurate Proxy requirements)
+                    if (matchedAsset != null) {
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 14.dp),
+                            color = GoldPrimary.copy(alpha = 0.08f),
+                            border = BorderStroke(1.dp, GoldPrimary.copy(alpha = 0.15f)),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(getTickerBrandColor(matchedAsset.ticker)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = matchedAsset.ticker.take(2).uppercase(),
+                                        color = Color.White,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
                                 }
-                            },
-                            colors = OutlinedTextFieldDefaults.colors(
-                                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                                focusedBorderColor = MaterialTheme.colorScheme.primary
-                            ),
-                            singleLine = true,
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                    }
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Quantidade", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, modifier = Modifier.padding(bottom = 4.dp))
-                        OutlinedTextField(
-                            value = quantity,
-                            onValueChange = { quantity = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = androidx.compose.ui.text.input.ImeAction.Next),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                                focusedBorderColor = MaterialTheme.colorScheme.primary
-                            ),
-                            singleLine = true,
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                    }
-                }
-                
-                // Row: Preço | Outros custos
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Preço em R$", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, modifier = Modifier.padding(bottom = 4.dp))
-                        OutlinedTextField(
-                            value = price,
-                            onValueChange = { raw -> 
-                                val cleanString = raw.filter { it.isDigit() }
-                                if (cleanString.isNotEmpty()) {
-                                    val parsed = cleanString.toDouble() / 100
-                                    price = String.format(java.util.Locale("pt", "BR"), "%,.2f", parsed)
-                                } else {
-                                    price = ""
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = matchedAsset.name.ifBlank { "Ativo Validado pela B3" },
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(modifier = Modifier.height(1.dp))
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text(
+                                            text = "Preço Real: R$ ${String.format(java.util.Locale("pt", "BR"), "%.2f", matchedAsset.price)}",
+                                            color = TextSecondary,
+                                            fontSize = 9.sp
+                                        )
+                                        if (matchedAsset.changePercent != 0.0) {
+                                            val isUp = matchedAsset.changePercent > 0.0
+                                            Text(
+                                                text = "${if (isUp) "+" else ""}${String.format("%.2f", matchedAsset.changePercent)}%",
+                                                color = if (isUp) SuccessGreen else DangerRed,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
                                 }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = androidx.compose.ui.text.input.ImeAction.Next),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                                focusedBorderColor = MaterialTheme.colorScheme.primary
-                            ),
-                            singleLine = true,
-                            shape = RoundedCornerShape(12.dp)
-                        )
+                            }
+                        }
                     }
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Outros custos", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, modifier = Modifier.padding(bottom = 4.dp))
-                        OutlinedTextField(
-                            value = otherCosts,
-                            onValueChange = { raw -> 
-                                val cleanString = raw.filter { it.isDigit() }
-                                if (cleanString.isNotEmpty()) {
-                                    val parsed = cleanString.toDouble() / 100
-                                    otherCosts = String.format(java.util.Locale("pt", "BR"), "%,.2f", parsed)
-                                } else {
-                                    otherCosts = ""
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = androidx.compose.ui.text.input.ImeAction.Done),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                                focusedBorderColor = MaterialTheme.colorScheme.primary
-                            ),
-                            singleLine = true,
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                    }
-                }
-                
-                // Valor total box
-                Surface(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
+
+                    // Row: Data de Compra | Quantidade
                     Row(
-                        modifier = Modifier.padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Text("Valor total", color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                        Text("R$ ${String.format(java.util.Locale.Builder().setLanguage("pt").setRegion("BR").build(), "%,.2f", valorTotal)}", color = MaterialTheme.colorScheme.onSurface, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                errorMsg?.let { message ->
-                    Text(
-                        text = message,
-                        color = DangerRed,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    )
-                }
-                
-                Spacer(modifier = Modifier.height(28.dp))
-                
-                // Add Button
-                Button(
-                    onClick = {
-                        val sanitizedTicker = ticker.trim().uppercase()
-                        val unitPriceVal = if (qVal > 0) (qVal * pVal + cVal) / qVal else pVal
-                        
-                        val sdf = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.getDefault()).apply {
-                            isLenient = false
-                        }
-                        val dateVal = try {
-                            sdf.parse(dateStr.trim())?.time
-                        } catch (e: Exception) {
-                            null
-                        }
-
-                        if (sanitizedTicker.isEmpty() || sanitizedTicker.length < 4) {
-                            errorMsg = "Ticker inválido (ex: PETR4, MXRF11)"
-                        } else if (dateVal == null) {
-                            errorMsg = "Data inválida (formato DD/MM/AAAA)"
-                        } else if (qVal <= 0.0) {
-                            errorMsg = "Quantidade inválida (deve ser > 0)"
-                        } else if (pVal <= 0.0 && cVal <= 0.0) {
-                            errorMsg = "Preço unitário inválido (deve ser > 0)"
-                        } else {
-                            onConfirm(
-                                sanitizedTicker,
-                                qVal,
-                                unitPriceVal,
-                                type,
-                                transactionToEdit?.broker ?: "",
-                                transactionToEdit?.sector ?: "",
-                                dateVal,
-                                transactionToEdit?.notes ?: "",
-                                isSell
+                        Column(modifier = Modifier.weight(1.2f)) {
+                            Text(
+                                if (isSell) "DATA DE VENDA" else "DATA DE COMPRA",
+                                color = GoldPrimary,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.5.sp,
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            )
+                            OutlinedTextField(
+                                value = dateStr,
+                                onValueChange = { dateStr = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
+                                keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Next),
+                                trailingIcon = {
+                                    IconButton(onClick = { showDatePicker = true }, modifier = Modifier.size(24.dp)) {
+                                        Icon(Icons.Outlined.Edit, "Selecionar Data", tint = GoldPrimary, modifier = Modifier.size(16.dp))
+                                    }
+                                },
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    unfocusedBorderColor = Color(0xFF262626),
+                                    focusedBorderColor = GoldPrimary,
+                                    unfocusedTextColor = Color.White,
+                                    focusedTextColor = Color.White
+                                ),
+                                singleLine = true,
+                                shape = RoundedCornerShape(10.dp)
                             )
                         }
-                    },
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF232323), // Dark color from design
-                        contentColor = Color.White
-                    )
-                ) {
-                    Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = if (transactionToEdit != null) "Salvar alterações" else "Adicionar ativo",
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 16.sp
-                    )
+                        Column(modifier = Modifier.weight(0.8f)) {
+                            Text(
+                                "QUANTIDADE",
+                                color = GoldPrimary,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.5.sp,
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            )
+                            OutlinedTextField(
+                                value = quantity,
+                                onValueChange = { quantity = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                textStyle = LocalTextStyle.current.copy(fontSize = 13.sp, fontWeight = FontWeight.Bold),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = androidx.compose.ui.text.input.ImeAction.Next),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    unfocusedBorderColor = Color(0xFF262626),
+                                    focusedBorderColor = GoldPrimary,
+                                    unfocusedTextColor = Color.White,
+                                    focusedTextColor = Color.White
+                                ),
+                                singleLine = true,
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                        }
+                    }
+                    
+                    // Row: Preço | Outros custos
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "PREÇO UNITÁRIO R$",
+                                color = GoldPrimary,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.5.sp,
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            )
+                            OutlinedTextField(
+                                value = price,
+                                onValueChange = { raw -> 
+                                    val cleanString = raw.filter { it.isDigit() }
+                                    if (cleanString.isNotEmpty()) {
+                                        val parsed = cleanString.toDouble() / 100
+                                        price = String.format(java.util.Locale("pt", "BR"), "%,.2f", parsed)
+                                    } else {
+                                        price = ""
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                textStyle = LocalTextStyle.current.copy(fontSize = 13.sp, fontWeight = FontWeight.Bold),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = androidx.compose.ui.text.input.ImeAction.Next),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    unfocusedBorderColor = Color(0xFF262626),
+                                    focusedBorderColor = GoldPrimary,
+                                    unfocusedTextColor = Color.White,
+                                    focusedTextColor = Color.White
+                                ),
+                                singleLine = true,
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "DEPESAS / TAXAS",
+                                color = GoldPrimary,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.5.sp,
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            )
+                            OutlinedTextField(
+                                value = otherCosts,
+                                onValueChange = { raw -> 
+                                    val cleanString = raw.filter { it.isDigit() }
+                                    if (cleanString.isNotEmpty()) {
+                                        val parsed = cleanString.toDouble() / 100
+                                        otherCosts = String.format(java.util.Locale("pt", "BR"), "%,.2f", parsed)
+                                    } else {
+                                        otherCosts = ""
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    unfocusedBorderColor = Color(0xFF262626),
+                                    focusedBorderColor = GoldPrimary,
+                                    unfocusedTextColor = Color.White,
+                                    focusedTextColor = Color.White
+                                ),
+                                singleLine = true,
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                        }
+                    }
+                    
+                    // Valor total box
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 14.dp),
+                        color = Color(0xFF141414),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, Color(0xFF1F1F1F))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "Valor total líquido",
+                                color = TextSecondary,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                "R$ ${String.format(java.util.Locale("pt", "BR"), "%,.2f", valorTotal)}",
+                                color = GoldPrimary,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                        }
+                    }
+
+                    errorMsg?.let { message ->
+                        Text(
+                            text = message,
+                            color = DangerRed,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(bottom = 12.dp)
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(10.dp))
+                    
+                    // Confirm Button
+                    Button(
+                        onClick = {
+                            val sanitizedTicker = ticker.trim().uppercase()
+                            val unitPriceVal = if (qVal > 0) (qVal * pVal + cVal) / qVal else pVal
+                            
+                            val sdf = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.getDefault()).apply {
+                                isLenient = false
+                            }
+                            val dateVal = try {
+                                sdf.parse(dateStr.trim())?.time
+                            } catch (e: Exception) {
+                                null
+                            }
+
+                            if (sanitizedTicker.isEmpty() || sanitizedTicker.length < 4) {
+                                errorMsg = "Ativo inválido (ex: PETR4, MXRF11)"
+                            } else if (dateVal == null) {
+                                errorMsg = "Data inválida (formato DD/MM/AAAA)"
+                            } else if (qVal <= 0.0) {
+                                errorMsg = "Insira uma quantidade maior que zero"
+                            } else if (pVal <= 0.0 && cVal <= 0.0) {
+                                errorMsg = "Preço unitário ou despesas inválidos"
+                            } else {
+                                onConfirm(
+                                    sanitizedTicker,
+                                    qVal,
+                                    unitPriceVal,
+                                    type,
+                                    transactionToEdit?.broker ?: "",
+                                    transactionToEdit?.sector ?: "",
+                                    dateVal,
+                                    transactionToEdit?.notes ?: "",
+                                    isSell
+                                )
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = GoldPrimary,
+                            contentColor = Color.Black
+                        )
+                    ) {
+                        Text(
+                            text = if (transactionToEdit != null) "Salvar Alterações" else "Confirmar Transação",
+                            fontWeight = FontWeight.Black,
+                            fontSize = 14.sp
+                        )
+                    }
                 }
-                Spacer(modifier = Modifier.height(16.dp))
             }
             
             if (showDatePicker) {
@@ -1347,6 +1281,545 @@ fun AddTransactionDialog(
                     }
                 ) {
                     DatePicker(state = datePickerState)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DoubleChevronIcon(isUp: Boolean, color: Color, modifier: Modifier = Modifier) {
+    androidx.compose.foundation.Canvas(modifier = modifier) {
+        val width = size.width
+        val height = size.height
+        val strokeWidth = 2.dp.toPx()
+        
+        val spacing = height * 0.22f 
+        val yOffset = if (isUp) height * 0.12f else -height * 0.12f
+        
+        val path1 = androidx.compose.ui.graphics.Path()
+        val path2 = androidx.compose.ui.graphics.Path()
+        
+        if (isUp) {
+            path1.moveTo(0f, height * 0.38f + yOffset)
+            path1.lineTo(width / 2f, height * 0.12f + yOffset)
+            path1.lineTo(width, height * 0.38f + yOffset)
+            
+            path2.moveTo(0f, height * 0.38f + yOffset + spacing)
+            path2.lineTo(width / 2f, height * 0.12f + yOffset + spacing)
+            path2.lineTo(width, height * 0.38f + yOffset + spacing)
+        } else {
+            path1.moveTo(0f, height * 0.12f + yOffset)
+            path1.lineTo(width / 2f, height * 0.38f + yOffset)
+            path1.lineTo(width, height * 0.12f + yOffset)
+            
+            path2.moveTo(0f, height * 0.12f + yOffset + spacing)
+            path2.lineTo(width / 2f, height * 0.38f + yOffset + spacing)
+            path2.lineTo(width, height * 0.12f + yOffset + spacing)
+        }
+        
+        drawPath(
+            path = path1,
+            color = color,
+            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = strokeWidth,
+                cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                join = androidx.compose.ui.graphics.StrokeJoin.Round
+            )
+        )
+        drawPath(
+            path = path2,
+            color = color,
+            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = strokeWidth,
+                cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                join = androidx.compose.ui.graphics.StrokeJoin.Round
+            )
+        )
+    }
+}
+
+fun getTickerBrandColor(ticker: String): Color {
+    val prefix = ticker.trim().uppercase()
+    return when {
+        prefix.startsWith("AMAR") -> Color(0xFFE02B89)
+        prefix.startsWith("CGAS") -> Color(0xFF1E3A8A)
+        prefix.startsWith("ONCO") -> Color(0xFF00B4D8)
+        prefix.startsWith("SIMH") -> Color(0xFFE63946)
+        prefix.startsWith("PCAR") -> Color(0xFF005DA5)
+        prefix.startsWith("AURE") -> Color(0xFFE02B89)
+        prefix.startsWith("CSMG") -> Color(0xFF3B82F6)
+        prefix.startsWith("CSED") -> Color(0xFF1E3A8A)
+        prefix.startsWith("VVEO") -> Color(0xFF10B981)
+        prefix.startsWith("ARML") -> Color(0xFF1E5BB8)
+        prefix.startsWith("EQTL") -> Color(0xFF0C1D7F)
+        prefix.startsWith("VIVA") -> Color(0xFFF3965D)
+        else -> {
+            val colors = listOf(
+                Color(0xFF6366F1), Color(0xFF8B5CF6), Color(0xFFEC4899),
+                Color(0xFFF43F5E), Color(0xFF10B981), Color(0xFF3B82F6),
+                Color(0xFFF59E0B), Color(0xFF06B6D4)
+            )
+            val hash = kotlin.math.abs(prefix.hashCode())
+            colors[hash % colors.size]
+        }
+    }
+}
+
+@Composable
+fun MarketMoversSkeleton() {
+    val infiniteTransition = rememberInfiniteTransition(label = "shimmer")
+    val alpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 0.7f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "alpha"
+    )
+
+    Surface(
+        color = DarkSurfaceElevated,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 6.dp, vertical = 4.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .size(14.dp)
+                            .clip(CircleShape)
+                            .background(GoldPrimary.copy(alpha = alpha))
+                    )
+                    Box(
+                        modifier = Modifier
+                            .width(110.dp)
+                            .height(14.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color.White.copy(alpha = alpha * 0.3f))
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .width(60.dp)
+                        .height(18.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color.White.copy(alpha = alpha * 0.2f))
+                )
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                repeat(4) { i ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(26.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color.White.copy(alpha = alpha * 0.15f))
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Box(
+                                modifier = Modifier
+                                    .width(60.dp)
+                                    .height(12.dp)
+                                    .clip(RoundedCornerShape(3.dp))
+                                    .background(Color.White.copy(alpha = alpha * 0.25f))
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .width(100.dp)
+                                    .height(8.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(Color.White.copy(alpha = alpha * 0.15f))
+                            )
+                        }
+                        Spacer(modifier = Modifier.weight(1f))
+                        Box(
+                            modifier = Modifier
+                                .width(50.dp)
+                                .height(12.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(Color.White.copy(alpha = alpha * 0.2f))
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Box(
+                            modifier = Modifier
+                                .width(45.dp)
+                                .height(12.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(Color.White.copy(alpha = alpha * 0.2f))
+                        )
+                    }
+                    if ( i < 3) {
+                        HorizontalDivider(
+                            color = Color(0xFF1F1F1F),
+                            thickness = 0.5.dp,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun MarketMoversErrorCard(onRetry: () -> Unit) {
+    Surface(
+        color = DarkSurfaceElevated,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 6.dp, vertical = 4.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.WifiOff,
+                contentDescription = null,
+                tint = GoldPrimary.copy(alpha = 0.6f),
+                modifier = Modifier.size(36.dp)
+            )
+            
+            Text(
+                text = "Não foi possível carregar os rankings",
+                color = Color.White,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
+            
+            Text(
+                text = "Dificuldade temporária na conexão do serviço. Verifique sua rede.",
+                color = TextSecondary,
+                fontSize = 11.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 8.dp)
+            )
+
+            Button(
+                onClick = onRetry,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = GoldPrimary,
+                    contentColor = Color.Black
+                ),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.height(34.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Refresh,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "Tentar Novamente",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
+private fun homeMarketMoverAsset(
+    assetData: Map<String, B3AssetData>,
+    ticker: String
+): B3AssetData? {
+    val key = ticker.trim().uppercase(java.util.Locale.ROOT)
+    if (key.isBlank()) return null
+    return assetData[key] ?: assetData.entries.firstOrNull { it.key.equals(key, ignoreCase = true) }?.value
+}
+
+private fun homeMarketMoverPriceText(
+    item: com.example.network.MarketRankingItem,
+    asset: B3AssetData?
+): String {
+    val itemText = item.priceDisplay.ifBlank {
+        if (item.price > 0.0 && item.price.isFinite()) {
+            String.format(java.util.Locale("pt", "BR"), "R$ %.2f", item.price)
+        } else ""
+    }
+    if (itemText.isNotBlank()) return itemText
+    val assetPrice = asset?.price ?: 0.0
+    return if (assetPrice > 0.0 && assetPrice.isFinite()) {
+        String.format(java.util.Locale("pt", "BR"), "R$ %.2f", assetPrice)
+    } else "—"
+}
+
+private fun homeMarketMoverChangeMagnitude(
+    item: com.example.network.MarketRankingItem,
+    asset: B3AssetData?
+): Double {
+    val candidates = listOf(item.changePercent, item.value, asset?.changePercent ?: 0.0)
+    return candidates.firstOrNull { it != 0.0 && it.isFinite() }?.let { kotlin.math.abs(it) } ?: 0.0
+}
+
+private fun homeMarketMoverChangeText(
+    item: com.example.network.MarketRankingItem,
+    asset: B3AssetData?,
+    isPositive: Boolean
+): String {
+    val arrow = if (isPositive) "▲" else "▼"
+    val display = item.changeDisplay.ifBlank {
+        if (item.displayValue.contains("%")) item.displayValue else ""
+    }.trim().replace("+", "").replace("-", "")
+    if (display.isNotBlank()) return "$arrow $display"
+    val magnitude = homeMarketMoverChangeMagnitude(item, asset)
+    return if (magnitude > 0.0) {
+        "$arrow ${String.format(java.util.Locale("pt", "BR"), "%.2f%%", magnitude)}"
+    } else {
+        "$arrow —"
+    }
+}
+
+@Composable
+fun HomeMarketMoversPreview(
+    ranking: com.example.network.MarketRankingSnapshot?,
+    assetData: Map<String, B3AssetData>,
+    onOpenRankings: () -> Unit,
+    onAssetClick: (String) -> Unit,
+    isLoading: Boolean = false,
+    onRetry: () -> Unit = {}
+) {
+    val highs = ranking?.highs.orEmpty().filter { it.ticker.isNotBlank() }.take(6)
+    val lows = ranking?.lows.orEmpty().filter { it.ticker.isNotBlank() }.take(6)
+
+    if (ranking == null || (highs.isEmpty() && lows.isEmpty())) {
+        if (isLoading) {
+            MarketMoversSkeleton()
+        } else {
+            MarketMoversErrorCard(onRetry = onRetry)
+        }
+        return
+    }
+
+    var activePage by remember(highs.size, lows.size) { mutableStateOf(if (highs.isNotEmpty()) 0 else 1) }
+    LaunchedEffect(highs.size, lows.size) {
+        if (activePage == 0 && highs.isEmpty() && lows.isNotEmpty()) activePage = 1
+        if (activePage == 1 && lows.isEmpty() && highs.isNotEmpty()) activePage = 0
+    }
+
+    val currentItems = if (activePage == 0) highs else lows
+    val isPositive = activePage == 0
+    val title = if (isPositive) "Maiores Altas" else "Maiores Baixas"
+    val accentColor = if (isPositive) SuccessGreen else DangerRed
+    val sourceLabel = ranking.source.ifBlank { "Serviço de dados VALORAE" }
+
+    Surface(
+        color = DarkSurfaceElevated,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 6.dp, vertical = 4.dp)
+            .testTag("home_market_movers_card")
+    ) {
+        Column(
+            modifier = Modifier.padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    DoubleChevronIcon(
+                        isUp = isPositive,
+                        color = accentColor,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                        Text(
+                            text = title,
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = sourceLabel.take(42),
+                            color = TextSecondary,
+                            fontSize = 9.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        onClick = { if (highs.isNotEmpty()) activePage = 0 },
+                        color = if (activePage == 0) SuccessGreen.copy(alpha = 0.12f) else Color.Transparent,
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, if (activePage == 0) SuccessGreen.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.05f))
+                    ) {
+                        Text(
+                            text = "ALTAS ${highs.size}",
+                            color = if (highs.isNotEmpty()) { if (activePage == 0) SuccessGreen else TextSecondary } else TextSecondary.copy(alpha = 0.45f),
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
+                    Surface(
+                        onClick = { if (lows.isNotEmpty()) activePage = 1 },
+                        color = if (activePage == 1) DangerRed.copy(alpha = 0.12f) else Color.Transparent,
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, if (activePage == 1) DangerRed.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.05f))
+                    ) {
+                        Text(
+                            text = "BAIXAS ${lows.size}",
+                            color = if (lows.isNotEmpty()) { if (activePage == 1) DangerRed else TextSecondary } else TextSecondary.copy(alpha = 0.45f),
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
+                }
+            }
+
+            if (currentItems.isEmpty()) {
+                Text(
+                    text = if (isPositive) "Sem maiores altas disponíveis agora." else "Sem maiores baixas disponíveis agora.",
+                    color = TextSecondary,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(vertical = 10.dp)
+                )
+            } else {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    currentItems.forEachIndexed { index, item ->
+                        val asset = homeMarketMoverAsset(assetData, item.ticker)
+                        val name = item.name.ifBlank { asset?.name.orEmpty() }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(6.dp))
+                                .clickable { onAssetClick(item.ticker) }
+                                .padding(vertical = 6.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val monogram = item.ticker.trim().take(2).uppercase()
+                            Box(
+                                modifier = Modifier
+                                    .size(26.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(getTickerBrandColor(item.ticker)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = monogram,
+                                    color = Color.White,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = item.ticker,
+                                    color = Color.White,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (name.isNotBlank()) {
+                                    Text(
+                                        text = name,
+                                        color = TextSecondary,
+                                        fontSize = 9.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+
+                            Text(
+                                text = homeMarketMoverPriceText(item, asset),
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1
+                            )
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Text(
+                                text = homeMarketMoverChangeText(item, asset, isPositive),
+                                color = accentColor,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1
+                            )
+                        }
+
+                        if (index < currentItems.lastIndex) {
+                            HorizontalDivider(
+                                color = Color(0xFF1F1F1F),
+                                thickness = 0.5.dp,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(2.dp))
+            HorizontalDivider(color = Color(0xFF1F1F1F), thickness = 0.5.dp)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onOpenRankings() }
+                    .padding(vertical = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "Ver Ranking Completo",
+                        color = GoldPrimary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = null,
+                        tint = GoldPrimary,
+                        modifier = Modifier.size(12.dp)
+                    )
                 }
             }
         }

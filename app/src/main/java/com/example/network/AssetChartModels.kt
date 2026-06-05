@@ -27,7 +27,7 @@ data class AssetChartBundle(
     val fiiPatrimonialInfo: List<AssetIndicatorPoint> = emptyList(),
     val fiiAssetDistribution: Map<String, List<AssetBreakdownPoint>> = emptyMap(),
     val warnings: List<String> = emptyList(),
-    val source: String = "Valorae Proxy / Investidor10"
+    val source: String = "VALORAE / Investidor10"
 )
 
 data class AssetPeriodReturn(
@@ -44,7 +44,7 @@ data class AssetIndicatorPoint(
     val unit: String = "",
     val year: String = "",
     val period: String = "",
-    val source: String = "Valorae Proxy"
+    val source: String = "Serviço de dados VALORAE"
 )
 
 data class AssetComparisonSeries(

@@ -41,6 +41,37 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 
 @Composable
+fun ChartCategoryHeader(title: String, subtitle: String? = null) {
+    Column(modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .height(18.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(GoldPrimary)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = title,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                color = GoldPrimary
+            )
+        }
+        if (subtitle != null) {
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                fontSize = 11.sp,
+                color = TextSecondary,
+                modifier = Modifier.padding(start = 12.dp)
+            )
+        }
+    }
+}
+
+@Composable
 fun AssetChartBundlePanel(
     bundle: AssetChartBundle,
     isFii: Boolean,
@@ -106,66 +137,83 @@ fun AssetChartBundlePanel(
             )
         }
 
-        val tabTitles = if (isFii) {
-            listOf("Visão Geral", "Rendimentos", "Patrimonial", "Comparação")
+        if (isFii) {
+            // Category 1: Desempenho e Rentabilidade
+            ChartCategoryHeader(
+                title = "Desempenho e Rentabilidade",
+                subtitle = "Evolução do FII e histórico de retornos"
+            )
+            FiiGeneralTab(bundle)
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Category 2: Rendimentos e Extratos
+            ChartCategoryHeader(
+                title = "Histórico de Rendimentos",
+                subtitle = "Metas de rendimento e distribuição mensal"
+            )
+            FiiDividendTab(bundle)
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Category 3: Ativos e Patrimônio
+            ChartCategoryHeader(
+                title = "Patrimônio e Ativos",
+                subtitle = "Estados, segmentos e composição física imobiliária"
+            )
+            FiiPatrimonialTab(bundle)
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Category 4: Comparativo de Mercado
+            ChartCategoryHeader(
+                title = "Comparativo de Mercado",
+                subtitle = "Retorno acumulado contra o IFIX e médias do segmento"
+            )
+            FiiComparisonTab(bundle)
         } else {
-            listOf("Análise", "Dividendos", "Comparação", "DRE", "Negócios")
-        }
-        var selectedTab by remember(bundle.ticker, bundle.range, isFii) { mutableIntStateOf(0) }
-        val safeSelectedTab = selectedTab.coerceIn(0, tabTitles.lastIndex.coerceAtLeast(0))
+            // Category 1: Desempenho e Rentabilidade
+            ChartCategoryHeader(
+                title = "Desempenho e Rentabilidade",
+                subtitle = "Rentabilidade histórica comparando nominal vs real"
+            )
+            StockAnalysisTab(bundle)
 
-        ScrollableTabRow(
-            selectedTabIndex = safeSelectedTab,
-            edgePadding = 0.dp,
-            containerColor = Color.Transparent,
-            contentColor = GoldPrimary,
-            divider = {},
-            indicator = { tabPositions ->
-                if (tabPositions.isNotEmpty()) {
-                    TabRowDefaults.SecondaryIndicator(
-                        modifier = Modifier.tabIndicatorOffset(tabPositions[safeSelectedTab]),
-                        color = GoldPrimary
-                    )
-                }
-            }
-        ) {
-            tabTitles.forEachIndexed { index, title ->
-                Tab(
-                    selected = safeSelectedTab == index,
-                    onClick = { selectedTab = index },
-                    text = {
-                        Text(
-                            text = title,
-                            fontSize = 12.sp,
-                            fontWeight = if (safeSelectedTab == index) FontWeight.Black else FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                )
-            }
-        }
+            Spacer(modifier = Modifier.height(8.dp))
 
-        AnimatedContent(
-            targetState = safeSelectedTab,
-            label = "AssetChartBundleTab"
-        ) { tab ->
-            if (isFii) {
-                when (tab) {
-                    0 -> FiiGeneralTab(bundle)
-                    1 -> FiiDividendTab(bundle)
-                    2 -> FiiPatrimonialTab(bundle)
-                    else -> FiiComparisonTab(bundle)
-                }
-            } else {
-                when (tab) {
-                    0 -> StockAnalysisTab(bundle)
-                    1 -> StockDividendTab(bundle)
-                    2 -> StockComparisonTab(bundle)
-                    3 -> StockDreTab(bundle)
-                    else -> StockBusinessTab(bundle)
-                }
-            }
+            // Category 2: DRE e Saúde Financeira
+            ChartCategoryHeader(
+                title = "DRE, Patrimônio e Finanças",
+                subtitle = "Faturamento, margens, balanço patrimonial e payout"
+            )
+            StockDreTab(bundle)
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Category 3: Rendimentos e Dividendos
+            ChartCategoryHeader(
+                title = "Proventos e Dividendos",
+                subtitle = "Históricos anuais, dividend yield, sazonalidade e proventos pagos"
+            )
+            StockDividendTab(bundle)
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Category 4: Comparativo de Mercado
+            ChartCategoryHeader(
+                title = "Comparação e Correlações",
+                subtitle = "Evolução comparativa contra índices e cotação de commodities"
+            )
+            StockComparisonTab(bundle)
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Category 5: Divisões de Receitas
+            ChartCategoryHeader(
+                title = "Faturamento por Segmento e Geografia",
+                subtitle = "Divisão de receitas por tipo de negócio e regional"
+            )
+            StockBusinessTab(bundle)
         }
     }
 }
@@ -185,19 +233,6 @@ fun StockAnalysisTab(bundle: AssetChartBundle) {
                 )
             } else {
                 EmptyChartState("Sem rentabilidade histórica", "Valores históricos de variação indisponíveis.")
-            }
-        }
-
-        // Fundamental Indicators Selection
-        ChartCardContainer(title = "Indicadores Fundamentalistas") {
-            if (bundle.indicatorCards.isNotEmpty()) {
-                AssetIndicatorHistoryChart(
-                    cards = bundle.indicatorCards,
-                    history = bundle.indicatorHistory,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            } else {
-                EmptyChartState("Sem indicadores", "Os indicadores estão vazios no Proxy.")
             }
         }
     }
@@ -269,7 +304,7 @@ fun StockComparisonTab(bundle: AssetChartBundle) {
                     modifier = Modifier.height(180.dp)
                 )
             } else {
-                EmptyChartState("Sem séries comparativas", "O Proxy não retornou IBOV/IFIX/CDI/IPCA para este período. O app tentará novamente ao trocar o intervalo.")
+                EmptyChartState("Sem séries comparativas", "As séries IBOV/IFIX/CDI/IPCA ainda não foram recebidas para este período. O app tentará novamente ao trocar o intervalo.")
             }
         }
 
@@ -299,7 +334,7 @@ fun StockDreTab(bundle: AssetChartBundle) {
                     modifier = Modifier.height(160.dp)
                 )
             } else {
-                EmptyChartState("Sem DRE", "Dados financeiros históricos indisponíveis no Proxy.")
+                EmptyChartState("Sem DRE", "Dados financeiros históricos indisponíveis no momento.")
             }
         }
 
@@ -338,7 +373,7 @@ fun StockDreTab(bundle: AssetChartBundle) {
                     modifier = Modifier.height(150.dp)
                 )
             } else {
-                EmptyChartState("Indisponível", "Histórico de payout não entregue pelo Proxy.")
+                EmptyChartState("Indisponível", "Histórico de payout indisponível no momento.")
             }
         }
     }
@@ -358,7 +393,7 @@ fun StockBusinessTab(bundle: AssetChartBundle) {
                     modifier = Modifier.height(200.dp)
                 )
             } else {
-                EmptyChartState("Sem divisão de negócio", "O Proxy não retornou percentuais válidos de segmentos operacionais para este ativo.")
+                EmptyChartState("Sem divisão de negócio", "Percentuais válidos de segmentos operacionais indisponíveis para este ativo.")
             }
         }
 
@@ -373,7 +408,7 @@ fun StockBusinessTab(bundle: AssetChartBundle) {
                     modifier = Modifier.height(200.dp)
                 )
             } else {
-                EmptyChartState("Sem divisão regional", "O Proxy não retornou percentuais válidos de geografia de receita para este ativo.")
+                EmptyChartState("Sem divisão regional", "Percentuais válidos de geografia de receita indisponíveis para este ativo.")
             }
         }
     }
@@ -393,18 +428,6 @@ fun FiiGeneralTab(bundle: AssetChartBundle) {
                 )
             } else {
                 EmptyChartState("Indisponível", "Série de rentabilidade histórica ausente.")
-            }
-        }
-
-        ChartCardContainer(title = "Indicadores Fundamentalistas do FII") {
-            if (bundle.indicatorCards.isNotEmpty()) {
-                AssetIndicatorHistoryChart(
-                    cards = bundle.indicatorCards,
-                    history = bundle.indicatorHistory,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            } else {
-                EmptyChartState("Sem indicadores", "O Proxy ainda não retornou indicadores fundamentalistas para este FII.")
             }
         }
 
@@ -511,7 +534,7 @@ fun FiiComparisonTab(bundle: AssetChartBundle) {
                     modifier = Modifier.height(180.dp)
                 )
             } else {
-                EmptyChartState("Falta Comparação", "O Proxy não retornou IFIX/CDI/IPCA para este período.")
+                EmptyChartState("Falta Comparação", "IFIX/CDI/IPCA ainda não foram recebidos para este período.")
             }
         }
 
@@ -577,7 +600,7 @@ private fun comparisonWindowLimit(filter: String): Int {
     }
 }
 
-private fun filterComparisonSeries(series: List<AssetComparisonSeries>, filter: String): List<AssetComparisonSeries> {
+fun filterComparisonSeries(series: List<AssetComparisonSeries>, filter: String): List<AssetComparisonSeries> {
     val limit = comparisonWindowLimit(filter)
     return series.mapNotNull { s ->
         val validPoints = s.points
@@ -585,7 +608,15 @@ private fun filterComparisonSeries(series: List<AssetComparisonSeries>, filter: 
             .sortedWith(compareBy<AssetComparisonPoint> { if (it.dateMillis > 0L) it.dateMillis else Long.MAX_VALUE }.thenBy { it.label })
         val selected = if (limit == Int.MAX_VALUE) validPoints else validPoints.takeLast(limit.coerceAtMost(validPoints.size))
         val sampled = downsampleComparisonPoints(selected)
-        if (sampled.size >= 2) s.copy(points = sampled) else null
+        if (sampled.size >= 2) {
+            val firstVal = sampled.first().value
+            val rebased = sampled.map { pt ->
+                val factor = (1.0 + pt.value / 100.0) / (1.0 + firstVal / 100.0).coerceAtLeast(0.0001)
+                val newVal = (factor - 1.0) * 100.0
+                pt.copy(value = newVal)
+            }
+            s.copy(points = rebased)
+        } else null
     }
 }
 
@@ -657,19 +688,19 @@ private fun BundleRangeSelector(
 
 private fun defaultChartDescription(title: String): String {
     return when {
-        title.contains("Comparação com Índices", ignoreCase = true) -> "Compara o retorno acumulado do ativo contra benchmarks de mercado como IBOV, IFIX, CDI e IPCA, quando essas séries são entregues pelo Proxy."
+        title.contains("Comparação com Índices", ignoreCase = true) -> "Compara o retorno acumulado do ativo contra benchmarks de mercado como IBOV, IFIX, CDI e IPCA, quando essas séries estão disponíveis."
         title.contains("Retorno em Comparação", ignoreCase = true) -> "Mostra se o FII superou ou ficou abaixo de referências como IFIX, CDI e IPCA no intervalo selecionado."
         title.contains("Commodit", ignoreCase = true) -> "Ajuda a observar sensibilidade do ativo a commodities relevantes, especialmente petróleo Brent para empresas expostas ao setor."
         title.contains("Rentabilidade", ignoreCase = true) -> "Mostra retorno nominal e, quando disponível, retorno real descontado da inflação."
-        title.contains("Indicadores", ignoreCase = true) -> "Resume múltiplos indicadores fundamentalistas normalizados pelo Proxy/Investidor10."
+        title.contains("Indicadores", ignoreCase = true) -> "Resume múltiplos indicadores fundamentalistas normalizados."
         title.contains("Proventos", ignoreCase = true) || title.contains("Dividend", ignoreCase = true) || title.contains("Rendimentos", ignoreCase = true) -> "Mostra histórico de pagamentos, distribuição anual/mensal e consistência de renda do ativo."
         title.contains("DRE", ignoreCase = true) || title.contains("Receitas", ignoreCase = true) -> "Compara evolução operacional, receita e lucro para avaliar crescimento e margem ao longo do tempo."
         title.contains("Lucro x Cotação", ignoreCase = true) -> "Cruza lucro histórico com preço para indicar se a cotação acompanhou a evolução dos resultados."
         title.contains("Balanço", ignoreCase = true) || title.contains("Patrimonial", ignoreCase = true) -> "Mostra composição patrimonial, patrimônio líquido, ativos, passivos ou métricas patrimoniais relevantes."
         title.contains("Payout", ignoreCase = true) -> "Indica a parcela do lucro distribuída como proventos; valores muito altos podem exigir cautela."
         title.contains("Faturamento", ignoreCase = true) || title.contains("Distribuição Física", ignoreCase = true) -> "Mostra a composição por segmento, região ou tipo de ativo quando o Investidor10 disponibiliza a quebra."
-        title.contains("Segmento", ignoreCase = true) -> "Compara métricas do FII com médias do segmento quando o Proxy consegue obter esses dados."
-        else -> "Dados extraídos e normalizados via Valorae Proxy/Investidor10. Campos ausentes são tratados como indisponíveis, sem simulação."
+        title.contains("Segmento", ignoreCase = true) -> "Compara métricas do FII com médias do segmento quando esses dados estão disponíveis."
+        else -> "Dados extraídos e normalizados. Campos ausentes são tratados como indisponíveis, sem simulação."
     }
 }
 
@@ -1069,7 +1100,7 @@ fun AssetIndicatorHistoryChart(
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "Valor atual listado de ${selectedCard.label} é R$ ${selectedCard.display.ifBlank { "%.2f".format(selectedCard.value) }}. Sem série histórica presente no Proxy.",
+                        text = "Valor atual listado de ${selectedCard.label} é R$ ${selectedCard.display.ifBlank { "%.2f".format(selectedCard.value) }}. Sem série histórica disponível no momento.",
                         fontSize = 11.sp,
                         color = TextSecondary,
                         modifier = Modifier.weight(1f)

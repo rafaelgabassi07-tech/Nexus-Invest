@@ -93,7 +93,7 @@ fun SettingsScreen(
                             SettingsPage.DATA_BACKUP -> "Backup e Dados"
                             SettingsPage.HELP -> "Central de Ajuda"
                             SettingsPage.DARF_GUIDE -> "Guia de DARF e Tributação"
-                            SettingsPage.PROXY_DIAGNOSTICS -> "Diagnóstico do Proxy"
+                            SettingsPage.PROXY_DIAGNOSTICS -> "Diagnóstico do VALORAE"
                         },
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
@@ -270,7 +270,7 @@ private fun MainSettingsPage(
                 HorizontalDivider(color = BorderColor.copy(alpha = 0.12f), thickness = 1.5.dp)
                 SettingsItem(
                     icon = Icons.Outlined.CloudDone,
-                    title = "Diagnóstico do Proxy",
+                    title = "Diagnóstico do VALORAE",
                     subtitle = "URL, readiness, fontes, cache local e erros recentes",
                     onClick = { onNavigate(SettingsPage.PROXY_DIAGNOSTICS) }
                 )
@@ -422,10 +422,10 @@ private fun ProxyDiagnosticsPage(viewModel: com.example.viewmodel.PortfolioViewM
         else -> "Sem conexão"
     }
     val userMessage = when {
-        proxyHealth.isOnline -> "O app está recebendo dados do VALORAE Proxy normalmente."
-        proxyHealth.isUsingCache -> "O Proxy não respondeu agora, mas o app está preservando os últimos dados válidos."
+        proxyHealth.isOnline -> "O app está recebendo dados do serviço de dados VALORAE normalmente."
+        proxyHealth.isUsingCache -> "O serviço de dados não respondeu agora, mas o app está preservando os últimos dados válidos."
         proxyHealth.status.equals("Parcial", true) -> "Algumas fontes externas podem estar lentas. Carteira, cache e dados já recebidos continuam protegidos."
-        else -> "Não foi possível confirmar o Proxy. Toque em Atualizar ou verifique a internet antes de novas consultas."
+        else -> "Não foi possível confirmar o serviço de dados. Toque em Atualizar ou verifique a internet antes de novas consultas."
     }
     val averageResponseText = diagnostics?.averageResponseMs
         ?.takeIf { it > 0L }
@@ -476,10 +476,10 @@ private fun ProxyDiagnosticsPage(viewModel: com.example.viewmodel.PortfolioViewM
 
         DiagnosticUserCard(
             title = "Recebimento de dados",
-            value = if (proxyHealth.isOnline || proxyHealth.isUsingCache || proxyHealth.status.equals("Parcial", true)) "Operacional" else "Aguardando Proxy",
+            value = if (proxyHealth.isOnline || proxyHealth.isUsingCache || proxyHealth.status.equals("Parcial", true)) "Operacional" else "Aguardando dados",
             detail = when {
-                proxyHealth.isOnline -> "Consultas de ativos, notícias, gráficos e carteira podem usar o Proxy."
-                proxyHealth.isUsingCache -> "O app evita apagar dados bons quando o Proxy ou fontes externas falham."
+                proxyHealth.isOnline -> "Consultas de ativos, notícias, gráficos e carteira estão liberadas."
+                proxyHealth.isUsingCache -> "O app evita apagar dados bons quando o serviço ou fontes externas falham."
                 proxyHealth.status.equals("Parcial", true) -> "Blocos opcionais podem ficar vazios temporariamente sem quebrar a tela."
                 else -> "Sem resposta recente. Novas consultas podem mostrar fallback ou mensagem de indisponibilidade."
             },
@@ -531,7 +531,7 @@ private fun ProxyDiagnosticsPage(viewModel: com.example.viewmodel.PortfolioViewM
                             DiagnosticSection(
                                 title = "Conexão",
                                 rows = listOf(
-                                    "URL do Proxy" to data.baseUrl,
+                                    "URL do serviço" to data.baseUrl,
                                     "Readiness" to if (data.ready) "Online" else data.state,
                                     "Última verificação" to formatDiagnosticTime(data.lastCheckedAt),
                                     "Tempo médio" to if (data.averageResponseMs > 0L) "${data.averageResponseMs} ms" else "Sem amostras"
@@ -557,7 +557,7 @@ private fun ProxyDiagnosticsPage(viewModel: com.example.viewmodel.PortfolioViewM
                         } ?: DiagnosticSection(
                             title = "Diagnóstico",
                             rows = listOf(
-                                "Estado" to "Ainda sem resposta do Proxy",
+                                "Estado" to "Ainda sem resposta dos dados",
                                 "Ação" to "Toque em Atualizar para consultar readiness, fontes e métricas."
                             )
                         )
@@ -863,180 +863,234 @@ private fun DisplaySettingsPage(themePreferences: ThemePreferences) {
         modifier = Modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+            .padding(horizontal = 16.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(28.dp)
     ) {
-        Text(
-            text = "MODO DE EXIBIÇÃO",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.Bold
-        )
         
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            val themes = listOf(
-                AppTheme.SYSTEM to "Auto",
-                AppTheme.DARK to "Escuro",
-                AppTheme.LIGHT to "Claro"
+        // MODO DE EXIBIÇÃO
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text(
+                text = "MODO DE EXIBIÇÃO",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Black,
+                letterSpacing = 1.2.sp,
+                modifier = Modifier.padding(start = 4.dp)
             )
-            themes.forEach { (theme, label) ->
-                val isSelected = currentTheme == theme
-                Surface(
-                    onClick = { scope.launch { themePreferences.setTheme(theme) } },
-                    modifier = Modifier.weight(1f),
-                    color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else MaterialTheme.colorScheme.surface,
-                    shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(
-                        width = 1.dp,
-                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                val themes = listOf(
+                    AppTheme.SYSTEM to "Automático",
+                    AppTheme.DARK to "Escuro",
+                    AppTheme.LIGHT to "Claro"
+                )
+                themes.forEach { (theme, label) ->
+                    val isSelected = currentTheme == theme
+                    Surface(
+                        onClick = { scope.launch { themePreferences.setTheme(theme) } },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(90.dp),
+                        color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface,
+                        shape = RoundedCornerShape(20.dp),
+                        border = BorderStroke(
+                            width = if (isSelected) 1.5.dp else 1.dp,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = when(theme) {
+                                    AppTheme.SYSTEM -> Icons.Outlined.SettingsSuggest
+                                    AppTheme.DARK -> Icons.Outlined.DarkMode
+                                    AppTheme.LIGHT -> Icons.Outlined.LightMode
+                                },
+                                contentDescription = null,
+                                tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = if (isSelected) FontWeight.Black else FontWeight.Medium,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // ESTILO E PREFERÊNCIAS
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(
+                text = "ESTILO E PREFERÊNCIAS",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Black,
+                letterSpacing = 1.2.sp,
+                modifier = Modifier.padding(start = 4.dp)
+            )
+            
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(24.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column {
+                    if (currentTheme != AppTheme.LIGHT) {
+                        SettingsDropdownItem(
+                            title = "Tema Escuro",
+                            icon = Icons.Outlined.DarkMode,
+                            selectedOption = darkVariant,
+                            options = DarkVariant.entries,
+                            optionLabel = { it.name.replace("_", " ") },
+                            onOptionSelected = { scope.launch { themePreferences.setDarkVariant(it) } }
+                        )
+                        if (currentTheme != AppTheme.DARK) {
+                             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f), modifier = Modifier.padding(horizontal = 16.dp))
+                        }
+                    }
+                    if (currentTheme != AppTheme.DARK) {
+                        SettingsDropdownItem(
+                            title = "Tema Claro",
+                            icon = Icons.Outlined.LightMode,
+                            selectedOption = lightVariant,
+                            options = LightVariant.entries,
+                            optionLabel = { it.name.replace("_", " ") },
+                            onOptionSelected = { scope.launch { themePreferences.setLightVariant(it) } }
+                        )
+                    }
+                    
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f), modifier = Modifier.padding(horizontal = 16.dp))
+                    
+                    SettingsDropdownItem(
+                        title = "Estilo dos Cantos",
+                        icon = Icons.Outlined.RoundedCorner,
+                        selectedOption = cornerStyle,
+                        options = CornerStyle.entries,
+                        optionLabel = { it.name },
+                        onOptionSelected = { scope.launch { themePreferences.setCornerStyle(it) } }
                     )
-                ) {
-                    Column(
-                        modifier = Modifier.padding(vertical = 12.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Icon(
-                            imageVector = when(theme) {
-                                AppTheme.SYSTEM -> Icons.Outlined.SettingsSuggest
-                                AppTheme.DARK -> Icons.Outlined.DarkMode
-                                AppTheme.LIGHT -> Icons.Outlined.LightMode
-                            },
-                            contentDescription = null,
-                            tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = if (isSelected) FontWeight.Black else FontWeight.Medium,
-                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f), modifier = Modifier.padding(horizontal = 16.dp))
+                    
+                    val fontScaleMap = listOf(FontScale.SMALL, FontScale.MEDIUM, FontScale.LARGE, FontScale.EXTRA_LARGE)
+                    SettingsDropdownItem(
+                        title = "Escala da Fonte",
+                        icon = Icons.Outlined.FontDownload,
+                        selectedOption = fontScale,
+                        options = fontScaleMap,
+                        optionLabel = { scale -> 
+                            when(scale) {
+                                FontScale.SMALL -> "Pequeno"
+                                FontScale.MEDIUM -> "Médio"
+                                FontScale.LARGE -> "Grande"
+                                FontScale.EXTRA_LARGE -> "Extra Grande"
+                            }
+                        },
+                        onOptionSelected = { scope.launch { themePreferences.setFontScale(it) } }
+                    )
                 }
             }
         }
-
-        if (currentTheme != AppTheme.LIGHT) {
-            Text(
-                text = "VARIANTE DO TEMA ESCURO",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Bold
-            )
-            
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                DarkVariant.entries.forEach { variant ->
-                    val isSelected = darkVariant == variant
-                    OutlinedButton(
-                        onClick = { scope.launch { themePreferences.setDarkVariant(variant) } },
-                        border = BorderStroke(
-                            1.dp, 
-                            if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                        ),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            containerColor = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent,
-                            contentColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                        ),
-                        modifier = Modifier.weight(1f),
-                        contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Text(variant.name, fontSize = 11.sp, maxLines = 1)
-                    }
-                }
-            }
-        }
-
-        if (currentTheme != AppTheme.DARK) {
-            Text(
-                text = "VARIANTE DO TEMA CLARO",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Bold
-            )
-            
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                LightVariant.entries.forEach { variant ->
-                    val isSelected = lightVariant == variant
-                    OutlinedButton(
-                        onClick = { scope.launch { themePreferences.setLightVariant(variant) } },
-                        border = BorderStroke(
-                            1.dp, 
-                            if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                        ),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            containerColor = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent,
-                            contentColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                        ),
-                        modifier = Modifier.weight(1f),
-                        contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Text(variant.name, fontSize = 11.sp, maxLines = 1)
-                    }
-                }
-            }
-        }
-
-        Text(
-            text = "ESTILO DOS CANTOS",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.Bold
-        )
         
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            CornerStyle.entries.forEach { style ->
-                val isSelected = cornerStyle == style
-                OutlinedButton(
-                    onClick = { scope.launch { themePreferences.setCornerStyle(style) } },
-                    border = BorderStroke(
-                        1.dp, 
-                        if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                    ),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent,
-                        contentColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                    ),
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    Text(style.name, fontSize = 11.sp, maxLines = 1)
-                }
-            }
-        }
+        Spacer(modifier = Modifier.height(60.dp))
+    }
+}
 
-        Text(
-            text = "ESCALA DA FONTE",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.Bold
-        )
+@Composable
+fun <T> SettingsDropdownItem(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    selectedOption: T,
+    options: List<T>,
+    optionLabel: (T) -> String,
+    onOptionSelected: (T) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    
+    // We can present this as a row with the icon, title on left, and a clickable value + arrow on the right
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { expanded = true }
+            .padding(horizontal = 20.dp, vertical = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp)
+            )
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
         
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            val scales = listOf("P" to FontScale.SMALL, "M" to FontScale.MEDIUM, "G" to FontScale.LARGE, "GG" to FontScale.EXTRA_LARGE)
-            scales.forEach { (label, scale) ->
-                val isSelected = fontScale == scale
-                OutlinedButton(
-                    onClick = { scope.launch { themePreferences.setFontScale(scale) } },
-                    border = BorderStroke(
-                        1.dp, 
-                        if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                    ),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent,
-                        contentColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                    ),
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    Text(label, fontSize = 12.sp, maxLines = 1)
+        Box(contentAlignment = Alignment.CenterEnd) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier
+                    .background(
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), 
+                        RoundedCornerShape(8.dp)
+                    )
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = optionLabel(selectedOption),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold
+                )
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.background(MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp))
+            ) {
+                options.forEach { option ->
+                    DropdownMenuItem(
+                        text = { 
+                            Text(
+                                text = optionLabel(option), 
+                                fontWeight = if (option == selectedOption) FontWeight.Bold else FontWeight.Normal
+                            ) 
+                        },
+                        onClick = {
+                            onOptionSelected(option)
+                            expanded = false
+                        }
+                    )
                 }
             }
         }
-        Spacer(modifier = Modifier.height(80.dp))
     }
 }
 
@@ -1116,8 +1170,8 @@ private fun AboutSettingsPage() {
             
             AboutItemCard(
                 icon = Icons.Outlined.TrendingUp,
-                title = "Valuation via Graham & Bazin",
-                content = "Aplicação de fórmulas clássicas de precificação preditiva sob os critérios de Benjamin Graham (Preço Justo intrínseco baseado em Lucro e Valor Patrimonial) e Décio Bazin (Preço Teto projetado sob dividend yield mínimo)."
+                title = "Indicadores via VALORAE Proxy",
+                content = "Os indicadores de valuation e fundamentos são exibidos somente quando retornados pelo VALORAE Proxy. O app não calcula preço teto nem recomendação local."
             )
             
             AboutItemCard(
@@ -2542,7 +2596,7 @@ private fun DataBackupPage(viewModel: com.example.viewmodel.PortfolioViewModel) 
                 }
 
                 Text(
-                    text = "A carteira permanece local no aparelho. Para evitar serviços pagos, banco externo ou sincronização direta fora do VALORAE Proxy, a sincronização em nuvem foi ocultada. Use Exportar JSON/CSV para backup manual e Importar Arquivo para restaurar.",
+                    text = "A carteira permanece local no aparelho. Para evitar serviços pagos, banco externo ou sincronização direta fora do serviço de dados VALORAE, a sincronização em nuvem foi ocultada. Use Exportar JSON/CSV para backup manual e Importar Arquivo para restaurar.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 18.sp
@@ -2555,7 +2609,7 @@ private fun DataBackupPage(viewModel: com.example.viewmodel.PortfolioViewModel) 
                         .padding(12.dp)
                 ) {
                     Text(
-                        text = "Nenhuma chamada a Supabase, Firebase, banco externo ou serviço pago é feita por esta tela. O Proxy continua sendo o backend/API central para dados financeiros.",
+                        text = "Nenhuma chamada a Supabase, Firebase, banco externo ou serviço pago é feita por esta tela. O serviço de dados VALORAE continua sendo o backend/API central para dados financeiros.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                         lineHeight = 15.sp

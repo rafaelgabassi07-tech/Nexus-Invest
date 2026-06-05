@@ -78,25 +78,18 @@ fun ChartsScreen(viewModel: PortfolioViewModel, modifier: Modifier = Modifier) {
         } else 0.0
     }
     
-    // Calculate final monthly dividend
-    val finalMonthlyDiv = remember(totalCurrent, avgDy, analytics.analysis) {
-        val proxyMonthly = analytics.analysis?.monthlyDividendEstimate ?: 0.0
-        val localMonthly = ((totalCurrent * (avgDy / 100.0)) / 12.0).let {
-            if (it.isNaN() || it.isInfinite()) 0.0 else it
-        }
-        if (proxyMonthly > 0.0) proxyMonthly else localMonthly
+    // Média confirmada de dividendos: não usa DY/último rendimento como simulação.
+    val finalMonthlyDiv = remember(analytics.dividendEvents, allTransactions, firstTransactionTime) {
+        val paid = analytics.dividendEvents
+            .filter { isPaidDividendEvent(it) }
+            .sumOf { eligibleDividendAmount(it, allTransactions) }
+        val months = monthsInSelectedPeriod("Últimos 12 meses", firstTransactionTime).coerceAtLeast(1)
+        if (paid > 0.0) paid / months else 0.0
     }
 
-    // Generate monthly projected dividend values
-    val divDataValues = remember(finalMonthlyDiv, totalCurrent) {
-        if (totalCurrent > 0) {
-            List(12) { i -> 
-                val scale = (i + 1) / 12f // Linear growth modeling
-                (finalMonthlyDiv * scale).toFloat()
-            }
-        } else {
-            List(12) { 0f }
-        }
+    // Série auxiliar sem projeção artificial.
+    val divDataValues = remember(finalMonthlyDiv) {
+        List(12) { finalMonthlyDiv.toFloat() }
     }
     
     val divStackedDataValues = remember(analytics.dividendEvents, summaries, allTransactions, finalMonthlyDiv, firstTransactionTime) {
@@ -134,7 +127,7 @@ fun ChartsScreen(viewModel: PortfolioViewModel, modifier: Modifier = Modifier) {
         }
     }
 
-    val alignedIpcaPreview = remember(ipcaDataValues, portDataValues) { resampleInsightSeries(ipcaDataValues, portDataValues.size) }
+    val alignedIpcaPreview = remember(ipcaDataValues, portDataValues) { resampleInsightSeries(ipcaDataValues, portDataValues.size.coerceAtLeast(2)) }
     val currentIpcaAccumulated = alignedIpcaPreview.lastOrNull() ?: 0f
 
     // Segment data for visual allocation
@@ -199,7 +192,7 @@ fun ChartsScreen(viewModel: PortfolioViewModel, modifier: Modifier = Modifier) {
         when {
             analytics.portfolioRanking != null -> "Ranking da carteira"
             analytics.liveMarketRanking != null -> "Ranking do mercado"
-            else -> "Aguardando Proxy"
+            else -> "Aguardando dados"
         }
     }
 
@@ -240,7 +233,7 @@ fun ChartsScreen(viewModel: PortfolioViewModel, modifier: Modifier = Modifier) {
             item {
                 ChartCard(
                     title = "Evolução de Proventos",
-                    description = "Proventos recebidos e previstos por mês, usando eventos do Proxy quando disponíveis e fallback local transparente.",
+                    description = "Proventos recebidos e previstos por mês, usando apenas eventos confirmados quando disponíveis.",
                     subStats = "Yield Médio: ${String.format("%.2f%%", avgDy)}",
                     icon = Icons.AutoMirrored.Outlined.TrendingUp,
                     onClick = { activeDetailPage = "Proventos" }
@@ -263,7 +256,7 @@ fun ChartsScreen(viewModel: PortfolioViewModel, modifier: Modifier = Modifier) {
             item {
                 ChartCard(
                     title = "Rentabilidade vs IPCA+",
-                    description = "Sua carteira comparada com IPCA via Proxy quando disponível, com fallback transparente local.",
+                    description = "Sua carteira comparada com IPCA quando disponível, com fallback transparente local.",
                     subStats = "Ganho Real Líquido: ${String.format("%+.2f%%", portReturnPct - currentIpcaAccumulated)}",
                     icon = Icons.Outlined.QueryStats,
                     onClick = { activeDetailPage = "IPCA+" }
@@ -276,7 +269,7 @@ fun ChartsScreen(viewModel: PortfolioViewModel, modifier: Modifier = Modifier) {
                     ) {
                         CustomLineChartCompare(
                             portfolioValues = portDataValues,
-                            ipcaValues = ipcaDataValues,
+                            ipcaValues = resampleInsightSeries(ipcaDataValues, portDataValues.size.coerceAtLeast(2)),
                             modifier = Modifier.fillMaxSize()
                         )
                     }
@@ -320,7 +313,7 @@ fun ChartsScreen(viewModel: PortfolioViewModel, modifier: Modifier = Modifier) {
                 }
                 ChartCard(
                     title = "Agenda de Dividendos",
-                    description = "Próximas datas-com e pagamentos, priorizando eventos futuros do Proxy e evitando misturar eventos antigos na agenda.",
+                    description = "Próximas datas-com e pagamentos confirmados, evitando misturar eventos antigos na agenda.",
                     subStats = "R$ ${String.format("%.2f", agendaPreviewAmount)} estimado",
                     icon = Icons.AutoMirrored.Outlined.EventNote,
                     onClick = { activeDetailPage = "Agenda" }
@@ -345,7 +338,72 @@ fun ChartsScreen(viewModel: PortfolioViewModel, modifier: Modifier = Modifier) {
                 }
             }
             
-            // Rankings agora têm página própria na barra inferior.
+            // Rankings & Scores card
+            item {
+                ChartCard(
+                    title = "Rankings & Scores",
+                    description = "Ativos ordenados por Dividend Yield, Score Valorae e perfil de investimento.",
+                    subStats = rankingsSourceLabel,
+                    icon = Icons.Default.List,
+                    onClick = { activeDetailPage = "Rankings" }
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (rankingsPreview.isNotEmpty()) {
+                            rankingsPreview.forEach { item ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(DarkSurfaceElevated, RoundedCornerShape(10.dp))
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(24.dp)
+                                                .background(getTickerBrandColor(item.ticker), RoundedCornerShape(6.dp)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = item.ticker.take(2),
+                                                color = Color.White,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Text(
+                                            text = item.ticker,
+                                            color = TextPrimary,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp
+                                        )
+                                    }
+                                    Text(
+                                        text = item.displayValue.ifBlank { String.format("%.2f", item.value) },
+                                        color = GoldPrimary,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
+                                }
+                            }
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("Sem rankings disponíveis", color = TextSecondary, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+            }
 
             item {
                 Spacer(modifier = Modifier.height(24.dp))
@@ -471,7 +529,7 @@ fun ChartCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Fonte de dados: Valorae Proxy", 
+                    text = "Fonte de dados: VALORAE", 
                     color = TextSecondary, 
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Medium
@@ -740,16 +798,18 @@ fun ChartDetailPage(
     val avgDy = remember(summaryModel, summaries) {
         if (totalCurrent > 0) summaries.sumOf { it.totalCurrentValue * it.dividendYield } / totalCurrent else 0.0
     }
-    val finalMonthlyDiv = remember(totalCurrent, avgDy, analytics.analysis) {
-        val proxyMonthly = analytics.analysis?.monthlyDividendEstimate ?: 0.0
-        val localMonthly = (totalCurrent * (avgDy / 100.0)) / 12.0
-        if (proxyMonthly > 0.0) proxyMonthly else localMonthly
-    }
-
     val firstTransactionTime = remember(allTransactions) {
         allTransactions.filter { !it.isSell && it.quantity > 0.0 }.minOfOrNull { it.date }
             ?: allTransactions.minOfOrNull { it.date }
             ?: System.currentTimeMillis()
+    }
+
+    val finalMonthlyDiv = remember(analytics.dividendEvents, allTransactions, firstTransactionTime) {
+        val paid = analytics.dividendEvents
+            .filter { isPaidDividendEvent(it) }
+            .sumOf { eligibleDividendAmount(it, allTransactions) }
+        val months = monthsInSelectedPeriod("Últimos 12 meses", firstTransactionTime).coerceAtLeast(1)
+        if (paid > 0.0) paid / months else 0.0
     }
 
     Column(
@@ -878,14 +938,14 @@ fun ChartDetailPage(
                     Icon(Icons.Outlined.Info, contentDescription = null, tint = GoldPrimary, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "Rankings do Proxy são dados atuais/fundamentalistas e não entram no cálculo de proventos passados. Proventos, IPCA e histórico continuam limitados à existência real da carteira.",
+                        text = "Rankings de mercado são atuais/fundamentalistas e não entram no cálculo de proventos passados. Proventos, IPCA e histórico continuam limitados à existência real da carteira.",
                         color = TextPrimary,
                         fontSize = 12.sp,
                         lineHeight = 17.sp
                     )
                 }
-                ProxyActionPlanSection(analysis)
-                RankingSection("Carteira — Score Valorae", portfolioRanking?.score.orEmpty(), "O Proxy ainda não retornou ranking por score para os ativos atuais.")
+                // ProxyActionPlanSection removed as requested by user
+                RankingSection("Carteira — Score Valorae", portfolioRanking?.score.orEmpty(), "Ainda não há ranking por score para os ativos atuais.")
                 RankingSection("Carteira — Dividend Yield", portfolioRanking?.dividendYield.orEmpty(), "Sem ranking de dividend yield para os ativos atuais.")
                 RankingSection("Carteira — Perfil Conservador", portfolioRanking?.conservative.orEmpty(), "Sem ranking conservador para a carteira atual.")
                 val rendaFii = portfolioRanking?.incomeFii.orEmpty()
@@ -909,7 +969,7 @@ fun ChartDetailPage(
                             .border(1.dp, BorderColor.copy(alpha = 0.06f), RoundedCornerShape(18.dp))
                             .padding(14.dp)
                     ) {
-                        Text("AVISOS DO PROXY", color = GoldPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
+                        Text("AVISOS DE DADOS", color = GoldPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
                         Spacer(modifier = Modifier.height(8.dp))
                         warnings.take(5).forEach { warning ->
                             Text("• $warning", color = TextSecondary, fontSize = 12.sp, lineHeight = 17.sp, modifier = Modifier.padding(bottom = 5.dp))
@@ -942,6 +1002,7 @@ fun ChartDetailPage(
                     it.sharesCount * (it.currentPrice * (it.dividendYield / 100.0) / 12.0)
                 }
                 val barCount = when (selectedTime) {
+                    "Todo o período" -> portfolioAgeMonthsForInsights(firstTransactionTime).coerceAtLeast(3)
                     "6 meses" -> 6
                     "24 meses" -> 24
                     else -> 12
@@ -1014,7 +1075,7 @@ fun ChartDetailPage(
                             expanded = expandedTime,
                             onDismissRequest = { expandedTime = false }
                         ) {
-                            listOf("6 meses", "12 meses", "24 meses").forEach {
+                            listOf("6 meses", "12 meses", "24 meses", "Todo o período").forEach {
                                 androidx.compose.material3.DropdownMenuItem(
                                     text = { Text(it) },
                                     onClick = { selectedTime = it; expandedTime = false }
@@ -1119,7 +1180,7 @@ fun ChartDetailPage(
                                 expanded = expandedTimePie,
                                 onDismissRequest = { expandedTimePie = false }
                             ) {
-                                listOf("Últimos 12 meses", "Neste ano", "Últimos 6 meses").forEach {
+                                listOf("Desde o início", "Últimos 12 meses", "Neste ano", "Últimos 6 meses").forEach {
                                     androidx.compose.material3.DropdownMenuItem(
                                         text = { Text(it) },
                                         onClick = { selectedTimePie = it; expandedTimePie = false }
@@ -1253,12 +1314,12 @@ fun ChartDetailPage(
                             Box(modifier = Modifier.fillMaxWidth().height(200.dp)) {
                                 CustomLineChartCompare(
                                     portfolioValues = portDataValues,
-                                    ipcaValues = ipcaDataValues,
+                                    ipcaValues = resampleInsightSeries(ipcaDataValues, portDataValues.size.coerceAtLeast(2)),
                                     modifier = Modifier.fillMaxSize()
                                 )
                             }
                             Text(
-                                text = "Fonte: ${analytics.source} · IPCA: ${analytics.ipcaSeries.lastOrNull()?.source ?: "estimativa local"}",
+                                text = "Fonte: ${analytics.source.replace("Serviço de dados VALORAE", "dados VALORAE")} · IPCA: ${analytics.ipcaSeries.lastOrNull()?.source?.replace("Serviço de dados VALORAE", "dados VALORAE") ?: "estimativa local"}",
                                 color = TextSecondary,
                                 fontSize = 10.sp,
                                 modifier = Modifier.padding(top = 8.dp)
@@ -1421,7 +1482,19 @@ fun ChartDetailPage(
                         if (agendaEvents.isNotEmpty()) {
                             DividendEventsList(agendaEvents, allTransactions)
                         } else {
-                            DividendScheduleList(topAgenda, allTransactions)
+                            Surface(
+                                color = DarkSurfaceElevated,
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, BorderColor.copy(alpha = 0.08f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "Nenhum provento futuro confirmado para os ativos da carteira no momento.",
+                                    color = TextSecondary,
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.padding(14.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -1913,7 +1986,7 @@ fun ChartDetailPage(
                             }
                             "IPCA+" -> {
                                 TableHeaderRow(listOf("Mês", "Rend. Carteira", "IPCA Acum.", "Juros Reais"))
-                                val alignedIpcaTable = resampleInsightSeries(ipcaDataValues, portDataValues.size)
+                                val alignedIpcaTable = resampleInsightSeries(ipcaDataValues, portDataValues.size.coerceAtLeast(2))
                                 val maxRows = portDataValues.size.coerceAtMost(24)
                                 if (maxRows == 0) {
                                     TableEmptyState()
@@ -2127,46 +2200,169 @@ fun TableEmptyState() {
 
 @Composable
 fun RankingCompactRow(item: MarketRankingItem) {
-    Row(
+    val isUp = item.direction.equals("alta", true) || item.changePercent > 0.0
+    val isDown = item.direction.equals("baixa", true) || item.changePercent < 0.0
+    val badgeColor = when {
+        isDown -> DangerRed.copy(alpha = 0.12f)
+        isUp -> SuccessGreen.copy(alpha = 0.12f)
+        else -> GoldPrimary.copy(alpha = 0.08f)
+    }
+    val textColor = when {
+        isDown -> DangerRed
+        isUp -> SuccessGreen
+        else -> GoldPrimary
+    }
+
+    Surface(
+        color = DarkSurfaceElevated,
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, BorderColor.copy(alpha = 0.04f)),
         modifier = Modifier
             .fillMaxWidth()
-            .background(DarkSurface.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+            .padding(vertical = 4.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-            Text(
-                text = if (item.rank > 0) "#${item.rank}" else "•",
-                color = GoldPrimary,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Black,
-                modifier = Modifier.width(34.dp)
-            )
-            Column(modifier = Modifier.weight(1f)) {
-                Text(item.ticker, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                val caption = item.explanation.ifBlank { item.name }.ifBlank { item.source }
-                if (caption.isNotBlank()) Text(caption, color = TextSecondary, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Column(
+            modifier = Modifier.padding(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                // Left: Rank, Ticker & Name
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(GoldPrimary.copy(alpha = 0.12f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = if (item.rank > 0) "#${item.rank}" else "•",
+                            color = GoldPrimary,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.width(8.dp))
+                    
+                    Column {
+                        Text(
+                            text = item.ticker,
+                            color = TextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (item.name.isNotBlank()) {
+                            Text(
+                                text = item.name,
+                                color = TextSecondary,
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+                
+                // Right: Value (Variation/Grade) & Price
+                Column(
+                    horizontalAlignment = Alignment.End
+                ) {
+                    val displayVal = item.displayValue.ifBlank {
+                        when {
+                            item.changeDisplay.isNotBlank() -> item.changeDisplay
+                            item.changePercent != 0.0 -> {
+                                val prefix = if (item.changePercent > 0.0) "+" else ""
+                                String.format(java.util.Locale("pt", "BR"), "%s%.2f%%", prefix, item.changePercent)
+                            }
+                            item.value.isFinite() && item.value != 0.0 -> String.format("%.2f", item.value)
+                            item.grade.isNotBlank() -> item.grade
+                            else -> item.direction
+                        }
+                    }
+                    
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(badgeColor)
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = displayVal,
+                            color = textColor,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    
+                    val formattedPrice = item.priceDisplay.ifBlank {
+                        if (item.price > 0.0) String.format(java.util.Locale("pt", "BR"), "R$ %.2f", item.price) else ""
+                    }
+                    if (formattedPrice.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = formattedPrice,
+                            color = TextPrimary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+            
+            // Footer Info: Explanation, Source or Type label
+            val hasExplanation = item.explanation.isNotBlank()
+            val hasSource = item.source.isNotBlank() && item.source != "Serviço de dados VALORAE" && item.source != "VALORAE Proxy"
+            val showFooter = hasExplanation || hasSource || isUp || isDown
+            
+            if (showFooter) {
+                Spacer(modifier = Modifier.height(6.dp))
+                HorizontalDivider(color = BorderColor.copy(alpha = 0.04f))
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val typeLabel = when {
+                        isUp -> "Alta"
+                        isDown -> "Baixa"
+                        else -> "Neutro"
+                    }
+                    
+                    Text(
+                        text = "Tipo: $typeLabel",
+                        color = textColor.copy(alpha = 0.85f),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    
+                    if (hasSource) {
+                        Text(
+                            text = "Fonte: ${item.source}",
+                            color = TextSecondary,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Normal
+                        )
+                    } else if (hasExplanation) {
+                        Text(
+                            text = item.explanation,
+                            color = TextSecondary,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Normal,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false).padding(start = 12.dp)
+                        )
+                    }
+                }
             }
         }
-        val display = item.displayValue.ifBlank {
-            when {
-                item.value.isFinite() && item.value != 0.0 -> String.format("%.2f", item.value)
-                item.grade.isNotBlank() -> item.grade
-                else -> item.direction
-            }
-        }
-        Text(
-            text = display,
-            color = when {
-                item.direction.equals("baixa", true) -> DangerRed
-                item.direction.equals("alta", true) -> SuccessGreen
-                else -> GoldPrimary
-            },
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.End
-        )
     }
 }
 
@@ -2445,12 +2641,17 @@ private fun eligibleDividendAmount(
     transactions: List<com.example.data.Transaction>
 ): Double {
     if (transactions.isEmpty()) return safeDividendAmount(event)
+    
     val eligibilityTs = eventEligibilityMillis(event)
-    if (eligibilityTs <= 0L) return safeDividendAmount(event)
-    val shares = sharesOwnedAtInsightDate(transactions, event.ticker, endOfInsightDayMillis(eligibilityTs))
+    val fallbackTs = if (eligibilityTs > 0L) eligibilityTs else System.currentTimeMillis()
+    
+    val shares = sharesOwnedAtInsightDate(transactions, event.ticker, endOfInsightDayMillis(fallbackTs))
     if (shares <= 0.0001) return 0.0
+    
     if (event.valuePerShare > 0.0) return event.valuePerShare * shares
     if (event.estimatedAmount > 0.0 && event.quantity > 0.0) return event.estimatedAmount * (shares / event.quantity)
+    
+    // Fallback: estimate from amount and current price? No, just use amount if it seems right, or return 0.0
     return event.estimatedAmount.coerceAtLeast(0.0)
 }
 
@@ -2541,21 +2742,9 @@ private fun buildDividendEvolutionData(
             val projected = bucket.filterNot { (event, _) -> isPaidDividendEvent(event) }.sumOf { it.second }.toFloat()
             com.example.ui.components.StackedBarData(received = received, projected = projected, label = monthLabel)
         } else {
-            val isBeforePortfolio = monthIndex < firstMonthIndex
-            val estimatedBase = monthlyDividendEstimateForMonth(
-                summaries = summaries,
-                transactions = transactions,
-                monthEndMillis = monthEndMillis(cal),
-                fallbackMonthly = fallbackMonthly
-            )
-            val factor = 0.75f + (i.toFloat() / safeMonths.coerceAtLeast(1)) * 0.35f
-            val estimated = if (isBeforePortfolio) 0f else (estimatedBase * factor).toFloat()
-            val isFuture = i >= startOffset
-            com.example.ui.components.StackedBarData(
-                received = if (isFuture) 0f else estimated,
-                projected = if (isFuture) estimated else 0f,
-                label = monthLabel
-            )
+            // Sem evento confirmado no mês: não simula proventos. O gráfico deve refletir
+            // apenas valores recebidos ou previstos pelo serviço de dados e pela carteira.
+            com.example.ui.components.StackedBarData(received = 0f, projected = 0f, label = monthLabel)
         }
     }
 }
@@ -2563,6 +2752,7 @@ private fun buildDividendEvolutionData(
 private fun periodStartMillis(periodLabel: String, firstTransactionTime: Long): Long {
     val now = java.util.Calendar.getInstance()
     val start = when (periodLabel) {
+        "Desde o início" -> firstTransactionTime
         "Últimos 6 meses" -> (now.clone() as java.util.Calendar).apply { add(java.util.Calendar.MONTH, -5); set(java.util.Calendar.DAY_OF_MONTH, 1) }.timeInMillis
         "Neste ano" -> (now.clone() as java.util.Calendar).apply { set(java.util.Calendar.MONTH, java.util.Calendar.JANUARY); set(java.util.Calendar.DAY_OF_MONTH, 1) }.timeInMillis
         else -> (now.clone() as java.util.Calendar).apply { add(java.util.Calendar.MONTH, -11); set(java.util.Calendar.DAY_OF_MONTH, 1) }.timeInMillis
@@ -2586,32 +2776,6 @@ private fun monthStartForInsight(millis: Long): java.util.Calendar {
         set(java.util.Calendar.SECOND, 0)
         set(java.util.Calendar.MILLISECOND, 0)
     }
-}
-
-private fun estimateDividendForAssetAcrossPeriod(
-    asset: AssetSummary,
-    transactions: List<com.example.data.Transaction>,
-    startMillis: Long,
-    endMillis: Long
-): Double {
-    val unitMonthly = asset.currentPrice * (asset.dividendYield / 100.0) / 12.0
-    if (!unitMonthly.isFinite() || unitMonthly <= 0.0 || endMillis < startMillis) return 0.0
-    val cursor = monthStartForInsight(startMillis)
-    val end = monthStartForInsight(endMillis)
-    var total = 0.0
-    var guard = 0
-    while (!cursor.after(end) && guard < 240) {
-        val monthEnd = monthEndMillis(cursor)
-        val qty = if (transactions.isNotEmpty()) {
-            sharesOwnedAtInsightDate(transactions, asset.ticker, monthEnd)
-        } else {
-            asset.sharesCount
-        }.coerceAtLeast(0.0)
-        total += qty * unitMonthly
-        cursor.add(java.util.Calendar.MONTH, 1)
-        guard++
-    }
-    return total.takeIf { it.isFinite() && it > 0.0 } ?: 0.0
 }
 
 private fun buildTopDividendAssetsForPeriod(
@@ -2641,18 +2805,9 @@ private fun buildTopDividendAssetsForPeriod(
         return fromEvents.entries.sortedByDescending { it.value }.map { it.key to it.value.toFloat() }
     }
 
-    // Fallback sem eventos do Proxy: estima mês a mês com a quantidade que realmente
-    // existia na carteira em cada encerramento mensal, evitando inflar ativos comprados
-    // depois do início do filtro selecionado.
-    return summaries.mapNotNull { asset ->
-        val amount = estimateDividendForAssetAcrossPeriod(
-            asset = asset,
-            transactions = transactions,
-            startMillis = start,
-            endMillis = end
-        )
-        if (amount > 0.0) asset.ticker to amount.toFloat() else null
-    }.sortedByDescending { it.second }
+    // Sem eventos confirmados não cria ranking estimado: evita mostrar valores simulados
+    // como se fossem proventos recebidos desde a criação da carteira.
+    return emptyList()
 }
 
 private fun buildDividendAgendaData(
@@ -2695,14 +2850,9 @@ private fun buildDividendAgendaData(
     )
     if (upcomingRows.isNotEmpty()) return upcomingRows
 
-    return fallbackAssets.mapNotNull { asset ->
-        val amount = asset.lastDividend * asset.sharesCount
-        if (amount <= 0.0) null else com.example.ui.components.StackedBarData(
-            received = 0f,
-            projected = amount.toFloat(),
-            label = asset.ticker.take(5)
-        )
-    }.take(limit)
+    // Sem evento futuro confirmado, a agenda permanece vazia em vez de projetar
+    // proventos usando último rendimento ou DY histórico.
+    return emptyList()
 }
 
 // -------------------------------------------------------------
@@ -2714,7 +2864,7 @@ fun getPageSubtitle(topic: String): String {
         "IPCA+" -> "Variação patrimonial real comparada com o índice oficial IPCA"
         "Diversificação" -> "Equilíbrio de riscos e diversificação setorial do patrimônio"
         "Agenda" -> "Próximas datas com e pagamentos previstos para seus ativos"
-        "Rankings" -> "Rankings do mercado e da sua carteira entregues pelo Valorae Proxy"
+        "Rankings" -> "Rankings do mercado e da sua carteira com dados de mercado"
         else -> ""
     }
 }
@@ -2728,15 +2878,17 @@ fun getKpiMetricsForPage(
 ): List<Triple<String, String, String>> {
     val totalCurrent = if (summaryModel.totalCurrentValue.isNaN() || summaryModel.totalCurrentValue.isInfinite()) 0.0 else summaryModel.totalCurrentValue
     val avgDy = if (totalCurrent > 0) summaries.sumOf { it.totalCurrentValue * it.dividendYield } / totalCurrent else 0.0
-    val proxyMonthly = analytics.analysis?.monthlyDividendEstimate ?: 0.0
-    val localMonthly = (totalCurrent * (avgDy / 100.0)) / 12.0
-    val finalMonthlyDiv = if (proxyMonthly > 0.0) proxyMonthly else localMonthly
+    val paidDividendAmounts = analytics.dividendEvents
+        .filter { isPaidDividendEvent(it) }
+        .map { eligibleDividendAmount(it, transactions) }
+        .filter { it > 0.0 }
+    val confirmedMonthlyAverage = if (paidDividendAmounts.isNotEmpty()) paidDividendAmounts.sum() / monthsInSelectedPeriod("Últimos 12 meses", transactions.filter { !it.isSell && it.quantity > 0.0 }.minOfOrNull { it.date } ?: transactions.minOfOrNull { it.date } ?: System.currentTimeMillis()).coerceAtLeast(1) else 0.0
 
     return when (page) {
         "Proventos" -> listOf(
             Triple("Yield Médio", String.format("%.2f%%", avgDy), "GOLD"),
-            Triple("Média Mensal", String.format("R$ %.2f", finalMonthlyDiv), "GREEN"),
-            Triple("Projeção Anual", String.format("R$ %.2f", finalMonthlyDiv * 12), "GOLD")
+            Triple("Média Confirmada", String.format("R$ %.2f", confirmedMonthlyAverage), "GREEN"),
+            Triple("Eventos", "${paidDividendAmounts.size}", "GOLD")
         )
         "IPCA+" -> {
             val portReturn = summaryModel.returnPercent
@@ -2763,22 +2915,11 @@ fun getKpiMetricsForPage(
         }
         "Agenda" -> {
             val events = upcomingEligibleDividendEvents(analytics.dividendEvents, transactions)
-            val agendaCount = if (events.isNotEmpty()) events.size else summaries.count {
-                val ts = parseInsightDateMillis(it.nextEarningsDate)
-                ts <= 0L || ts >= startOfInsightDayMillis(System.currentTimeMillis())
-            }
-            val sumDY = if (events.isNotEmpty()) {
-                events.sumOf { eligibleDividendAmount(it, transactions) }
-            } else {
-                summaries.filter {
-                    val ts = parseInsightDateMillis(it.nextEarningsDate)
-                    ts <= 0L || ts >= startOfInsightDayMillis(System.currentTimeMillis())
-                }.sumOf { it.lastDividend * it.sharesCount }
-            }
+            val sumDY = events.sumOf { eligibleDividendAmount(it, transactions) }
             listOf(
-                Triple("Eventos", "$agendaCount un", "GOLD"),
-                Triple("Próx. Estimado", String.format("R$ %.2f", sumDY), "GREEN"),
-                Triple("Fonte", if (analytics.dividendEvents.isNotEmpty()) "Proxy" else "Local", "GOLD")
+                Triple("Eventos", "${events.size} un", "GOLD"),
+                Triple("Valor Confirmado", String.format("R$ %.2f", sumDY), "GREEN"),
+                Triple("Fonte", if (events.isNotEmpty()) "Confirmada" else "Sem previsão", "GOLD")
             )
         }
         "Rankings" -> {

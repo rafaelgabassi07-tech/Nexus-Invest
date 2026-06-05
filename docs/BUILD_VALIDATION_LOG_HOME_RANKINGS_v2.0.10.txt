@@ -1,0 +1,38 @@
+== STATIC HOME RANKINGS CHECK ==
+OK - Home sem Column duplicado no card de rankings
+OK - Home usa cache assetData para preço/nome
+OK - Home força seta por aba alta/baixa
+OK - Home mostra fonte do ranking
+OK - Home tem testTag para auditoria visual
+OK - Home mostra skeleton antes da primeira resposta
+OK - ViewModel marca carregamento dos rankings
+OK - ViewModel busca ranking vivo em modo completo
+OK - ViewModel protege falha e desliga loading
+OK - OkHttp suporta ranking completo lento
+OK - Parser aceita aliases Investidor10/AeroScrape
+OK - Parser aceita ticker por code/papel
+OK - Versão atualizada
+STATIC_HOME_RANKINGS_FIX_OK
+
+== STATIC KOTLIN BALANCE CHECK ==
+OK - balance app/src/main/java/com/example/ui/screens/DashboardScreen.kt
+OK - balance app/src/main/java/com/example/viewmodel/PortfolioViewModel.kt
+OK - balance app/src/main/java/com/example/network/B3NetworkService.kt
+STATIC_KOTLIN_BALANCE_OK
+
+== LOADING OPTIMIZATION CHECK ==
+Valorae loading optimization audit OK
+OK - Abertura escalona notícias
+OK - Abertura escalona rankings
+OK - TTL para notícias
+OK - TTL para rankings de mercado
+OK - TTL para saúde do Proxy
+OK - TTL para cotações em lote
+OK - Insights não baixa rankings globais a cada atualização da carteira
+OK - Proxy+ não roda no refresh geral quando nunca aberto
+OK - Proxy+ tem trava contra chamadas concorrentes
+OK - OkHttp com concorrência moderada
+OK - Rankings ao vivo suportam modo completo com fallback
+OK - Batch de ativos não vira dezenas de chamadas individuais
+OK - Diagnóstico do Proxy tem cache
+OK - Proxy+ limita blocos avançados por abertura

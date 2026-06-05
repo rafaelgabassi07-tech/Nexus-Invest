@@ -1,0 +1,1021 @@
+comparacaoIndices: {
+  "text": "COMPARAÇÃO DETALHADA COMPARAÇÃO DE WEGE3 COM ÍNDICES Rentabilidade do ativo ajustada por grupamentos, desdobramentos, bonificações, proventos e pela variação cambial no período. '> 2 A 5 A 10 A 2 A 5 A 10 A 2 anos 5 anos 10 anos Se você tivesse investido Se você tivesse investido há há { this.$refs.hiddenInput.dispatchEvent(new Event('change', { bubbles: true })); }); this.$el.addEventListener('set-dropdown', e => { this.selectedValue = e.detail.value; if (e.detail.label) { this.selectedText = e.detail.label; } else { const option = this.options.find(opt => { return String(opt.value) === String(e.detail.value); }); if (option) { this.selectedText = option.text; } } }); } }\" @click.away=\"open = false\" @keydown.escape=\"open = false\"> 2 anos 5 anos 10 anos hoje você teria * hoje você teria: * *O valor considera o reinvestimento dos dividendos.",
+  "keyValues": [
+    {
+      "label": "2 A 5 A 10 A 2 A 5 A 10 A 2 anos 5 anos",
+      "value": "10"
+    },
+    {
+      "label": "2 anos 5 anos",
+      "value": "10"
+    }
+  ],
+  "length": 852
+}
+comparacaoIndices (sections): undefined
+compare data: {
+  "endpoint": "compare",
+  "requestId": "pdx1::44bsb-1780621216158-f515c1c95e77",
+  "inputErrors": [],
+  "version": "21.12.0",
+  "requested": [
+    "WEGE3",
+    "IBOV",
+    "IFIX",
+    "CDI",
+    "IPCA"
+  ],
+  "ranking": [
+    {
+      "ticker": "WEGE3",
+      "type": "ACAO",
+      "status": "OK",
+      "score": 65,
+      "grade": "C",
+      "dividendYield": 5.19,
+      "pvp": 9.88,
+      "pl": 27.89,
+      "roe": 35.43,
+      "roic": 30.08,
+      "precoAtual": 41.78,
+      "liquidity": 306390000,
+      "strengths": [
+        "qualidadeDados",
+        "eficiencia",
+        "risco"
+      ],
+      "risks": [
+        "valuation",
+        "rentabilidade"
+      ],
+      "quality": 85
+    },
+    {
+      "ticker": "IBOV",
+      "type": "STOCK",
+      "status": "PARTIAL",
+      "score": 36,
+      "grade": "D",
+      "dividendYield": null,
+      "pvp": null,
+      "pl": null,
+      "roe": null,
+      "roic": null,
+      "precoAtual": null,
+      "liquidity": null,
+      "strengths": [
+        "valuation",
+        "risco"
+      ],
+      "risks": [
+        "qualidadeDados",
+        "eficiencia",
+        "dividendos",
+        "rentabilidade"
+      ],
+      "quality": 2
+    },
+    {
+      "ticker": "IFIX",
+      "type": "STOCK",
+      "status": "PARTIAL",
+      "score": 36,
+      "grade": "D",
+      "dividendYield": null,
+      "pvp": null,
+      "pl": null,
+      "roe": null,
+      "roic": null,
+      "precoAtual": 52.41,
+      "liquidity": null,
+      "strengths": [
+        "valuation",
+        "risco"
+      ],
+      "risks": [
+        "qualidadeDados",
+        "eficiencia",
+        "dividendos",
+        "rentabilidade"
+      ],
+      "quality": 3
+    },
+    {
+      "ticker": "CDI",
+      "type": "STOCK",
+      "status": "PARTIAL",
+      "score": 36,
+      "grade": "D",
+      "dividendYield": null,
+      "pvp": null,
+      "pl": null,
+      "roe": null,
+      "roic": null,
+      "precoAtual": null,
+      "liquidity": null,
+      "strengths": [
+        "valuation",
+        "risco"
+      ],
+      "risks": [
+        "qualidadeDados",
+        "eficiencia",
+        "dividendos",
+        "rentabilidade"
+      ],
+      "quality": 2
+    },
+    {
+      "ticker": "IPCA",
+      "type": "STOCK",
+      "status": "PARTIAL",
+      "score": 36,
+      "grade": "D",
+      "dividendYield": null,
+      "pvp": null,
+      "pl": null,
+      "roe": null,
+      "roic": null,
+      "precoAtual": null,
+      "liquidity": null,
+      "strengths": [
+        "valuation",
+        "risco"
+      ],
+      "risks": [
+        "qualidadeDados",
+        "eficiencia",
+        "dividendos",
+        "rentabilidade"
+      ],
+      "quality": 2
+    }
+  ],
+  "rankings": {
+    "score": [
+      {
+        "rank": 1,
+        "ticker": "WEGE3",
+        "value": 65,
+        "grade": "C"
+      },
+      {
+        "rank": 2,
+        "ticker": "IBOV",
+        "value": 36,
+        "grade": "D"
+      },
+      {
+        "rank": 3,
+        "ticker": "IFIX",
+        "value": 36,
+        "grade": "D"
+      },
+      {
+        "rank": 4,
+        "ticker": "CDI",
+        "value": 36,
+        "grade": "D"
+      },
+      {
+        "rank": 5,
+        "ticker": "IPCA",
+        "value": 36,
+        "grade": "D"
+      }
+    ],
+    "dividendYield": [
+      {
+        "rank": 1,
+        "ticker": "WEGE3",
+        "value": 5.19,
+        "grade": "C"
+      }
+    ],
+    "pvp": [
+      {
+        "rank": 1,
+        "ticker": "WEGE3",
+        "value": 9.88,
+        "grade": "C"
+      }
+    ],
+    "pl": [
+      {
+        "rank": 1,
+        "ticker": "WEGE3",
+        "value": 27.89,
+        "grade": "C"
+      }
+    ],
+    "roe": [
+      {
+        "rank": 1,
+        "ticker": "WEGE3",
+        "value": 35.43,
+        "grade": "C"
+      }
+    ],
+    "roic": [
+      {
+        "rank": 1,
+        "ticker": "WEGE3",
+        "value": 30.08,
+        "grade": "C"
+      }
+    ],
+    "quality": [
+      {
+        "rank": 1,
+        "ticker": "WEGE3",
+        "value": 85,
+        "grade": "C"
+      },
+      {
+        "rank": 2,
+        "ticker": "IFIX",
+        "value": 3,
+        "grade": "D"
+      },
+      {
+        "rank": 3,
+        "ticker": "IBOV",
+        "value": 2,
+        "grade": "D"
+      },
+      {
+        "rank": 4,
+        "ticker": "CDI",
+        "value": 2,
+        "grade": "D"
+      },
+      {
+        "rank": 5,
+        "ticker": "IPCA",
+        "value": 2,
+        "grade": "D"
+      }
+    ]
+  },
+  "winnerByCriterion": {
+    "score": {
+      "rank": 1,
+      "ticker": "WEGE3",
+      "value": 65,
+      "grade": "C"
+    },
+    "dividendYield": {
+      "rank": 1,
+      "ticker": "WEGE3",
+      "value": 5.19,
+      "grade": "C"
+    },
+    "pvp": {
+      "rank": 1,
+      "ticker": "WEGE3",
+      "value": 9.88,
+      "grade": "C"
+    },
+    "pl": {
+      "rank": 1,
+      "ticker": "WEGE3",
+      "value": 27.89,
+      "grade": "C"
+    },
+    "roe": {
+      "rank": 1,
+      "ticker": "WEGE3",
+      "value": 35.43,
+      "grade": "C"
+    },
+    "roic": {
+      "rank": 1,
+      "ticker": "WEGE3",
+      "value": 30.08,
+      "grade": "C"
+    },
+    "quality": {
+      "rank": 1,
+      "ticker": "WEGE3",
+      "value": 85,
+      "grade": "C"
+    }
+  },
+  "profiles": {
+    "dividendos": [
+      {
+        "rank": 1,
+        "ticker": "WEGE3",
+        "score": 38,
+        "explanation": {
+          "ticker": "WEGE3",
+          "strengths": [
+            "Dividend yield acima da média dos comparados",
+            "ROE acima da média",
+            "ROIC acima da média",
+            "Boa qualidade de dados"
+          ],
+          "weaknesses": [
+            "Possui 2 alerta(s)/risco(s)"
+          ],
+          "decisiveFields": [
+            "score",
+            "dividendYield",
+            "pvp",
+            "pl",
+            "roe",
+            "roic",
+            "quality"
+          ]
+        }
+      },
+      {
+        "rank": 2,
+        "ticker": "IFIX",
+        "score": 8,
+        "explanation": {
+          "ticker": "IFIX",
+          "strengths": [],
+          "weaknesses": [
+            "Possui 4 alerta(s)/risco(s)",
+            "Qualidade de dados abaixo do ideal"
+          ],
+          "decisiveFields": [
+            "score",
+            "dividendYield",
+            "pvp",
+            "pl",
+            "roe",
+            "roic",
+            "quality"
+          ]
+        }
+      },
+      {
+        "rank": 3,
+        "ticker": "IBOV",
+        "score": 7,
+        "explanation": {
+          "ticker": "IBOV",
+          "strengths": [],
+          "weaknesses": [
+            "Possui 4 alerta(s)/risco(s)",
+            "Qualidade de dados abaixo do ideal"
+          ],
+          "decisiveFields": [
+            "score",
+            "dividendYield",
+            "pvp",
+            "pl",
+            "roe",
+            "roic",
+            "quality"
+          ]
+        }
+      },
+      {
+        "rank": 4,
+        "ticker": "CDI",
+        "score": 7,
+        "explanation": {
+          "ticker": "CDI",
+          "strengths": [],
+          "weaknesses": [
+            "Possui 4 alerta(s)/risco(s)",
+            "Qualidade de dados abaixo do ideal"
+          ],
+          "decisiveFields": [
+            "score",
+            "dividendYield",
+            "pvp",
+            "pl",
+            "roe",
+            "roic",
+            "quality"
+          ]
+        }
+      },
+      {
+        "rank": 5,
+        "ticker": "IPCA",
+        "score": 7,
+        "explanation": {
+          "ticker": "IPCA",
+          "strengths": [],
+          "weaknesses": [
+            "Possui 4 alerta(s)/risco(s)",
+            "Qualidade de dados abaixo do ideal"
+          ],
+          "decisiveFields": [
+            "score",
+            "dividendYield",
+            "pvp",
+            "pl",
+            "roe",
+            "roic",
+            "quality"
+          ]
+        }
+      }
+    ],
+    "conservador": [
+      {
+        "rank": 1,
+        "ticker": "WEGE3",
+        "score": 141,
+        "explanation": {
+          "ticker": "WEGE3",
+          "strengths": [
+            "Dividend yield acima da média dos comparados",
+            "ROE acima da média",
+            "ROIC acima da média",
+            "Boa qualidade de dados"
+          ],
+          "weaknesses": [
+            "Possui 2 alerta(s)/risco(s)"
+          ],
+          "decisiveFields": [
+            "score",
+            "dividendYield",
+            "pvp",
+            "pl",
+            "roe",
+            "roic",
+            "quality"
+          ]
+        }
+      },
+      {
+        "rank": 2,
+        "ticker": "IFIX",
+        "score": 15,
+        "explanation": {
+          "ticker": "IFIX",
+          "strengths": [],
+          "weaknesses": [
+            "Possui 4 alerta(s)/risco(s)",
+            "Qualidade de dados abaixo do ideal"
+          ],
+          "decisiveFields": [
+            "score",
+            "dividendYield",
+            "pvp",
+            "pl",
+            "roe",
+            "roic",
+            "quality"
+          ]
+        }
+      },
+      {
+        "rank": 3,
+        "ticker": "IBOV",
+        "score": 14,
+        "explanation": {
+          "ticker": "IBOV",
+          "strengths": [],
+          "weaknesses": [
+            "Possui 4 alerta(s)/risco(s)",
+            "Qualidade de dados abaixo do ideal"
+          ],
+          "decisiveFields": [
+            "score",
+            "dividendYield",
+            "pvp",
+            "pl",
+            "roe",
+            "roic",
+            "quality"
+          ]
+        }
+      },
+      {
+        "rank": 4,
+        "ticker": "CDI",
+        "score": 14,
+        "explanation": {
+          "ticker": "CDI",
+          "strengths": [],
+          "weaknesses": [
+            "Possui 4 alerta(s)/risco(s)",
+            "Qualidade de dados abaixo do ideal"
+          ],
+          "decisiveFields": [
+            "score",
+            "dividendYield",
+            "pvp",
+            "pl",
+            "roe",
+            "roic",
+            "quality"
+          ]
+        }
+      },
+      {
+        "rank": 5,
+        "ticker": "IPCA",
+        "score": 14,
+        "explanation": {
+          "ticker": "IPCA",
+          "strengths": [],
+          "weaknesses": [
+            "Possui 4 alerta(s)/risco(s)",
+            "Qualidade de dados abaixo do ideal"
+          ],
+          "decisiveFields": [
+            "score",
+            "dividendYield",
+            "pvp",
+            "pl",
+            "roe",
+            "roic",
+            "quality"
+          ]
+        }
+      }
+    ],
+    "crescimento": [
+      {
+        "rank": 1,
+        "ticker": "WEGE3",
+        "score": 82,
+        "explanation": {
+          "ticker": "WEGE3",
+          "strengths": [
+            "Dividend yield acima da média dos comparados",
+            "ROE acima da média",
+            "ROIC acima da média",
+            "Boa qualidade de dados"
+          ],
+          "weaknesses": [
+            "Possui 2 alerta(s)/risco(s)"
+          ],
+          "decisiveFields": [
+            "score",
+            "dividendYield",
+            "pvp",
+            "pl",
+            "roe",
+            "roic",
+            "quality"
+          ]
+        }
+      },
+      {
+        "rank": 2,
+        "ticker": "IBOV",
+        "score": 9,
+        "explanation": {
+          "ticker": "IBOV",
+          "strengths": [],
+          "weaknesses": [
+            "Possui 4 alerta(s)/risco(s)",
+            "Qualidade de dados abaixo do ideal"
+          ],
+          "decisiveFields": [
+            "score",
+            "dividendYield",
+            "pvp",
+            "pl",
+            "roe",
+            "roic",
+            "quality"
+          ]
+        }
+      },
+      {
+        "rank": 3,
+        "ticker": "IFIX",
+        "score": 9,
+        "explanation": {
+          "ticker": "IFIX",
+          "strengths": [],
+          "weaknesses": [
+            "Possui 4 alerta(s)/risco(s)",
+            "Qualidade de dados abaixo do ideal"
+          ],
+          "decisiveFields": [
+            "score",
+            "dividendYield",
+            "pvp",
+            "pl",
+            "roe",
+            "roic",
+            "quality"
+          ]
+        }
+      },
+      {
+        "rank": 4,
+        "ticker": "CDI",
+        "score": 9,
+        "explanation": {
+          "ticker": "CDI",
+          "strengths": [],
+          "weaknesses": [
+            "Possui 4 alerta(s)/risco(s)",
+            "Qualidade de dados abaixo do ideal"
+          ],
+          "decisiveFields": [
+            "score",
+            "dividendYield",
+            "pvp",
+            "pl",
+            "roe",
+            "roic",
+            "quality"
+          ]
+        }
+      },
+      {
+        "rank": 5,
+        "ticker": "IPCA",
+        "score": 9,
+        "explanation": {
+          "ticker": "IPCA",
+          "strengths": [],
+          "weaknesses": [
+            "Possui 4 alerta(s)/risco(s)",
+            "Qualidade de dados abaixo do ideal"
+          ],
+          "decisiveFields": [
+            "score",
+            "dividendYield",
+            "pvp",
+            "pl",
+            "roe",
+            "roic",
+            "quality"
+          ]
+        }
+      }
+    ],
+    "valor": [
+      {
+        "rank": 1,
+        "ticker": "WEGE3",
+        "score": 65,
+        "explanation": {
+          "ticker": "WEGE3",
+          "strengths": [
+            "Dividend yield acima da média dos comparados",
+            "ROE acima da média",
+            "ROIC acima da média",
+            "Boa qualidade de dados"
+          ],
+          "weaknesses": [
+            "Possui 2 alerta(s)/risco(s)"
+          ],
+          "decisiveFields": [
+            "score",
+            "dividendYield",
+            "pvp",
+            "pl",
+            "roe",
+            "roic",
+            "quality"
+          ]
+        }
+      },
+      {
+        "rank": 2,
+        "ticker": "IBOV",
+        "score": 36,
+        "explanation": {
+          "ticker": "IBOV",
+          "strengths": [],
+          "weaknesses": [
+            "Possui 4 alerta(s)/risco(s)",
+            "Qualidade de dados abaixo do ideal"
+          ],
+          "decisiveFields": [
+            "score",
+            "dividendYield",
+            "pvp",
+            "pl",
+            "roe",
+            "roic",
+            "quality"
+          ]
+        }
+      },
+      {
+        "rank": 3,
+        "ticker": "IFIX",
+        "score": 36,
+        "explanation": {
+          "ticker": "IFIX",
+          "strengths": [],
+          "weaknesses": [
+            "Possui 4 alerta(s)/risco(s)",
+            "Qualidade de dados abaixo do ideal"
+          ],
+          "decisiveFields": [
+            "score",
+            "dividendYield",
+            "pvp",
+            "pl",
+            "roe",
+            "roic",
+            "quality"
+          ]
+        }
+      },
+      {
+        "rank": 4,
+        "ticker": "CDI",
+        "score": 36,
+        "explanation": {
+          "ticker": "CDI",
+          "strengths": [],
+          "weaknesses": [
+            "Possui 4 alerta(s)/risco(s)",
+            "Qualidade de dados abaixo do ideal"
+          ],
+          "decisiveFields": [
+            "score",
+            "dividendYield",
+            "pvp",
+            "pl",
+            "roe",
+            "roic",
+            "quality"
+          ]
+        }
+      },
+      {
+        "rank": 5,
+        "ticker": "IPCA",
+        "score": 36,
+        "explanation": {
+          "ticker": "IPCA",
+          "strengths": [],
+          "weaknesses": [
+            "Possui 4 alerta(s)/risco(s)",
+            "Qualidade de dados abaixo do ideal"
+          ],
+          "decisiveFields": [
+            "score",
+            "dividendYield",
+            "pvp",
+            "pl",
+            "roe",
+            "roic",
+            "quality"
+          ]
+        }
+      }
+    ],
+    "rendaFii": [
+      {
+        "rank": 1,
+        "ticker": "WEGE3",
+        "score": 33,
+        "explanation": {
+          "ticker": "WEGE3",
+          "strengths": [
+            "Dividend yield acima da média dos comparados",
+            "ROE acima da média",
+            "ROIC acima da média",
+            "Boa qualidade de dados"
+          ],
+          "weaknesses": [
+            "Possui 2 alerta(s)/risco(s)"
+          ],
+          "decisiveFields": [
+            "score",
+            "dividendYield",
+            "pvp",
+            "pl",
+            "roe",
+            "roic",
+            "quality"
+          ]
+        }
+      },
+      {
+        "rank": 2,
+        "ticker": "IFIX",
+        "score": 1,
+        "explanation": {
+          "ticker": "IFIX",
+          "strengths": [],
+          "weaknesses": [
+            "Possui 4 alerta(s)/risco(s)",
+            "Qualidade de dados abaixo do ideal"
+          ],
+          "decisiveFields": [
+            "score",
+            "dividendYield",
+            "pvp",
+            "pl",
+            "roe",
+            "roic",
+            "quality"
+          ]
+        }
+      },
+      {
+        "rank": 3,
+        "ticker": "IBOV",
+        "score": 0,
+        "explanation": {
+          "ticker": "IBOV",
+          "strengths": [],
+          "weaknesses": [
+            "Possui 4 alerta(s)/risco(s)",
+            "Qualidade de dados abaixo do ideal"
+          ],
+          "decisiveFields": [
+            "score",
+            "dividendYield",
+            "pvp",
+            "pl",
+            "roe",
+            "roic",
+            "quality"
+          ]
+        }
+      },
+      {
+        "rank": 4,
+        "ticker": "CDI",
+        "score": 0,
+        "explanation": {
+          "ticker": "CDI",
+          "strengths": [],
+          "weaknesses": [
+            "Possui 4 alerta(s)/risco(s)",
+            "Qualidade de dados abaixo do ideal"
+          ],
+          "decisiveFields": [
+            "score",
+            "dividendYield",
+            "pvp",
+            "pl",
+            "roe",
+            "roic",
+            "quality"
+          ]
+        }
+      },
+      {
+        "rank": 5,
+        "ticker": "IPCA",
+        "score": 0,
+        "explanation": {
+          "ticker": "IPCA",
+          "strengths": [],
+          "weaknesses": [
+            "Possui 4 alerta(s)/risco(s)",
+            "Qualidade de dados abaixo do ideal"
+          ],
+          "decisiveFields": [
+            "score",
+            "dividendYield",
+            "pvp",
+            "pl",
+            "roe",
+            "roic",
+            "quality"
+          ]
+        }
+      }
+    ]
+  },
+  "explanations": [
+    {
+      "ticker": "WEGE3",
+      "strengths": [
+        "Dividend yield acima da média dos comparados",
+        "ROE acima da média",
+        "ROIC acima da média",
+        "Boa qualidade de dados"
+      ],
+      "weaknesses": [
+        "Possui 2 alerta(s)/risco(s)"
+      ],
+      "decisiveFields": [
+        "score",
+        "dividendYield",
+        "pvp",
+        "pl",
+        "roe",
+        "roic",
+        "quality"
+      ]
+    },
+    {
+      "ticker": "IBOV",
+      "strengths": [],
+      "weaknesses": [
+        "Possui 4 alerta(s)/risco(s)",
+        "Qualidade de dados abaixo do ideal"
+      ],
+      "decisiveFields": [
+        "score",
+        "dividendYield",
+        "pvp",
+        "pl",
+        "roe",
+        "roic",
+        "quality"
+      ]
+    },
+    {
+      "ticker": "IFIX",
+      "strengths": [],
+      "weaknesses": [
+        "Possui 4 alerta(s)/risco(s)",
+        "Qualidade de dados abaixo do ideal"
+      ],
+      "decisiveFields": [
+        "score",
+        "dividendYield",
+        "pvp",
+        "pl",
+        "roe",
+        "roic",
+        "quality"
+      ]
+    },
+    {
+      "ticker": "CDI",
+      "strengths": [],
+      "weaknesses": [
+        "Possui 4 alerta(s)/risco(s)",
+        "Qualidade de dados abaixo do ideal"
+      ],
+      "decisiveFields": [
+        "score",
+        "dividendYield",
+        "pvp",
+        "pl",
+        "roe",
+        "roic",
+        "quality"
+      ]
+    },
+    {
+      "ticker": "IPCA",
+      "strengths": [],
+      "weaknesses": [
+        "Possui 4 alerta(s)/risco(s)",
+        "Qualidade de dados abaixo do ideal"
+      ],
+      "decisiveFields": [
+        "score",
+        "dividendYield",
+        "pvp",
+        "pl",
+        "roe",
+        "roic",
+        "quality"
+      ]
+    }
+  ],
+  "best": {
+    "ticker": "WEGE3",
+    "type": "ACAO",
+    "status": "OK",
+    "score": 65,
+    "grade": "C",
+    "dividendYield": 5.19,
+    "pvp": 9.88,
+    "pl": 27.89,
+    "roe": 35.43,
+    "roic": 30.08,
+    "precoAtual": 41.78,
+    "liquidity": 306390000,
+    "strengths": [
+      "qualidadeDados",
+      "eficiencia",
+      "risco"
+    ],
+    "risks": [
+      "valuation",
+      "rentabilidade"
+    ],
+    "quality": 85
+  },
+  "count": 5,
+  "errors": [],
+  "stats": {
+    "requested": 5,
+    "uniqueRequested": 5,
+    "deduped": 0,
+    "success": 1,
+    "partial": 4,
+    "failed": 0,
+    "durationMs": 11,
+    "maxConcurrency": 4,
+    "cacheHits": 5,
+    "averageQualityScore": 19,
+    "grades": {
+      "A": 1,
+      "D": 4
+    },
+    "performanceProfile": "fast",
+    "selectorOnly": true
+  }
+}

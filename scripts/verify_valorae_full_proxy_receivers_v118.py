@@ -37,7 +37,7 @@ checks = {
     'Aba Proxy+ continua fora da navegação inferior': 'ProxyToolsScreen(' not in main and 'activePage == 5' not in main and 'activePage = 5' not in main,
     'Diagnóstico amigável permanece em Configurações': all(x in settings for x in ['Diagnóstico do VALORAE', 'Recebimento de dados', 'Cache e proteção contra perda', 'viewModel.refreshProxyHealth(force = true)']),
     'Biometria mantém validação e fallback seguro': all(x in main + settings for x in ['setAllowedAuthenticators(authenticators)', 'canUseDeviceAuth', 'onDisableBiometric', 'setBiometricEnabled(false)', 'requestAuthenticationToEnable']),
-    'Versão do app está em v1.1.8': 'versionCode = 11' in build and 'versionName = "1.1.8"' in build,
+    'Versão do app está em v1.1.9': 'versionCode = 12' in build and 'versionName = "1.1.9"' in build,
 }
 failed = [name for name, ok in checks.items() if not ok]
 for name, ok in checks.items():
@@ -45,5 +45,5 @@ for name, ok in checks.items():
 if failed:
     if missing: print('Missing endpoints:', missing)
     if unexpected: print('Unexpected endpoints:', unexpected)
-    raise SystemExit('Falhas na verificação v1.1.8: ' + '; '.join(failed))
-print('Valorae full proxy receivers audit v1.1.8 OK')
+    raise SystemExit('Falhas na verificação v1.1.9: ' + '; '.join(failed))
+print('Valorae full proxy receivers audit v1.1.9 OK')

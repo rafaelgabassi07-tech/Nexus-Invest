@@ -39,7 +39,7 @@ data class B3AssetData(
     val priceToSales: Double = 0.0, // PSR
     val nextEarningsDate: String = "",
     val isFii: Boolean = false,
-    val source: String = "Valorae Proxy",
+    val source: String = "Serviço de dados VALORAE",
     val payout: Double = 0.0,         // Payout %
     val cagrRevenue5y: Double = 0.0,  // CAGR Receitas 5 anos %
     
@@ -100,7 +100,7 @@ data class B3AssetData(
     val fiiDuration: String = "",     // Prazo de Duração (FII)
     val magicNumber: Double = 0.0,    // Magic Number (FII)
 
-    // Metadados do contrato VALORAE Proxy v1 usados para cache, diagnóstico e renderização segura.
+    // Metadados do contrato serviço de dados VALORAE v1 usados para cache, diagnóstico e renderização segura.
     val proxyStatus: String = "OK",
     val isPartial: Boolean = false,
     val dataReliability: String = "",
@@ -163,7 +163,7 @@ data class PortfolioHistoryPoint(
     val totalValue: Double,
     val investedValue: Double = 0.0,
     val returnPercent: Double = 0.0,
-    val source: String = "Valorae Proxy"
+    val source: String = "Serviço de dados VALORAE"
 )
 
 data class IpcaPoint(
@@ -171,7 +171,7 @@ data class IpcaPoint(
     val dateLabel: String,
     val accumulatedPercent: Double,
     val monthlyPercent: Double = 0.0,
-    val source: String = "Valorae Proxy"
+    val source: String = "Serviço de dados VALORAE"
 )
 
 data class DividendEvent(
@@ -182,7 +182,7 @@ data class DividendEvent(
     val quantity: Double = 0.0,
     val estimatedAmount: Double = 0.0,
     val status: String = "Previsto",
-    val source: String = "Valorae Proxy"
+    val source: String = "Serviço de dados VALORAE"
 )
 
 data class PortfolioProxyActionPlanItem(
@@ -224,13 +224,17 @@ data class MarketRankingItem(
     val changeDisplay: String = "",
     val grade: String = "",
     val direction: String = "",
-    val source: String = "Valorae Proxy",
-    val explanation: String = ""
+    val source: String = "Serviço de dados VALORAE",
+    val explanation: String = "",
+    val volume: Double = 0.0,
+    val setor: String = "",
+    val segmento: String = "",
+    val url: String = ""
 )
 
 data class MarketRankingSnapshot(
     val type: String = "ACAO",
-    val source: String = "Valorae Proxy",
+    val source: String = "Serviço de dados VALORAE",
     val fallbackUsed: Boolean = false,
     val score: List<MarketRankingItem> = emptyList(),
     val dividendYield: List<MarketRankingItem> = emptyList(),
@@ -275,7 +279,7 @@ data class AssetProxyCapabilities(
     val qualitySections: List<ProxyCapabilitySection> = emptyList(),
     val advancedSections: List<ProxyCapabilitySection> = emptyList(),
     val fiiSections: List<ProxyCapabilitySection> = emptyList(),
-    val source: String = "Valorae Proxy",
+    val source: String = "Serviço de dados VALORAE",
     val lastUpdatedAt: Long = System.currentTimeMillis()
 )
 
@@ -283,7 +287,7 @@ data class PortfolioProxyCapabilities(
     val sections: List<ProxyCapabilitySection> = emptyList(),
     val radarSections: List<ProxyCapabilitySection> = emptyList(),
     val diagnosticsSections: List<ProxyCapabilitySection> = emptyList(),
-    val source: String = "Valorae Proxy",
+    val source: String = "Serviço de dados VALORAE",
     val lastUpdatedAt: Long = System.currentTimeMillis()
 )
 data class PortfolioProxyAnalysis(
@@ -305,7 +309,7 @@ data class PortfolioProxyAnalysis(
     val positionRanking: List<PortfolioPositionRankingItem> = emptyList(),
     val rebalanceActions: List<PortfolioRebalanceAction> = emptyList(),
     val warnings: List<String> = emptyList(),
-    val source: String = "Valorae Proxy"
+    val source: String = "Serviço de dados VALORAE"
 )
 
 object B3NetworkService {
@@ -316,9 +320,9 @@ object B3NetworkService {
     }
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(12, TimeUnit.SECONDS)
-        .callTimeout(15, TimeUnit.SECONDS)
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(22, TimeUnit.SECONDS)
+        .callTimeout(24, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .dispatcher(httpDispatcher)
         .connectionPool(ConnectionPool(8, 5, TimeUnit.MINUTES))
@@ -611,13 +615,13 @@ object B3NetworkService {
             !lower.contains("10.0.2.2") &&
             !lower.contains("127.0.0.1") &&
             // Host legado que causava telas vazias. Mesmo que venha do Studio/env,
-            // deve ser ignorado para preservar o contrato atual do Valorae Proxy.
+            // deve ser ignorado para preservar o contrato atual do Serviço de dados VALORAE.
             !lower.contains("valorae-proxy.vercel.app")
     }
 
     private fun directFallbackEnabled(): Boolean {
         // Regra do app: não fazer scraping/chamadas diretas como fallback no Android.
-        // Todo dado externo deve vir pelo Valorae Proxy oficial para manter CORS,
+        // Todo dado externo deve vir pelo Serviço de dados VALORAE oficial para manter CORS,
         // observabilidade, cache, normalização e contrato de campos estáveis.
         return false
     }
@@ -769,27 +773,27 @@ object B3NetworkService {
                 val body = response.body?.string().orEmpty()
                 if (body.isBlank()) {
                     val msg = "GET $path vazio (HTTP ${response.code})"
-                    Log.w("B3NetworkService", "Valorae Proxy response body is empty: $msg")
+                    Log.w("B3NetworkService", "Serviço de dados VALORAE response body is empty: $msg")
                     recordProxyError(msg)
                     return null
                 }
                 val json = try { JSONObject(body) } catch (_: Exception) { null }
                 if (!response.isSuccessful) {
                     val errMsg = json?.optString("message") ?: json?.optString("error") ?: "HTTP ${response.code}"
-                    Log.w("B3NetworkService", "Valorae Proxy GET failed: $path, errorMsg: $errMsg")
+                    Log.w("B3NetworkService", "Serviço de dados VALORAE GET failed: $path, errorMsg: $errMsg")
                     recordProxyError("GET $path • $errMsg")
                     return null
                 }
                 if (isFatalProxyPayload(json)) {
                     val errMsg = proxyPayloadMessage(json)
-                    Log.w("B3NetworkService", "Valorae Proxy GET payload fatal: $path, errorMsg: $errMsg")
+                    Log.w("B3NetworkService", "Serviço de dados VALORAE GET payload fatal: $path, errorMsg: $errMsg")
                     recordProxyError("GET $path • $errMsg")
                     return null
                 }
                 json
             }
         } catch (e: Exception) {
-            Log.w("B3NetworkService", "Valorae Proxy GET exception: $path", e)
+            Log.w("B3NetworkService", "Serviço de dados VALORAE GET exception: $path", e)
             recordProxyError("GET $path • ${e.message ?: e.javaClass.simpleName}")
             null
         }
@@ -810,33 +814,33 @@ object B3NetworkService {
                 val raw = response.body?.string().orEmpty()
                 if (raw.isBlank()) {
                     val msg = "POST $path vazio (HTTP ${response.code})"
-                    Log.w("B3NetworkService", "Valorae Proxy POST response body is empty: $msg")
+                    Log.w("B3NetworkService", "Serviço de dados VALORAE POST response body is empty: $msg")
                     recordProxyError(msg)
                     return null
                 }
                 val json = try { JSONObject(raw) } catch (_: Exception) { null }
                 if (!response.isSuccessful) {
                     val errMsg = json?.optString("message") ?: json?.optString("error") ?: "HTTP ${response.code}"
-                    Log.w("B3NetworkService", "Valorae Proxy POST failed: $path, errorMsg: $errMsg")
+                    Log.w("B3NetworkService", "Serviço de dados VALORAE POST failed: $path, errorMsg: $errMsg")
                     recordProxyError("POST $path • $errMsg")
                     return null
                 }
                 if (isFatalProxyPayload(json)) {
                     val errMsg = proxyPayloadMessage(json)
-                    Log.w("B3NetworkService", "Valorae Proxy POST payload fatal: $path, errorMsg: $errMsg")
+                    Log.w("B3NetworkService", "Serviço de dados VALORAE POST payload fatal: $path, errorMsg: $errMsg")
                     recordProxyError("POST $path • $errMsg")
                     return null
                 }
                 json
             }
         } catch (e: Exception) {
-            Log.w("B3NetworkService", "Valorae Proxy POST exception: $path", e)
+            Log.w("B3NetworkService", "Serviço de dados VALORAE POST exception: $path", e)
             recordProxyError("POST $path • ${e.message ?: e.javaClass.simpleName}")
             null
         }
     }
 
-    private fun unwrapValoraePayload(json: JSONObject?): JSONObject? {
+    fun unwrapValoraePayload(json: JSONObject?): JSONObject? {
         if (json == null) return null
         return json.optJSONObject("data") ?: json
     }
@@ -846,25 +850,31 @@ object B3NetworkService {
     } catch (_: Exception) { null }
 
     private fun JSONObject.optObject(path: String): JSONObject? {
-        var current: JSONObject? = this
-        for (part in path.split('.')) {
-            current = current?.optJSONObject(part) ?: return null
-        }
-        return current
+        if (has(path) && !isNull(path)) return optJSONObject(path)
+        return optAny(path) as? JSONObject
     }
 
     private fun JSONObject.optArray(path: String): JSONArray? {
-        val parts = path.split('.')
-        if (parts.isEmpty()) return null
-        var current: JSONObject? = this
-        for (part in parts.dropLast(1)) {
-            current = current?.optJSONObject(part) ?: return null
-        }
-        return current?.optJSONArray(parts.last())
+        if (has(path) && !isNull(path)) return optJSONArray(path)
+        return optAny(path) as? JSONArray
     }
 
     private fun JSONObject.optAny(key: String): Any? {
-        return if (has(key) && !isNull(key)) opt(key) else null
+        if (has(key) && !isNull(key)) return opt(key)
+        if (!key.contains('.')) return null
+        var current: Any? = this
+        for (part in key.split('.').filter { it.isNotBlank() }) {
+            current = when (val node = current) {
+                is JSONObject -> if (node.has(part) && !node.isNull(part)) node.opt(part) else return null
+                is JSONArray -> {
+                    val index = part.toIntOrNull() ?: return null
+                    if (index in 0 until node.length()) node.opt(index) else return null
+                }
+                else -> return null
+            }
+            if (current == JSONObject.NULL) return null
+        }
+        return current
     }
 
     private fun normalizedValue(normalized: JSONObject?, key: String): Any? {
@@ -964,6 +974,56 @@ object B3NetworkService {
 
     private fun firstObject(vararg objects: JSONObject?): JSONObject? {
         return objects.firstOrNull { it != null && it.length() > 0 }
+    }
+
+    private fun filterChartSeriesByKeywords(series: JSONArray?, vararg keywords: String): JSONArray? {
+        if (series == null || series.length() == 0) return null
+        val out = JSONArray()
+        val normalizedKeywords = keywords.map { canonicalKey(it) }.filter { it.isNotBlank() }
+        for (i in 0 until series.length()) {
+            val item = series.optJSONObject(i) ?: continue
+            val haystack = canonicalKey(
+                listOf(
+                    item.optAny("key"), item.optAny("name"), item.optAny("label"), item.optAny("title"),
+                    item.optAny("sourcePath"), item.optAny("sourceFormat")
+                ).joinToString(" ") { firstText(it) }
+            )
+            if (normalizedKeywords.any { haystack.contains(it) }) out.put(item)
+        }
+        return if (out.length() > 0) out else null
+    }
+
+    private fun parseProfitabilityReturnsFromChartSeries(series: JSONArray?): Pair<List<AssetPeriodReturn>, List<AssetPeriodReturn>> {
+        val nominal = mutableListOf<AssetPeriodReturn>()
+        val real = mutableListOf<AssetPeriodReturn>()
+        if (series == null || series.length() == 0) return nominal to real
+        for (sIdx in 0 until series.length()) {
+            val item = series.optJSONObject(sIdx) ?: continue
+            val rawName = firstText(item.optAny("key"), item.optAny("name"), item.optAny("label"), item.optAny("title"))
+            val name = canonicalKey(rawName)
+            val isReturnSeries = name.contains("rentabilidade") || name.contains("return") || name.contains("performance") || name.contains("variacao") || name.contains("ipca")
+            if (!isReturnSeries) continue
+            val kind = if (name.contains("real") || name.contains("ipca") || name.contains("inflacao") || name.contains("inflação")) "real" else "nominal"
+            val points = firstArray(item.optJSONArray("points"), item.optJSONArray("data"), item.optJSONArray("values"), item.optJSONArray("items")) ?: continue
+            for (i in 0 until points.length()) {
+                val point = points.opt(i)
+                val label = when (point) {
+                    is JSONObject -> firstText(point.optAny("label"), point.optAny("period"), point.optAny("periodo"), point.optAny("date"), point.optAny("x"), "P${i + 1}")
+                    is JSONArray -> firstText(point.opt(0), "P${i + 1}")
+                    else -> "P${i + 1}"
+                }
+                val value = when (point) {
+                    is JSONObject -> firstNumber(point.optAny("valuePercent"), point.optAny("percent"), point.optAny("percentage"), point.optAny("y"), point.optAny("value"), point.optAny("valor"))
+                    is JSONArray -> firstNumber(if (point.length() > 1) point.opt(1) else point.opt(0))
+                    else -> firstNumber(point)
+                }
+                if (label.isNotBlank() && value != 0.0 && value.isFinite()) {
+                    val ret = AssetPeriodReturn(period = label, valuePercent = value, label = label, kind = kind)
+                    if (kind == "real") real.add(ret) else nominal.add(ret)
+                }
+            }
+        }
+        return nominal to real
     }
 
 
@@ -1764,6 +1824,498 @@ object B3NetworkService {
         return map.values.flatten().any { it.name.isNotBlank() && it.valuePercent.isFinite() && it.valuePercent > 0.0 }
     }
 
+
+    private fun parseFirstBreakdownMap(vararg sources: Any?): MutableMap<String, List<AssetBreakdownPoint>> {
+        for (source in sources) {
+            val parsed = parseBreakdownMapFromAny(source)
+            if (hasUsableBreakdownMap(parsed)) return parsed
+        }
+        return mutableMapOf()
+    }
+
+    private fun parseBreakdownMapFromAny(source: Any?): MutableMap<String, List<AssetBreakdownPoint>> {
+        val out = mutableMapOf<String, List<AssetBreakdownPoint>>()
+        when (source) {
+            is JSONObject -> out.putAll(parseBreakdownMap(source))
+            is JSONArray -> {
+                val points = parseBreakdownPointsFromAny(source, "Atual")
+                if (points.isNotEmpty()) out["Atual"] = points
+            }
+            is String -> {
+                val points = parseBreakdownPointsFromAny(source, "Atual")
+                if (points.isNotEmpty()) out["Atual"] = points
+            }
+        }
+        return out
+    }
+
+    private fun parseFirstFinancialStatementPoints(vararg sources: Any?): List<FinancialStatementPoint> {
+        for (source in sources) {
+            val parsed = parseFinancialStatementPointsFromAny(source)
+            if (parsed.isNotEmpty()) return parsed
+        }
+        return emptyList()
+    }
+
+    private fun parseFinancialStatementPointsFromAny(source: Any?, fallbackYear: String = ""): List<FinancialStatementPoint> {
+        return when (source) {
+            is JSONArray -> parseFinancialStatementPointsFromArray(source, fallbackYear)
+            is JSONObject -> parseFinancialStatementPointsFromObject(source, fallbackYear)
+            is String -> parseFinancialStatementPointsFromText(source, fallbackYear)
+            else -> emptyList()
+        }.let { mergeFinancialStatementPoints(it) }
+    }
+
+    private fun parseFinancialStatementPointsFromArray(arr: JSONArray, fallbackYear: String = ""): List<FinancialStatementPoint> {
+        val out = mutableListOf<FinancialStatementPoint>()
+        for (i in 0 until arr.length()) {
+            when (val item = arr.opt(i)) {
+                is JSONObject -> {
+                    val nested = firstArray(item.optJSONArray("data"), item.optJSONArray("items"), item.optJSONArray("points"), item.optJSONArray("values"))
+                    val seriesLabel = firstText(item.optAny("key"), item.optAny("name"), item.optAny("label"), item.optAny("title"), item.optAny("metric"))
+                    val seriesField = financialFieldFromLabel(seriesLabel)
+                    val direct = parseFinancialStatementPointFromObject(item, fallbackYear.ifBlank { "P${i + 1}" })
+                    if (direct != null) out.add(direct)
+                    if (nested != null && nested.length() > 0) {
+                        if (seriesField.isNotBlank()) {
+                            out.addAll(parseFinancialSeriesPoints(nested, seriesField, fallbackYear))
+                        } else {
+                            out.addAll(parseFinancialStatementPointsFromArray(nested, fallbackYear))
+                        }
+                    }
+                    val nestedObj = firstObject(item.optJSONObject("data"), item.optJSONObject("chart"), item.optJSONObject("payload"), item.optJSONObject("result"))
+                    if (nestedObj != null) out.addAll(parseFinancialStatementPointsFromObject(nestedObj, fallbackYear))
+                }
+                is JSONArray -> out.addAll(parseFinancialStatementPointsFromArray(item, fallbackYear))
+            }
+        }
+        return out
+    }
+
+    private fun parseFinancialSeriesPoints(arr: JSONArray, field: String, fallbackYear: String = ""): List<FinancialStatementPoint> {
+        val out = mutableListOf<FinancialStatementPoint>()
+        for (i in 0 until arr.length()) {
+            val item = arr.opt(i)
+            val label = when (item) {
+                is JSONObject -> firstText(item.optAny("label"), item.optAny("year"), item.optAny("ano"), item.optAny("date"), item.optAny("period"), item.optAny("x"), fallbackYear, "P${i + 1}")
+                is JSONArray -> firstText(item.opt(0), fallbackYear, "P${i + 1}")
+                else -> firstText(fallbackYear, "P${i + 1}")
+            }
+            val value = when (item) {
+                is JSONObject -> firstNumber(item.optAny("y"), item.optAny("value"), item.optAny("valor"), item.optAny("amount"), item.optAny("total"), item.optAny("close"))
+                is JSONArray -> firstNumber(if (item.length() > 1) item.opt(1) else item.opt(0))
+                else -> firstNumber(item)
+            }
+            if (label.isNotBlank() && value != 0.0 && value.isFinite()) {
+                val year = firstText(extractYearFromLabel(label), label)
+                val base = FinancialStatementPoint(label = label, year = year, quarter = extractQuarterFromLabel(label))
+                out.add(applyFinancialField(base, field, value))
+            }
+        }
+        return out
+    }
+
+    private fun parseFinancialStatementPointsFromObject(obj: JSONObject, fallbackYear: String = ""): List<FinancialStatementPoint> {
+        val out = mutableListOf<FinancialStatementPoint>()
+
+        val direct = parseFinancialStatementPointFromObject(obj, fallbackYear)
+        if (direct != null) out.add(direct)
+
+        out.addAll(parseFinancialChartWithLabels(obj))
+        out.addAll(parseFinancialNamedArrays(obj))
+
+        val wrappers = listOf("data", "chart", "payload", "result", "results", "response", "incomeStatement", "dre", "receitasLucros", "revenueProfit", "balanceSheet", "balancoPatrimonial")
+        for (key in wrappers) {
+            val wrappedObj = obj.optJSONObject(key)
+            if (wrappedObj != null && wrappedObj.length() > 0) out.addAll(parseFinancialStatementPointsFromObject(wrappedObj, fallbackYear))
+            val wrappedArr = obj.optJSONArray(key)
+            if (wrappedArr != null && wrappedArr.length() > 0) out.addAll(parseFinancialStatementPointsFromArray(wrappedArr, fallbackYear))
+        }
+
+        val keys = obj.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            if (key in wrappers || key in setOf("labels", "categories", "years", "series", "datasets", "data", "values", "items", "points")) continue
+            val value = obj.optAny(key) ?: continue
+            if (isBreakdownYearKey(key) || key.matches(Regex("^(?:[1-4]T|T[1-4]|Q[1-4])[/ -]?[0-9]{2,4}$", RegexOption.IGNORE_CASE))) {
+                when (value) {
+                    is JSONObject -> out.addAll(parseFinancialStatementPointsFromObject(value, key))
+                    is JSONArray -> out.addAll(parseFinancialStatementPointsFromArray(value, key))
+                }
+            }
+        }
+        return out
+    }
+
+    private fun parseFinancialStatementPointFromObject(obj: JSONObject, fallbackYear: String = ""): FinancialStatementPoint? {
+        val rawLabel = firstText(
+            obj.optAny("label"), obj.optAny("period"), obj.optAny("periodo"), obj.optAny("date"), obj.optAny("data"),
+            obj.optAny("year"), obj.optAny("ano"), fallbackYear
+        )
+        val year = firstText(obj.optAny("year"), obj.optAny("ano"), extractYearFromLabel(rawLabel), extractYearFromLabel(fallbackYear), fallbackYear.takeIf { isBreakdownYearKey(it) })
+        val quarter = firstText(obj.optAny("quarter"), obj.optAny("trimestre"), extractQuarterFromLabel(rawLabel))
+        val label = when {
+            quarter.isNotBlank() && year.isNotBlank() -> "$quarter/$year"
+            rawLabel.isNotBlank() -> rawLabel
+            year.isNotBlank() -> year
+            else -> ""
+        }
+        val netRevenue = firstNumber(
+            obj.optAny("net_revenue"), obj.optAny("netRevenue"), obj.optAny("revenue"), obj.optAny("revenues"),
+            obj.optAny("receitaLiquida"), obj.optAny("receita_liquida"), obj.optAny("receita"), obj.optAny("faturamento"), obj.optAny("sales")
+        )
+        val netProfit = firstNumber(
+            obj.optAny("net_profit"), obj.optAny("netProfit"), obj.optAny("profit"), obj.optAny("profits"),
+            obj.optAny("lucroLiquido"), obj.optAny("lucro_liquido"), obj.optAny("lucro"), obj.optAny("earnings")
+        )
+        val costVal = firstNumber(obj.optAny("cost"), obj.optAny("costs"), obj.optAny("custo"), obj.optAny("custos"), obj.optAny("cpv"))
+        val grossProfit = firstNumber(obj.optAny("gross_profit"), obj.optAny("grossProfit"), obj.optAny("lucroBruto"), obj.optAny("lucro_bruto"))
+        val ebitda = firstNumber(obj.optAny("ebitda"), obj.optAny("EBITDA"))
+        val ebit = firstNumber(obj.optAny("ebit"), obj.optAny("EBIT"))
+        val netWorth = firstNumber(obj.optAny("net_worth"), obj.optAny("netWorth"), obj.optAny("patrimonioLiquido"), obj.optAny("patrimonio_liquido"), obj.optAny("pl"), obj.optAny("equity"))
+        val totalAssets = firstNumber(obj.optAny("balance_total_assets"), obj.optAny("totalAssets"), obj.optAny("ativos"), obj.optAny("assets"), obj.optAny("ativoTotal"), obj.optAny("totalAtivos"))
+        val totalLiabilities = firstNumber(obj.optAny("balance_total_liabilities"), obj.optAny("totalLiabilities"), obj.optAny("passivos"), obj.optAny("liabilities"), obj.optAny("passivoTotal"), obj.optAny("totalPassivos"))
+        val hasValues = listOf(netRevenue, netProfit, costVal, grossProfit, ebitda, ebit, netWorth, totalAssets, totalLiabilities).any { it != 0.0 && it.isFinite() }
+        if (!hasValues || label.isBlank()) return null
+        return FinancialStatementPoint(
+            label = label,
+            year = year.ifBlank { label },
+            quarter = quarter,
+            netRevenue = netRevenue,
+            cost = costVal,
+            grossProfit = grossProfit,
+            ebitda = ebitda,
+            ebit = ebit,
+            netProfit = netProfit,
+            netWorth = netWorth,
+            totalAssets = totalAssets,
+            totalLiabilities = totalLiabilities
+        )
+    }
+
+    private fun parseFinancialChartWithLabels(obj: JSONObject): List<FinancialStatementPoint> {
+        val labels = firstArray(obj.optJSONArray("labels"), obj.optJSONArray("categories"), obj.optJSONArray("years"), obj.optJSONArray("periods"), obj.optJSONArray("periodos"))
+            ?: return emptyList()
+        val series = firstArray(obj.optJSONArray("datasets"), obj.optJSONArray("series"))
+        val pointsByLabel = linkedMapOf<String, FinancialStatementPoint>()
+        fun basePointAt(index: Int): FinancialStatementPoint {
+            val label = firstText(labels.opt(index), "P${index + 1}")
+            val year = firstText(extractYearFromLabel(label), label)
+            val quarter = extractQuarterFromLabel(label)
+            return pointsByLabel.getOrPut(label) { FinancialStatementPoint(label = label, year = year, quarter = quarter) }
+        }
+        fun applyValue(index: Int, field: String, value: Double) {
+            if (value == 0.0 || !value.isFinite()) return
+            val current = basePointAt(index)
+            pointsByLabel[current.label] = applyFinancialField(current, field, value)
+        }
+        if (series != null) {
+            for (sIdx in 0 until series.length()) {
+                val item = series.opt(sIdx)
+                when (item) {
+                    is JSONObject -> {
+                        val name = firstText(item.optAny("label"), item.optAny("name"), item.optAny("title"), item.optAny("field"), item.optAny("metric"))
+                        val field = financialFieldFromLabel(name)
+                        val data = firstArray(item.optJSONArray("data"), item.optJSONArray("values"), item.optJSONArray("points"))
+                        if (data != null && field.isNotBlank()) {
+                            val flat = flattenFinancialNumericArray(data)
+                            val len = minOf(labels.length(), flat.size)
+                            for (i in 0 until len) applyValue(i, field, flat[i])
+                        } else if (data != null) {
+                            for (i in 0 until data.length()) {
+                                val objPoint = data.optJSONObject(i) ?: continue
+                                parseFinancialStatementPointFromObject(objPoint, firstText(labels.opt(i)))?.let { parsed ->
+                                    val merged = mergeFinancialPoint(pointsByLabel[parsed.label], parsed)
+                                    if (merged != null) {
+                                        pointsByLabel[parsed.label] = merged
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    is JSONArray -> {
+                        val flat = flattenFinancialNumericArray(item)
+                        val field = when (sIdx) {
+                            0 -> "netRevenue"
+                            1 -> "netProfit"
+                            2 -> "ebitda"
+                            else -> ""
+                        }
+                        if (field.isNotBlank()) {
+                            val len = minOf(labels.length(), flat.size)
+                            for (i in 0 until len) applyValue(i, field, flat[i])
+                        }
+                    }
+                }
+            }
+        }
+        val directValues = firstArray(obj.optJSONArray("data"), obj.optJSONArray("values"))
+        if (pointsByLabel.isEmpty() && directValues != null) {
+            val field = financialFieldFromLabel(firstText(obj.optAny("name"), obj.optAny("label"), obj.optAny("title"), obj.optAny("metric"))).ifBlank { "netRevenue" }
+            val flat = flattenFinancialNumericArray(directValues)
+            val len = minOf(labels.length(), flat.size)
+            for (i in 0 until len) applyValue(i, field, flat[i])
+        }
+        return pointsByLabel.values.toList()
+    }
+
+    private fun parseFinancialNamedArrays(obj: JSONObject): List<FinancialStatementPoint> {
+        val labels = firstArray(obj.optJSONArray("labels"), obj.optJSONArray("categories"), obj.optJSONArray("years"), obj.optJSONArray("periods"), obj.optJSONArray("periodos"))
+            ?: return emptyList()
+        val fieldCandidates = linkedMapOf(
+            "netRevenue" to listOf("netRevenue", "net_revenue", "revenue", "revenues", "receitaLiquida", "receita", "faturamento"),
+            "netProfit" to listOf("netProfit", "net_profit", "profit", "profits", "lucroLiquido", "lucro"),
+            "grossProfit" to listOf("grossProfit", "gross_profit", "lucroBruto"),
+            "cost" to listOf("cost", "costs", "custo", "custos"),
+            "ebitda" to listOf("ebitda", "EBITDA"),
+            "ebit" to listOf("ebit", "EBIT"),
+            "netWorth" to listOf("netWorth", "net_worth", "patrimonioLiquido", "patrimonio_liquido", "pl", "equity"),
+            "totalAssets" to listOf("totalAssets", "balance_total_assets", "ativos", "assets", "ativoTotal", "totalAtivos"),
+            "totalLiabilities" to listOf("totalLiabilities", "balance_total_liabilities", "passivos", "liabilities", "passivoTotal", "totalPassivos")
+        )
+        val pointsByLabel = linkedMapOf<String, FinancialStatementPoint>()
+        for ((field, keys) in fieldCandidates) {
+            val arr = keys.firstNotNullOfOrNull { obj.optJSONArray(it) } ?: continue
+            val flat = flattenFinancialNumericArray(arr)
+            val len = minOf(labels.length(), flat.size)
+            for (i in 0 until len) {
+                val label = firstText(labels.opt(i), "P${i + 1}")
+                val year = firstText(extractYearFromLabel(label), label)
+                val base = pointsByLabel.getOrPut(label) { FinancialStatementPoint(label = label, year = year, quarter = extractQuarterFromLabel(label)) }
+                pointsByLabel[label] = applyFinancialField(base, field, flat[i])
+            }
+        }
+        return pointsByLabel.values.toList()
+    }
+
+    private fun parseFinancialStatementPointsFromText(text: String, fallbackYear: String = ""): List<FinancialStatementPoint> {
+        if (text.isBlank()) return emptyList()
+        val years = Regex("(20[0-9]{2}|19[9][0-9])").findAll(text).map { it.value }.distinct().toList()
+        if (years.isEmpty()) return emptyList()
+        val out = mutableListOf<FinancialStatementPoint>()
+        for (year in years) {
+            val window = text.substring(kotlin.math.max(0, text.indexOf(year) - 240), kotlin.math.min(text.length, text.indexOf(year) + 520))
+            val revenue = Regex("(?:Receita(?: Líquida)?|Faturamento)\\s*(?:$year)?\\s*(R\\$\\s*[0-9.,]+(?:\\s*(?:Bilhões|Bilhão|Milhões|Milhão))?|[0-9.,]+)", RegexOption.IGNORE_CASE).find(window)?.groupValues?.getOrNull(1)
+            val profit = Regex("(?:Lucro(?: Líquido)?)\\s*(?:$year)?\\s*(R\\$\\s*[0-9.,]+(?:\\s*(?:Bilhões|Bilhão|Milhões|Milhão))?|[0-9.,]+)", RegexOption.IGNORE_CASE).find(window)?.groupValues?.getOrNull(1)
+            val rev = firstNumber(revenue)
+            val prof = firstNumber(profit)
+            if (rev != 0.0 || prof != 0.0) out.add(FinancialStatementPoint(label = year, year = year, netRevenue = rev, netProfit = prof))
+        }
+        return out
+    }
+
+    private fun parseFirstProfitVsQuotePoints(vararg sources: Any?): List<AssetComparisonPoint> {
+        for (source in sources) {
+            val parsed = parseProfitVsQuotePointsFromAny(source)
+            if (parsed.isNotEmpty()) return parsed
+        }
+        return emptyList()
+    }
+
+    private fun parseProfitVsQuotePointsFromAny(source: Any?): List<AssetComparisonPoint> {
+        return when (source) {
+            is JSONObject -> parseProfitVsQuotePointsFromObject(source)
+            is JSONArray -> parseProfitVsQuotePointsFromArray(source)
+            else -> emptyList()
+        }.filter { (it.value != 0.0 || it.secondaryValue != 0.0) && it.label.isNotBlank() }
+    }
+
+    private fun parseProfitVsQuotePointsFromArray(arr: JSONArray): List<AssetComparisonPoint> {
+        parseProfitVsQuotePointsFromChartSeriesArray(arr).takeIf { it.isNotEmpty() }?.let { return it }
+        val out = mutableListOf<AssetComparisonPoint>()
+        for (i in 0 until arr.length()) {
+            val obj = arr.optJSONObject(i) ?: continue
+            val label = firstText(obj.optAny("label"), obj.optAny("year"), obj.optAny("ano"), obj.optAny("date"), obj.optAny("period"), obj.optAny("x"), "P${i + 1}")
+            val quote = firstNumber(obj.optAny("quotation"), obj.optAny("quote"), obj.optAny("cotacao"), obj.optAny("price"), obj.optAny("preco"), obj.optAny("value"))
+            val profit = firstNumber(obj.optAny("net_profit"), obj.optAny("netProfit"), obj.optAny("profit"), obj.optAny("lucro"), obj.optAny("lucroLiquido"), obj.optAny("secondaryValue"))
+            if (quote != 0.0 || profit != 0.0) out.add(AssetComparisonPoint(label, quote, profit))
+        }
+        return out
+    }
+
+    private fun parseProfitVsQuotePointsFromChartSeriesArray(arr: JSONArray): List<AssetComparisonPoint> {
+        val byLabel = linkedMapOf<String, AssetComparisonPoint>()
+        for (sIdx in 0 until arr.length()) {
+            val seriesObj = arr.optJSONObject(sIdx) ?: continue
+            val seriesName = canonicalKey(firstText(seriesObj.optAny("key"), seriesObj.optAny("name"), seriesObj.optAny("label"), seriesObj.optAny("title")))
+            val field = when {
+                seriesName.contains("cotacao") || seriesName.contains("quote") || seriesName.contains("price") || seriesName.contains("preco") -> "quote"
+                seriesName.contains("lucro") || seriesName.contains("profit") || seriesName.contains("earnings") -> "profit"
+                else -> ""
+            }
+            if (field.isBlank()) continue
+            val points = firstArray(seriesObj.optJSONArray("points"), seriesObj.optJSONArray("data"), seriesObj.optJSONArray("values"), seriesObj.optJSONArray("items")) ?: continue
+            for (i in 0 until points.length()) {
+                val item = points.opt(i)
+                val label = when (item) {
+                    is JSONObject -> firstText(item.optAny("label"), item.optAny("year"), item.optAny("ano"), item.optAny("date"), item.optAny("period"), item.optAny("x"), "P${i + 1}")
+                    is JSONArray -> firstText(item.opt(0), "P${i + 1}")
+                    else -> "P${i + 1}"
+                }
+                val value = when (item) {
+                    is JSONObject -> firstNumber(item.optAny("y"), item.optAny("value"), item.optAny("valor"), item.optAny("amount"), item.optAny("total"), item.optAny("close"))
+                    is JSONArray -> firstNumber(if (item.length() > 1) item.opt(1) else item.opt(0))
+                    else -> firstNumber(item)
+                }
+                if (label.isBlank() || value == 0.0 || !value.isFinite()) continue
+                val current = byLabel[label] ?: AssetComparisonPoint(label, 0.0, 0.0)
+                byLabel[label] = if (field == "quote") current.copy(value = value) else current.copy(secondaryValue = value)
+            }
+        }
+        return byLabel.values.filter { it.value != 0.0 || it.secondaryValue != 0.0 }
+    }
+
+    private fun parseProfitVsQuotePointsFromObject(obj: JSONObject): List<AssetComparisonPoint> {
+        val out = mutableListOf<AssetComparisonPoint>()
+        val labels = firstArray(obj.optJSONArray("labels"), obj.optJSONArray("categories"), obj.optJSONArray("years"), obj.optJSONArray("periods"))
+        val series = firstArray(obj.optJSONArray("datasets"), obj.optJSONArray("series"))
+        if (labels != null && series != null) {
+            val byLabel = linkedMapOf<String, AssetComparisonPoint>()
+            for (sIdx in 0 until series.length()) {
+                val item = series.optJSONObject(sIdx) ?: continue
+                val name = canonicalKey(firstText(item.optAny("label"), item.optAny("name"), item.optAny("title")))
+                val data = firstArray(item.optJSONArray("data"), item.optJSONArray("values"), item.optJSONArray("points")) ?: continue
+                val flat = flattenFinancialNumericArray(data)
+                val len = minOf(labels.length(), flat.size)
+                for (i in 0 until len) {
+                    val label = firstText(labels.opt(i), "P${i + 1}")
+                    val current = byLabel[label] ?: AssetComparisonPoint(label, 0.0, 0.0)
+                    byLabel[label] = when {
+                        name.contains("cotacao") || name.contains("quote") || name.contains("price") || name.contains("preco") -> current.copy(value = flat[i])
+                        name.contains("lucro") || name.contains("profit") || name.contains("earnings") -> current.copy(secondaryValue = flat[i])
+                        sIdx == 0 -> current.copy(value = flat[i])
+                        else -> current.copy(secondaryValue = flat[i])
+                    }
+                }
+            }
+            if (byLabel.isNotEmpty()) return byLabel.values.toList()
+        }
+
+        val quotesArr = firstArray(obj.optJSONArray("quotes"), obj.optJSONArray("cotacoes"), obj.optJSONArray("cotações"), obj.optJSONArray("prices"), obj.optJSONArray("precos"))
+        val profitsArr = firstArray(obj.optJSONArray("profits"), obj.optJSONArray("lucros"), obj.optJSONArray("netProfit"), obj.optJSONArray("earnings"))
+        if (quotesArr != null && profitsArr != null) {
+            val len = kotlin.math.min(quotesArr.length(), profitsArr.length())
+            for (i in 0 until len) {
+                val qObj = quotesArr.optJSONObject(i)
+                val pObj = profitsArr.optJSONObject(i)
+                val label = firstText(qObj?.optAny("label"), qObj?.optAny("year"), qObj?.optAny("ano"), pObj?.optAny("label"), pObj?.optAny("year"), labels?.opt(i), "P${i + 1}")
+                val quote = firstNumber(qObj?.optAny("quotation"), qObj?.optAny("quote"), qObj?.optAny("cotacao"), qObj?.optAny("price"), qObj?.optAny("value"), quotesArr.opt(i))
+                val profit = firstNumber(pObj?.optAny("net_profit"), pObj?.optAny("netProfit"), pObj?.optAny("profit"), pObj?.optAny("lucro"), pObj?.optAny("value"), profitsArr.opt(i))
+                if (quote != 0.0 || profit != 0.0) out.add(AssetComparisonPoint(label, quote, profit))
+            }
+            if (out.isNotEmpty()) return out
+        }
+
+        val directArr = firstArray(obj.optJSONArray("items"), obj.optJSONArray("data"), obj.optJSONArray("points"), obj.optJSONArray("values"))
+        if (directArr != null) {
+            val parsed = parseProfitVsQuotePointsFromArray(directArr)
+            if (parsed.isNotEmpty()) return parsed
+        }
+        val wrapper = firstObject(obj.optJSONObject("data"), obj.optJSONObject("chart"), obj.optJSONObject("payload"), obj.optJSONObject("result"), obj.optJSONObject("results"))
+        if (wrapper != null && wrapper !== obj) {
+            val parsed = parseProfitVsQuotePointsFromObject(wrapper)
+            if (parsed.isNotEmpty()) return parsed
+        }
+        val keys = obj.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            val child = obj.optJSONObject(key) ?: continue
+            val quote = firstNumber(child.optAny("quotation"), child.optAny("quote"), child.optAny("cotacao"), child.optAny("price"), child.optAny("preco"), child.optAny("value"))
+            val profit = firstNumber(child.optAny("net_profit"), child.optAny("netProfit"), child.optAny("profit"), child.optAny("lucro"), child.optAny("lucroLiquido"), child.optAny("secondaryValue"))
+            if ((quote != 0.0 || profit != 0.0) && key.isNotBlank()) out.add(AssetComparisonPoint(key, quote, profit))
+        }
+        return out
+    }
+
+    private fun flattenFinancialNumericArray(arr: JSONArray): List<Double> {
+        val out = mutableListOf<Double>()
+        for (i in 0 until arr.length()) {
+            when (val item = arr.opt(i)) {
+                is Number -> out.add(item.toDouble())
+                is String -> firstNumber(item).takeIf { it != 0.0 }?.let(out::add)
+                is JSONObject -> {
+                    val nested = firstArray(item.optJSONArray("data"), item.optJSONArray("values"), item.optJSONArray("points"))
+                    if (nested != null) out.addAll(flattenFinancialNumericArray(nested))
+                    else firstNumber(item.optAny("value"), item.optAny("valor"), item.optAny("y"), item.optAny("amount"), item.optAny("total"))
+                        .takeIf { it != 0.0 }?.let(out::add)
+                }
+                is JSONArray -> out.addAll(flattenFinancialNumericArray(item))
+            }
+        }
+        return out
+    }
+
+    private fun financialFieldFromLabel(label: String): String {
+        val key = canonicalKey(label)
+        return when {
+            key.contains("receitaliquida") || key == "receita" || key.contains("revenue") || key.contains("faturamento") || key.contains("sales") -> "netRevenue"
+            key.contains("lucroliquido") || key == "lucro" || key.contains("netprofit") || key.contains("profit") || key.contains("earnings") -> "netProfit"
+            key.contains("lucrobruto") || key.contains("grossprofit") -> "grossProfit"
+            key.contains("custo") || key.contains("cost") || key.contains("cpv") -> "cost"
+            key.contains("ebitda") -> "ebitda"
+            key.contains("ebit") -> "ebit"
+            key.contains("patrimonioliquido") || key == "pl" || key.contains("networth") || key.contains("equity") -> "netWorth"
+            key.contains("ativototal") || key.contains("totalativos") || key == "ativos" || key.contains("totalassets") || key.contains("assets") -> "totalAssets"
+            key.contains("passivototal") || key.contains("totalpassivos") || key == "passivos" || key.contains("totalliabilities") || key.contains("liabilities") -> "totalLiabilities"
+            else -> ""
+        }
+    }
+
+    private fun applyFinancialField(point: FinancialStatementPoint, field: String, value: Double): FinancialStatementPoint {
+        return when (field) {
+            "netRevenue" -> point.copy(netRevenue = value)
+            "netProfit" -> point.copy(netProfit = value)
+            "grossProfit" -> point.copy(grossProfit = value)
+            "cost" -> point.copy(cost = value)
+            "ebitda" -> point.copy(ebitda = value)
+            "ebit" -> point.copy(ebit = value)
+            "netWorth" -> point.copy(netWorth = value)
+            "totalAssets" -> point.copy(totalAssets = value)
+            "totalLiabilities" -> point.copy(totalLiabilities = value)
+            else -> point
+        }
+    }
+
+    private fun mergeFinancialStatementPoints(points: List<FinancialStatementPoint>): List<FinancialStatementPoint> {
+        val byKey = linkedMapOf<String, FinancialStatementPoint>()
+        for (pt in points) {
+            if (pt.label.isBlank()) continue
+            val key = canonicalKey(pt.label).ifBlank { canonicalKey(pt.year) }
+            val merged = mergeFinancialPoint(byKey[key], pt)
+            if (merged != null) byKey[key] = merged
+        }
+        return byKey.values.filter { p ->
+            listOf(p.netRevenue, p.netProfit, p.cost, p.grossProfit, p.ebitda, p.ebit, p.netWorth, p.totalAssets, p.totalLiabilities).any { it != 0.0 && it.isFinite() }
+        }
+    }
+
+    private fun mergeFinancialPoint(existing: FinancialStatementPoint?, incoming: FinancialStatementPoint): FinancialStatementPoint? {
+        if (existing == null) return incoming
+        fun nz(a: Double, b: Double): Double = if (a != 0.0) a else b
+        return existing.copy(
+            label = existing.label.ifBlank { incoming.label },
+            year = existing.year.ifBlank { incoming.year },
+            quarter = existing.quarter.ifBlank { incoming.quarter },
+            netRevenue = nz(existing.netRevenue, incoming.netRevenue),
+            cost = nz(existing.cost, incoming.cost),
+            grossProfit = nz(existing.grossProfit, incoming.grossProfit),
+            ebitda = nz(existing.ebitda, incoming.ebitda),
+            ebit = nz(existing.ebit, incoming.ebit),
+            netProfit = nz(existing.netProfit, incoming.netProfit),
+            netWorth = nz(existing.netWorth, incoming.netWorth),
+            totalAssets = nz(existing.totalAssets, incoming.totalAssets),
+            totalLiabilities = nz(existing.totalLiabilities, incoming.totalLiabilities)
+        )
+    }
+
+    private fun extractYearFromLabel(label: String): String {
+        return Regex("(20[0-9]{2}|19[9][0-9])").find(label)?.value.orEmpty()
+    }
+
+    private fun extractQuarterFromLabel(label: String): String {
+        return Regex("\\b([1-4]T|T[1-4]|Q[1-4])\\b", RegexOption.IGNORE_CASE).find(label)?.value?.uppercase(Locale.ROOT).orEmpty()
+    }
+
     private fun appendDividendEventsFromArray(ticker: String, arr: JSONArray?, out: MutableList<DividendEvent>) {
         if (arr == null) return
         for (ev in arr.toJsonObjectList()) {
@@ -1779,7 +2331,7 @@ object B3NetworkService {
                         paymentDate = payment,
                         valuePerShare = value,
                         status = type.ifBlank { "Pago" },
-                        source = "Valorae Proxy / Investidor10"
+                        source = "VALORAE / Investidor10"
                     )
                 )
             }
@@ -2273,7 +2825,7 @@ object B3NetworkService {
             priceToSales = firstNumber(indicadores?.optAny("psr"), results.optAny("psr"), normalizedValue(normalized, "psr"), indicadoresAvancados?.optAny("psr")),
             nextEarningsDate = firstText(firstDividend?.optAny("dataCom"), results.optAny("dataCom")),
             isFii = isFii,
-            source = "Valorae Proxy",
+            source = "Serviço de dados VALORAE",
             payout = firstNumber(normalizedValue(normalized, "payout"), indicadores?.optAny("payout"), ratiosChave?.optAny("payout"), results.optAny("payout"), indicadoresAvancados?.optAny("payout")),
             cagrRevenue5y = firstNumber(normalizedValue(normalized, "cagrReceitas5a"), indicadores?.optAny("cagrReceitas5a"), results.optAny("cagrReceitas5a"), indicadoresAvancados?.optAny("growth_net_revenue_last_5_years")),
             grossMargin = firstNumber(normalizedValue(normalized, "margemBruta"), indicadores?.optAny("margemBruta"), results.optAny("margemBruta"), indicadoresAvancados?.optAny("gross_margin")),
@@ -2406,7 +2958,7 @@ object B3NetworkService {
                 name = name.ifBlank { desired },
                 price = price,
                 changePercent = firstNumber(row.optAny("variationPct"), row.optAny("changePercent"), row.optAny("percent"), row.optAny("pct"), row.optAny("variacao")),
-                source = "Valorae Proxy",
+                source = "Serviço de dados VALORAE",
                 isFii = false
             )
         }
@@ -2447,7 +2999,7 @@ object B3NetworkService {
             return best.copy(
                 proxyStatus = "CACHE_LOCAL",
                 isPartial = true,
-                partialDataGuidance = "Proxy indisponível ou sem campos úteis; usando último snapshot bom local.",
+                partialDataGuidance = "Serviço de dados indisponível ou sem campos úteis; usando último snapshot bom local.",
                 shouldKeepPreviousSnapshot = true,
                 fromLocalSnapshot = true
             )
@@ -2793,7 +3345,14 @@ object B3NetworkService {
 
     private fun marketRankingItemFromObject(item: JSONObject?, index: Int, directionFallback: String = ""): MarketRankingItem? {
         if (item == null) return null
-        val ticker = firstText(item.optAny("ticker"), item.optAny("symbol"), item.optAny("ativo")).uppercase(Locale.ROOT)
+        val ticker = firstText(
+            item.optAny("ticker"),
+            item.optAny("codigo"),
+            item.optAny("symbol"),
+            item.optAny("code"),
+            item.optAny("papel"),
+            item.optAny("ativo")
+        ).uppercase(Locale.ROOT)
         if (ticker.isBlank()) return null
         val explanationObj = item.optJSONObject("explanation")
         val strengths = explanationObj?.optJSONArray("strengths")
@@ -2815,10 +3374,14 @@ object B3NetworkService {
             item.optAny("valorAtual"),
             item.optAny("last"),
             item.optAny("regularMarketPrice"),
+            item.optAny("valor"),
+            item.optAny("valorUnitario"),
             quote?.optAny("price"),
             quote?.optAny("lastPrice"),
             quote?.optAny("currentPrice"),
             quote?.optAny("cotacao"),
+            quote?.optAny("preco"),
+            quote?.optAny("valor"),
             quote?.optAny("regularMarketPrice")
         )
         val changePercent = firstNumber(
@@ -2826,12 +3389,18 @@ object B3NetworkService {
             item.optAny("variationPercent"),
             item.optAny("dailyChangePercent"),
             item.optAny("variacaoPercentual"),
+            item.optAny("percentual"),
             item.optAny("percent"),
             item.optAny("percentage"),
             item.optAny("pct"),
             item.optAny("variacao"),
             item.optAny("change"),
             item.optAny("regularMarketChangePercent"),
+            item.optAny("variacaoDia"),
+            item.optAny("dailyChange"),
+            item.optAny("dailyVariation"),
+            item.optAny("change_pct"),
+            item.optAny("change_percentage"),
             quote?.optAny("changePercent"),
             quote?.optAny("variationPercent"),
             quote?.optAny("variacao"),
@@ -2858,24 +3427,35 @@ object B3NetworkService {
             item.optAny("variationDisplay"),
             item.optAny("variacaoPercentual"),
             item.optAny("percentDisplay"),
+            item.optAny("variacaoDia"),
+            item.optAny("dailyChange"),
             item.optAny("variacao"),
             quote?.optAny("changeDisplay"),
             quote?.optAny("variacaoFormatada"),
-            quote?.optAny("variationDisplay")
+            quote?.optAny("variationDisplay"),
+            quote?.optAny("variacaoDia"),
+            quote?.optAny("dailyChange")
         )
         val value = firstNumber(
             item.optAny("value"),
             item.optAny("score"),
             item.optAny("profileScore"),
             item.optAny("dividendYield"),
+            item.optAny("variacaoDia"),
+            item.optAny("dailyChange"),
             item.optAny("variacao"),
             item.optAny("preco")
         )
-        val display = firstText(item.optAny("displayValue"), item.optAny("variacao"), item.optAny("preco"), item.optAny("value"), item.optAny("score"), item.optAny("profileScore"))
+        val display = firstText(item.optAny("displayValue"), item.optAny("variacaoFormatada"), item.optAny("changeDisplay"), item.optAny("variacao"), item.optAny("preco"), item.optAny("value"), item.optAny("score"), item.optAny("profileScore"))
+        val volume = firstNumber(item.optAny("volume"), item.optAny("vol"), item.optAny("financialVolume")).takeIf { it.isFinite() } ?: 0.0
+        val setor = firstText(item.optAny("setor"), item.optAny("sector"), item.optAny("industrialSector"))
+        val segmento = firstText(item.optAny("segmento"), item.optAny("segment"), item.optAny("subSector"))
+        val url = firstText(item.optAny("url"), item.optAny("link"), item.optAny("sourceUrl"))
+
         return MarketRankingItem(
             rank = firstNumber(item.optAny("rank"), index + 1).toInt().takeIf { it > 0 } ?: (index + 1),
             ticker = ticker,
-            name = firstText(item.optAny("name"), item.optAny("nome"), item.optAny("company")),
+            name = firstText(item.optAny("name"), item.optAny("nome"), item.optAny("company"), item.optAny("companyName"), item.optAny("empresa"), item.optAny("razaoSocial")),
             value = value,
             displayValue = display,
             price = price,
@@ -2884,8 +3464,12 @@ object B3NetworkService {
             changeDisplay = changeDisplay,
             grade = firstText(item.optAny("grade"), item.optAny("rating")),
             direction = firstText(item.optAny("direction"), directionFallback),
-            source = firstText(item.optAny("source"), "Valorae Proxy"),
-            explanation = explanation
+            source = firstText(item.optAny("source"), "Serviço de dados VALORAE"),
+            explanation = explanation,
+            volume = volume,
+            setor = setor,
+            segmento = segmento,
+            url = url
         )
     }
 
@@ -2902,26 +3486,41 @@ object B3NetworkService {
         return parseMarketRankingList(obj?.optJSONArray(key))
     }
 
-    private fun parseMarketRankingSnapshot(root: JSONObject?, fallbackType: String): MarketRankingSnapshot? {
+    fun parseMarketRankingSnapshot(root: JSONObject?, fallbackType: String): MarketRankingSnapshot? {
         if (root == null) return null
         val data = root.optJSONObject("data")
+        val payload = root.optJSONObject("payload")
+        val result = root.optJSONObject("result")
         val results = root.optJSONObject("results")
         val rankings = firstObject(
             root.optJSONObject("rankings"),
             data?.optJSONObject("rankings"),
+            payload?.optJSONObject("rankings"),
+            result?.optJSONObject("rankings"),
             results?.optJSONObject("rankings"),
             root.optJSONObject("marketRankings"),
             data?.optJSONObject("marketRankings"),
+            payload?.optJSONObject("marketRankings"),
+            result?.optJSONObject("marketRankings"),
             results?.optJSONObject("marketRankings")
         )
         val profiles = firstObject(
             root.optJSONObject("profiles"),
             data?.optJSONObject("profiles"),
+            payload?.optJSONObject("profiles"),
+            result?.optJSONObject("profiles"),
             results?.optJSONObject("profiles"),
             rankings?.optJSONObject("profiles")
         )
         val warnings = mutableListOf<String>()
-        val inputErrors = firstArray(root.optJSONArray("inputErrors"), root.optJSONArray("errors"), data?.optJSONArray("errors"), results?.optJSONArray("errors"))
+        val inputErrors = firstArray(
+            root.optJSONArray("inputErrors"),
+            root.optJSONArray("errors"),
+            data?.optJSONArray("errors"),
+            payload?.optJSONArray("errors"),
+            result?.optJSONArray("errors"),
+            results?.optJSONArray("errors")
+        )
         if (inputErrors != null) {
             for (i in 0 until inputErrors.length()) {
                 val raw = inputErrors.opt(i)
@@ -2930,7 +3529,14 @@ object B3NetworkService {
                 if (msg.isNotBlank()) warnings.add(msg)
             }
         }
-        firstText(root.optAny("warning"), root.optAny("error"), data?.optAny("warning"), results?.optAny("warning")).takeIf { it.isNotBlank() }?.let { warnings.add(it) }
+        firstText(
+            root.optAny("warning"),
+            root.optAny("error"),
+            data?.optAny("warning"),
+            payload?.optAny("warning"),
+            result?.optAny("warning"),
+            results?.optAny("warning")
+        ).takeIf { it.isNotBlank() }?.let { warnings.add(it) }
 
         fun rankingArray(vararg keys: String): JSONArray? {
             for (key in keys) {
@@ -2938,9 +3544,13 @@ object B3NetworkService {
                     rankings?.optJSONArray(key),
                     root.optJSONArray(key),
                     data?.optJSONArray(key),
+                    payload?.optJSONArray(key),
+                    result?.optJSONArray(key),
                     results?.optJSONArray(key),
                     root.optArray("rankings.$key"),
                     root.optArray("data.rankings.$key"),
+                    root.optArray("payload.rankings.$key"),
+                    root.optArray("result.rankings.$key"),
                     root.optArray("results.rankings.$key")
                 )
                 if (arr != null && arr.length() > 0) return arr
@@ -2955,6 +3565,8 @@ object B3NetworkService {
                     rankings?.optArray("profiles.$key"),
                     root.optArray("profiles.$key"),
                     data?.optArray("profiles.$key"),
+                    payload?.optArray("profiles.$key"),
+                    result?.optArray("profiles.$key"),
                     results?.optArray("profiles.$key")
                 )
                 if (arr != null && arr.length() > 0) return arr
@@ -2987,7 +3599,7 @@ object B3NetworkService {
         if (!hasAny && warnings.isEmpty()) return null
         return MarketRankingSnapshot(
             type = firstText(root.optAny("type"), data?.optAny("type"), results?.optAny("type"), fallbackType).uppercase(Locale.ROOT),
-            source = firstText(root.optAny("rankingSource"), root.optAny("source"), data?.optAny("source"), results?.optAny("source"), "Valorae Proxy"),
+            source = firstText(root.optAny("rankingSource"), root.optAny("source"), data?.optAny("source"), results?.optAny("source"), "Serviço de dados VALORAE"),
             fallbackUsed = root.optBoolean("fallbackUsed", data?.optBoolean("fallbackUsed", false) ?: false),
             score = scoreList,
             dividendYield = dyList,
@@ -3014,24 +3626,27 @@ object B3NetworkService {
 
     private fun enrichMarketMoverPrices(snapshot: MarketRankingSnapshot): MarketRankingSnapshot {
         val movers = (snapshot.highs + snapshot.lows)
-            .filter { item -> item.ticker.isNotBlank() && item.price <= 0.0 && item.priceDisplay.isBlank() }
+            .filter { item -> item.ticker.isNotBlank() }
         if (movers.isEmpty()) return snapshot
 
-        val tickers = movers.map { it.ticker.trim().uppercase(Locale.ROOT) }.distinct().take(12)
+        val tickers = movers.map { it.ticker.trim().uppercase(Locale.ROOT) }.distinct().take(30)
         val assets = runCatching { fetchAssetsData(tickers, bypassCache = false) }.getOrElse { emptyMap() }
         if (assets.isEmpty()) return snapshot
 
         fun enrich(items: List<MarketRankingItem>): List<MarketRankingItem> = items.map { item ->
             val asset = assets[item.ticker.trim().uppercase(Locale.ROOT)] ?: return@map item
-            val safePrice = item.price.takeIf { it > 0.0 } ?: asset.price.takeIf { it > 0.0 } ?: 0.0
-            val safeChange = item.changePercent.takeIf { it != 0.0 } ?: asset.changePercent
+            val safePrice = asset.price.takeIf { it > 0.0 } ?: item.price.takeIf { it > 0.0 } ?: 0.0
+            val safeChange = asset.changePercent
+            val prefix = if (safeChange > 0.0) "+" else ""
+            val formattedDailyChange = String.format(Locale("pt", "BR"), "%s%.2f%%", prefix, safeChange)
+            
             item.copy(
                 price = safePrice,
-                priceDisplay = item.priceDisplay.ifBlank { formatCurrencyPtBr(safePrice) },
+                priceDisplay = formatCurrencyPtBr(safePrice),
                 changePercent = safeChange,
-                changeDisplay = item.changeDisplay.ifBlank {
-                    if (safeChange != 0.0) String.format(Locale("pt", "BR"), "%.2f%%", kotlin.math.abs(safeChange)) else ""
-                }
+                changeDisplay = formattedDailyChange,
+                value = safeChange,
+                displayValue = formattedDailyChange
             )
         }
 
@@ -3140,55 +3755,112 @@ object B3NetworkService {
             positionRanking = positionRanking,
             rebalanceActions = rebalanceActions,
             warnings = (warnings + actionPlan.map { it.message }).distinct().take(8),
-            source = "Valorae Proxy"
+            source = "Serviço de dados VALORAE"
         )
         putInCache(cacheKey, result, 5)
         return result
     }
 
-    fun fetchMarketRankings(tickers: List<String> = emptyList(), type: String = "ACAO", live: Boolean = false): MarketRankingSnapshot? {
+    fun fetchMarketRankings(tickers: List<String> = emptyList(), type: String = "ACAO", live: Boolean = false, complete: Boolean = true, strict: Boolean = true): MarketRankingSnapshot? {
         val cleanTickers = tickers
             .map { it.trim().uppercase(Locale.ROOT) }
             .filter { it.isNotBlank() }
             .distinct()
             .take(15)
         val normalizedType = type.trim().uppercase(Locale.ROOT).ifBlank { "ACAO" }
-        val cacheKey = "market_rankings_${normalizedType}_${if (live) "live" else cleanTickers.joinToString(",")}" 
+        val captureKey = if (complete) "complete" else "auto"
+        val cacheKey = "market_rankings_${normalizedType}_${if (live) "live" else cleanTickers.joinToString(",")}_${captureKey}_${if (strict) "strict" else "flex"}" 
         getFromCache<MarketRankingSnapshot>(cacheKey)?.let { return it }
-        val params = mutableMapOf<String, String?>(
-            "type" to normalizedType,
-            "profile" to "portfolio",
-            "timeoutMs" to if (live) "2500" else "1800",
-            "source" to if (live && cleanTickers.isEmpty()) "auto" else "compare"
-        )
-        if (cleanTickers.isNotEmpty()) params["tickers"] = cleanTickers.joinToString(",")
-        val json = getProxyJson("/api/v1/market/rankings", params) ?: return null
-        val parsed = parseMarketRankingSnapshot(unwrapValoraePayload(json), normalizedType) ?: return null
-        val snapshot = if (live) enrichMarketMoverPrices(parsed) else parsed
-        putInCache(cacheKey, snapshot, if (live) 5 else 10)
+
+        var json: JSONObject? = null
+        if (complete) {
+            val params = mutableMapOf<String, String?>(
+                "type" to normalizedType,
+                "profile" to "deep",
+                "timeoutMs" to when {
+                    live -> "14000"
+                    else -> "18000"
+                },
+                "source" to if (live && cleanTickers.isEmpty()) "auto" else "compare",
+                "mode" to "complete",
+                "limit" to "15",
+                "minRows" to "6",
+                "complete" to "1"
+            )
+            if (strict) params["strict"] = "1"
+            if (cleanTickers.isNotEmpty()) params["tickers"] = cleanTickers.joinToString(",")
+            json = runCatching { getProxyJson("/api/v1/market/rankings", params) }.getOrNull()
+        }
+
+        if (json == null) {
+            val params = mutableMapOf<String, String?>(
+                "type" to normalizedType,
+                "profile" to "portfolio",
+                "timeoutMs" to when {
+                    live -> "9000"
+                    else -> "6000"
+                },
+                "source" to if (live && cleanTickers.isEmpty()) "auto" else "compare",
+                "mode" to "auto",
+                "limit" to "15",
+                "minRows" to "3"
+            )
+            if (cleanTickers.isNotEmpty()) params["tickers"] = cleanTickers.joinToString(",")
+            json = runCatching { getProxyJson("/api/v1/market/rankings", params) }.getOrNull()
+        }
+
+        var parsed = json?.let { parseMarketRankingSnapshot(unwrapValoraePayload(it), normalizedType) }
+
+        if ((parsed == null || (parsed.highs.isEmpty() && parsed.lows.isEmpty() && parsed.score.isEmpty())) && complete) {
+            val params = mutableMapOf<String, String?>(
+                "type" to normalizedType,
+                "profile" to "portfolio",
+                "timeoutMs" to "6000",
+                "source" to if (live && cleanTickers.isEmpty()) "auto" else "compare",
+                "mode" to "auto",
+                "limit" to "15",
+                "minRows" to "3"
+            )
+            if (cleanTickers.isNotEmpty()) params["tickers"] = cleanTickers.joinToString(",")
+            val fallbackJson = runCatching { getProxyJson("/api/v1/market/rankings", params) }.getOrNull()
+            if (fallbackJson != null) {
+                val fallbackParsed = parseMarketRankingSnapshot(unwrapValoraePayload(fallbackJson), normalizedType)
+                if (fallbackParsed != null && (fallbackParsed.highs.isNotEmpty() || fallbackParsed.lows.isNotEmpty() || fallbackParsed.score.isNotEmpty())) {
+                    parsed = fallbackParsed
+                }
+            }
+        }
+
+        val finalParsed = parsed ?: return null
+        val snapshot = if (live) enrichMarketMoverPrices(finalParsed) else finalParsed
+        putInCache(cacheKey, snapshot, if (live) 5 else if (complete) 10 else 15)
         return snapshot
     }
 
     fun fetchPortfolioRankings(positions: List<PortfolioProxyPosition>): MarketRankingSnapshot? {
         val tickers = positions.map { it.ticker }.filter { it.isNotBlank() }.distinct().take(15)
-        // Mesmo uma carteira com 1 ativo deve exibir ranking local do Proxy (#1),
-        // evitando tela vazia para usuários que começaram a carteira agora.
         if (tickers.isEmpty()) return null
         val fiiCount = positions.count { it.type.equals("FII", true) || inferIsFii(it.ticker) }
         val type = if (fiiCount > positions.size / 2) "FII" else "ACAO"
-        return fetchMarketRankings(tickers = tickers, type = type, live = false)
+        return fetchMarketRankings(tickers = tickers, type = type, live = false, complete = true, strict = true)
     }
 
-    fun fetchLiveStockRankings(): MarketRankingSnapshot? {
-        return fetchMarketRankings(tickers = emptyList(), type = "ACAO", live = true)
+    fun fetchLiveStockRankings(complete: Boolean = true): MarketRankingSnapshot? {
+        return fetchMarketRankings(
+            tickers = emptyList(),
+            type = "ACAO",
+            live = true,
+            complete = complete,
+            strict = complete
+        )
     }
 
-    fun fetchStockFundamentalRankings(): MarketRankingSnapshot? {
-        return fetchMarketRankings(tickers = emptyList(), type = "ACAO", live = false)
+    fun fetchStockFundamentalRankings(complete: Boolean = true): MarketRankingSnapshot? {
+        return fetchMarketRankings(tickers = emptyList(), type = "ACAO", live = false, complete = complete, strict = complete)
     }
 
-    fun fetchFiiFundamentalRankings(): MarketRankingSnapshot? {
-        return fetchMarketRankings(tickers = emptyList(), type = "FII", live = false)
+    fun fetchFiiFundamentalRankings(complete: Boolean = true): MarketRankingSnapshot? {
+        return fetchMarketRankings(tickers = emptyList(), type = "FII", live = false, complete = complete, strict = complete)
     }
 
     fun fetchPortfolioHistory(positions: List<PortfolioProxyPosition>, range: String = "1Y"): List<PortfolioHistoryPoint> {
@@ -3235,7 +3907,7 @@ object B3NetworkService {
                     totalValue = total,
                     investedValue = invested,
                     returnPercent = ret,
-                    source = firstText(root.optAny("source"), "Valorae Proxy")
+                    source = firstText(root.optAny("source"), "Serviço de dados VALORAE")
                 )
             )
         }
@@ -3277,7 +3949,7 @@ object B3NetworkService {
                         dateLabel = if (ts > 0L) SimpleDateFormat("MM/yy", Locale.getDefault()).format(Date(ts)) else firstText(p.optAny("label"), "M${i + 1}"),
                         accumulatedPercent = accumulated,
                         monthlyPercent = monthly,
-                        source = "Valorae Proxy"
+                        source = "Serviço de dados VALORAE"
                     )
                 )
             }
@@ -3305,66 +3977,105 @@ object B3NetworkService {
         val payload = JSONObject()
             .put("positions", positionArray(positions))
             .put("tickers", JSONArray(tickers))
-            .put("limit", 50)
-        val json = postProxyJson("/api/v1/portfolio/next-dividends", payload)
-            ?: getProxyJson("/api/v1/portfolio/next-dividends", mapOf("tickers" to tickers.joinToString(","), "limit" to "50"))
-            ?: return emptyList()
-        val root = unwrapValoraePayload(json) ?: return emptyList()
-        val items = firstArray(
-            root.optJSONArray("events"),
-            root.optJSONArray("items"),
-            root.optJSONArray("dividends"),
-            root.optJSONArray("dividendos"),
-            root.optJSONArray("proventos"),
-            root.optJSONArray("income"),
-            root.optJSONArray("earnings"),
-            root.optArray("data.dividendos"),
-            root.optArray("data.dividends"),
-            root.optArray("data.events"),
-            root.optArray("data.items")
-        ) ?: return emptyList()
+            .put("limit", 250)
+        val roots = mutableListOf<JSONObject>()
+        val nextJson = postProxyJson("/api/v1/portfolio/next-dividends", payload)
+            ?: getProxyJson("/api/v1/portfolio/next-dividends", mapOf("tickers" to tickers.joinToString(","), "limit" to "250"))
+        unwrapValoraePayload(nextJson)?.let { roots.add(it) }
+        val historyJson = postProxyJson("/api/v1/portfolio/dividends", payload)
+            ?: getProxyJson("/api/v1/portfolio/dividends", mapOf("tickers" to tickers.joinToString(","), "limit" to "250"))
+        unwrapValoraePayload(historyJson)?.let { roots.add(it) }
+        if (roots.isEmpty()) return emptyList()
+
         val quantityByTicker = positions.associateBy({ it.ticker.trim().uppercase(Locale.ROOT) }, { it.quantity })
         val out = mutableListOf<DividendEvent>()
-        for (i in 0 until items.length()) {
-            val item = items.optJSONObject(i) ?: continue
-            val nested = item.optJSONObject("nextDividend")
-                ?: item.optJSONObject("upcoming")
-                ?: item.optJSONObject("lastDividend")
-                ?: item
-            val ticker = firstText(item.optAny("ticker"), nested.optAny("ticker"), item.optAny("symbol"), nested.optAny("symbol")).uppercase(Locale.ROOT)
-            if (ticker.isBlank()) continue
-            val q = firstNumber(item.optAny("quantity"), nested.optAny("quantity"), nested.optAny("quantidade"), quantityByTicker[ticker])
+
+        fun appendEvent(raw: JSONObject?, container: JSONObject?, defaultTicker: String = "", defaultStatus: String = "") {
+            val item = raw ?: return
+            val ticker = firstText(
+                item.optAny("ticker"), item.optAny("symbol"), item.optAny("codigo"), item.optAny("asset"),
+                container?.optAny("ticker"), container?.optAny("symbol"), defaultTicker
+            ).uppercase(Locale.ROOT)
+            if (ticker.isBlank()) return
+            val q = firstNumber(
+                item.optAny("quantity"), item.optAny("quantidade"), item.optAny("shares"), item.optAny("cotas"),
+                container?.optAny("quantity"), container?.optAny("quantidade"), quantityByTicker[ticker]
+            )
             val value = firstNumber(
-                nested.optAny("valuePerShare"),
-                nested.optAny("valorPorCota"),
-                nested.optAny("valor"),
-                nested.optAny("value"),
-                nested.optAny("amount"),
-                nested.optAny("dividend")
+                item.optAny("valuePerShare"), item.optAny("valorPorCota"), item.optAny("valorPorAcao"),
+                item.optAny("valor"), item.optAny("value"), item.optAny("amount"), item.optAny("dividend"),
+                item.optAny("rendimento"), item.optAny("provento"), item.optAny("cashAmount")
             )
             val estimated = firstNumber(
-                nested.optAny("estimatedAmount"),
-                nested.optAny("valorEstimado"),
-                nested.optAny("total"),
-                item.optAny("estimatedAmount"),
-                item.optAny("valorEstimado"),
-                q * value
+                item.optAny("estimatedAmount"), item.optAny("valorEstimado"), item.optAny("total"), item.optAny("totalAmount"),
+                item.optAny("grossAmount"), item.optAny("amountTotal"), if (q > 0.0 && value > 0.0) q * value else 0.0
             )
-            val isUpcoming = item.optJSONObject("nextDividend") != null || item.optJSONObject("upcoming") != null
+            val dateCom = normalizeDisplayDate(firstText(item.optAny("dateCom"), item.optAny("comDate"), item.optAny("dataCom"), item.optAny("recordDate"), item.optAny("dataBase")))
+            val paymentDate = normalizeDisplayDate(firstText(
+                item.optAny("paymentDate"), item.optAny("payDate"), item.optAny("dataPagamento"),
+                item.optAny("dataPagamentoPrevista"), item.optAny("dataPagto"), item.optAny("date"), item.optAny("data")
+            ))
+            if (dateCom.isBlank() && paymentDate.isBlank() && value <= 0.0 && estimated <= 0.0) return
             out.add(
                 DividendEvent(
                     ticker = ticker,
-                    dateCom = normalizeDisplayDate(firstText(nested.optAny("dateCom"), nested.optAny("comDate"), nested.optAny("dataCom"))),
-                    paymentDate = normalizeDisplayDate(firstText(nested.optAny("paymentDate"), nested.optAny("payDate"), nested.optAny("dataPagamento"), nested.optAny("dataPagamentoPrevista"))),
+                    dateCom = dateCom,
+                    paymentDate = paymentDate,
                     valuePerShare = value,
                     quantity = q,
                     estimatedAmount = estimated,
-                    status = firstText(nested.optAny("status"), nested.optAny("type"), nested.optAny("tipo"), if (isUpcoming) "Previsto" else "Último provento"),
-                    source = firstText(root.optAny("source"), "Valorae Proxy")
+                    status = firstText(item.optAny("status"), item.optAny("type"), item.optAny("tipo"), defaultStatus, "Provento"),
+                    source = firstText(item.optAny("source"), container?.optAny("source"), "Serviço de dados VALORAE")
                 )
             )
         }
-        val sorted = out.sortedWith(compareBy<DividendEvent> { parseFlexibleDateMillis(it.paymentDate).let { ts -> if (ts > 0L) ts else Long.MAX_VALUE } }.thenBy { it.ticker })
+
+        fun appendArray(arr: JSONArray?, container: JSONObject?, defaultTicker: String = "", defaultStatus: String = "") {
+            if (arr == null) return
+            for (i in 0 until arr.length()) appendEvent(arr.optJSONObject(i), container, defaultTicker, defaultStatus)
+        }
+
+        roots.forEach { root ->
+            appendArray(root.optJSONArray("events"), root)
+            appendArray(root.optJSONArray("dividends"), root)
+            appendArray(root.optJSONArray("dividendos"), root)
+            appendArray(root.optJSONArray("proventos"), root)
+            appendArray(root.optJSONArray("upcomingEvents"), root, defaultStatus = "Previsto")
+            appendArray(root.optJSONArray("historyEvents"), root, defaultStatus = "Recebido")
+            appendArray(root.optArray("data.events"), root)
+            appendArray(root.optArray("data.dividends"), root)
+            appendArray(root.optArray("data.proventos"), root)
+
+            val items = firstArray(
+                root.optJSONArray("items"), root.optJSONArray("assets"), root.optJSONArray("rows"), root.optJSONArray("result"), root.optArray("data.items")
+            )
+            if (items != null) {
+                for (i in 0 until items.length()) {
+                    val item = items.optJSONObject(i) ?: continue
+                    val ticker = firstText(item.optAny("ticker"), item.optAny("symbol"), item.optAny("codigo")).uppercase(Locale.ROOT)
+                    appendEvent(item.optJSONObject("nextDividend"), item, ticker, "Previsto")
+                    appendEvent(item.optJSONObject("upcoming"), item, ticker, "Previsto")
+                    appendEvent(item.optJSONObject("lastDividend"), item, ticker, "Recebido")
+                    appendEvent(item.optJSONObject("ultimo"), item, ticker, "Recebido")
+                    appendArray(item.optJSONArray("events"), item, ticker)
+                    appendArray(item.optJSONArray("dividends"), item, ticker)
+                    appendArray(item.optJSONArray("dividendos"), item, ticker)
+                    appendArray(item.optJSONArray("proventos"), item, ticker)
+                    appendArray(item.optJSONArray("historico"), item, ticker, "Recebido")
+                    appendArray(item.optJSONArray("history"), item, ticker, "Recebido")
+                    appendArray(item.optJSONArray("upcomingEvents"), item, ticker, "Previsto")
+                    if (item.optJSONObject("nextDividend") == null && item.optJSONObject("lastDividend") == null && item.optJSONObject("ultimo") == null && item.optJSONArray("historico") == null) {
+                        appendEvent(item, root, ticker)
+                    }
+                }
+            }
+        }
+
+        val sorted = out
+            .distinctBy { listOf(it.ticker, it.dateCom, it.paymentDate, String.format(Locale.ROOT, "%.6f", it.valuePerShare), it.status).joinToString("|") }
+            .sortedWith(compareBy<DividendEvent> {
+                parseFlexibleDateMillis(it.paymentDate).let { ts -> if (ts > 0L) ts else Long.MAX_VALUE }
+            }.thenBy { it.ticker })
         if (sorted.isNotEmpty()) putInCache(cacheKey, sorted, 10)
         return sorted
     }
@@ -3385,7 +4096,7 @@ object B3NetworkService {
         val qualityEndpoints = listOf(
             Triple("Qualidade Valorae", "/api/v1/asset/quality", "Score, confiabilidade e indicação de renderização segura."),
             Triple("Cobertura dos Dados", "/api/v1/asset/coverage", "Campos disponíveis, ausentes e completude por bloco."),
-            Triple("Plano de Ação", "/api/v1/asset/action-plan", "Orientações do Proxy para análise e próximos passos."),
+            Triple("Plano de Ação", "/api/v1/asset/action-plan", "Orientações do VALORAE para análise e próximos passos."),
             Triple("Mapa de Fontes", "/api/v1/asset/source-map", "Fonte usada por campo: Investidor10, StatusInvest, Yahoo, cache ou fallback.")
         )
         val advancedEndpoints = listOf(
@@ -3396,7 +4107,7 @@ object B3NetworkService {
             Triple("Endividamento", "/api/v1/asset/debt", "Dívida, liquidez e alavancagem."),
             Triple("Demonstrativos", "/api/v1/asset/statements", "Receita, lucro, balanço e evolução contábil."),
             Triple("Pares", "/api/v1/asset/peers", "Comparação com ativos semelhantes."),
-            Triple("Indicadores", "/api/v1/asset/indicators", "Painel bruto de indicadores do Proxy."),
+            Triple("Indicadores", "/api/v1/asset/indicators", "Painel bruto de indicadores do serviço de dados."),
             Triple("Próximo Dividendo", "/api/v1/asset/next-dividend", "Evento de provento previsto ou último detectado.")
         )
         val fiiEndpoints = if (isFii) listOf(
@@ -3447,9 +4158,9 @@ object B3NetworkService {
             Triple("Alocação", "/api/v1/portfolio/allocation", "Distribuição por classe, setor, ticker e concentração."),
             Triple("Risco", "/api/v1/portfolio/risk", "Concentração, diversificação e alertas."),
             Triple("Renda", "/api/v1/portfolio/income", "Estimativa de renda mensal/anual e estabilidade."),
-            Triple("Dividendos", "/api/v1/portfolio/dividends", "Proventos agregados pelo Proxy."),
+            Triple("Dividendos", "/api/v1/portfolio/dividends", "Proventos agregados pelo serviço de dados."),
             Triple("Eventos", "/api/v1/portfolio/events", "Agenda e próximos eventos relevantes."),
-            Triple("Resumo", "/api/v1/portfolio/summary", "Visão consolidada do Proxy."),
+            Triple("Resumo", "/api/v1/portfolio/summary", "Visão consolidada do serviço de dados."),
             Triple("Transações", "/api/v1/portfolio/transactions", "Validação e leitura canônica das posições.")
         )
         val portfolioSections = if (cleanPositions.isNotEmpty()) {
@@ -3464,11 +4175,11 @@ object B3NetworkService {
         val diagnosticsEndpoints = listOf(
             Triple("Maturidade do Motor", "/api/v1/engine/maturity", "Aderência, cobertura e prontidão do motor."),
             Triple("Performance do Motor", "/api/v1/engine/performance", "Tempo, gargalos e estabilidade."),
-            Triple("Cache do Proxy", "/api/v1/cache/stats", "Entradas, hits e saúde do cache."),
+            Triple("Cache de dados", "/api/v1/cache/stats", "Entradas, hits e saúde do cache."),
             Triple("Status de Deploy", "/api/v1/deploy/status", "Status da publicação e ambiente."),
             Triple("Saúde Geral", "/api/v1/health", "Health check técnico ampliado."),
             Triple("Readiness Pessoal", "/api/v1/personal/readiness", "Prontidão de recursos personalizados."),
-            Triple("Schema", "/api/v1/schema", "Contrato atual exposto pelo Proxy.")
+            Triple("Schema", "/api/v1/schema", "Contrato atual de dados.")
         )
         val diagnostics = diagnosticsEndpoints.take(PROXY_PLUS_DIAGNOSTIC_LIMIT)
             .mapNotNull { (title, endpoint, subtitle) -> getCapabilitySection(title, endpoint, emptyMap(), subtitle, bypassCache) }
@@ -3687,12 +4398,21 @@ object B3NetworkService {
             results.optJSONObject("financialCharts"),
             results.optJSONObject("demonstrativos"),
             sections.optJSONObject("chartsFinanceiros"),
-            sections.optJSONObject("demonstrativos")
+            sections.optJSONObject("demonstrativos"),
+            appPayload?.optObject("charts.financeiros"),
+            appPayload?.optObject("charts.financial"),
+            appPayload?.optObject("charts.dre"),
+            appSnapshot?.optObject("charts.financeiros"),
+            appSnapshot?.optObject("charts.financial"),
+            root.optObject("appPayload.charts.financeiros"),
+            root.optObject("appPayload.charts.financial"),
+            root.optObject("appMobileSnapshot.charts.financeiros"),
+            root.optObject("appMobileSnapshot.charts.financial")
         )
 
         val warnings = mutableListOf<String>()
         if (root.optString("status") == "PARTIAL" || root.optBoolean("partial", false)) {
-            warnings.add("Dados parciais do Proxy")
+            warnings.add("Dados parciais recebidos")
         }
         val warningsArr = results.optJSONArray("warnings") ?: root.optJSONArray("warnings")
         if (warningsArr != null) {
@@ -3746,14 +4466,48 @@ object B3NetworkService {
             finalPriceHistory = hPoints
         }
 
+        val appChartSeries = firstArray(
+            root.optArray("appPayload.charts.series"),
+            root.optArray("chartSeries.series"),
+            root.optArray("appMobileSnapshot.charts"),
+            appPayload?.optArray("charts.series"),
+            appSnapshot?.optArray("charts")
+        )
+        val dreChartSeries = filterChartSeriesByKeywords(appChartSeries, "receita", "revenue", "lucro", "profit", "income", "dre", "resultados")
+        val profitQuoteChartSeries = filterChartSeriesByKeywords(appChartSeries, "lucro", "profit", "cotacao", "cotação", "quote", "price", "preco", "preço")
+        val equityChartSeries = filterChartSeriesByKeywords(appChartSeries, "balanco", "balanço", "balance", "patrimonio", "patrimônio", "equity", "ativo", "assets", "passivo", "liabilities")
+        val payoutChartSeries = filterChartSeriesByKeywords(appChartSeries, "payout")
+        val revenueRegionChartSeries = filterChartSeriesByKeywords(appChartSeries, "revenuegeography", "geografia", "regiao", "região", "region", "regional")
+        val revenueBusinessChartSeries = filterChartSeriesByKeywords(appChartSeries, "revenuebusiness", "revenuesegment", "negocio", "negócio", "segmento", "business")
+
         val profitability = mutableListOf<AssetPeriodReturn>()
         val realProfitability = mutableListOf<AssetPeriodReturn>()
 
-        val rentabilidadeObj = sections.optJSONObject("rentabilidade") ?: sections.optJSONObject("rentabilidadeChart")
+        val rentabilidadeObj = firstObject(
+            sections.optJSONObject("rentabilidade"),
+            sections.optJSONObject("rentabilidadeChart"),
+            results.optJSONObject("rentabilidade"),
+            results.optJSONObject("rentabilidadeChart"),
+            results.optJSONObject("profitability"),
+            root.optObject("appPayload.charts.rentabilidade"),
+            root.optObject("appPayload.charts.profitability"),
+            root.optObject("appPayload.charts.rentabilidadeReal"),
+            root.optObject("appMobileSnapshot.charts.rentabilidade"),
+            root.optObject("appMobileSnapshot.charts.profitability"),
+            root.optObject("appMobileSnapshot.rentabilidade"),
+            root.optObject("appMobileSnapshot.profitability"),
+            root.optObject("assetClassContract.groups.performance.fields.rentabilidade.value"),
+            root.optObject("assetClassContract.groups.performance.fields.profitability.value"),
+            root.optObject("assetClassContract.groups.statements.fields.rentabilidade.value")
+        )
         val rentKeyValues = firstArray(
             rentabilidadeObj?.optJSONArray("keyValues"),
             rentabilidadeObj?.optJSONArray("profitabilities"),
-            rentabilidadeObj?.optJSONArray("items")
+            rentabilidadeObj?.optJSONArray("items"),
+            rentabilidadeObj?.optJSONArray("data"),
+            rentabilidadeObj?.optJSONArray("values"),
+            rentabilidadeObj?.optJSONArray("series"),
+            rentabilidadeObj?.optJSONArray("points")
         )
         if (rentKeyValues != null && rentKeyValues.length() > 0) {
             for (i in 0 until rentKeyValues.length()) {
@@ -3770,6 +4524,12 @@ object B3NetworkService {
                     }
                 }
             }
+        }
+        if (profitability.isEmpty() || realProfitability.isEmpty()) {
+            val profitabilitySeries = filterChartSeriesByKeywords(appChartSeries, "rentabilidade", "return", "performance", "variacao", "variação", "ipca", "real", "nominal")
+            val (nominalFromSeries, realFromSeries) = parseProfitabilityReturnsFromChartSeries(profitabilitySeries)
+            if (profitability.isEmpty()) profitability.addAll(nominalFromSeries)
+            if (realProfitability.isEmpty()) realProfitability.addAll(realFromSeries)
         }
 
         if (profitability.isEmpty()) {
@@ -3796,7 +4556,7 @@ object B3NetworkService {
             if (profitability.isEmpty()) {
                 val var12m = firstNumber(normalizedValue(normalized, "variacao12m"))
                 if (var12m != 0.0) {
-                    profitability.add(AssetPeriodReturn(period = "12M", valuePercent = var12m, label = "Est. 12M"))
+                    profitability.add(AssetPeriodReturn(period = "12M", valuePercent = var12m, label = "12M"))
                 }
             }
         }
@@ -4172,34 +4932,98 @@ object B3NetworkService {
             }
         }
 
-        val payoutHistObj = sections.optJSONObject("payoutHistorico") ?: financialCharts?.optJSONObject("payoutHistorico") ?: sections.optJSONObject("demonstrativos")?.optJSONObject("payoutHistorico")
-        if (payoutHistObj != null) {
-            val yearsArr = payoutHistObj.optJSONArray("years")
-            val payoutArr = payoutHistObj.optJSONArray("payOutCompanyIndicators")
-                ?: payoutHistObj.optJSONArray("payout")
-                ?: payoutHistObj.optJSONArray("items")
-            if (yearsArr != null && payoutArr != null) {
-                val len = kotlin.math.min(yearsArr.length(), payoutArr.length())
-                for (i in 0 until len) {
-                    val rawPoint = payoutArr.opt(i)
-                    val objPoint = rawPoint as? JSONObject
-                    val yr = firstText(objPoint?.optAny("year"), objPoint?.optAny("ano"), objPoint?.optAny("label"), yearsArr.optString(i))
-                    val pay = firstNumber(objPoint?.optAny("value"), objPoint?.optAny("valor"), objPoint?.optAny("payout"), rawPoint)
-                    if (yr.isNotBlank() && pay != 0.0) {
-                        payoutHistory.add(AssetIndicatorPoint("Payout", pay, String.format(Locale.ROOT, "%.2f%%", pay), "%", year = yr))
+        fun addPayoutHistoryPoint(year: String, value: Double) {
+            if (year.isNotBlank() && value.isFinite() && value != 0.0 && payoutHistory.none { it.year == year }) {
+                payoutHistory.add(AssetIndicatorPoint("Payout", value, String.format(Locale.ROOT, "%.2f%%", value), "%", year = year))
+            }
+        }
+
+        fun appendPayoutHistoryFromAny(source: Any?) {
+            when (source) {
+                is JSONObject -> {
+                    val yearsArr = firstArray(
+                        source.optJSONArray("years"), source.optJSONArray("anos"), source.optJSONArray("labels"),
+                        source.optJSONArray("categories"), source.optJSONArray("periods"), source.optJSONArray("periodos")
+                    )
+                    val payoutArr = firstArray(
+                        source.optJSONArray("payOutCompanyIndicators"), source.optJSONArray("payout"), source.optJSONArray("payoutHistory"),
+                        source.optJSONArray("payoutHistorico"), source.optJSONArray("values"), source.optJSONArray("data"),
+                        source.optJSONArray("items"), source.optJSONArray("points"), source.optJSONArray("series")
+                    )
+                    if (yearsArr != null && payoutArr != null) {
+                        val len = kotlin.math.min(yearsArr.length(), payoutArr.length())
+                        for (i in 0 until len) {
+                            val rawPoint = payoutArr.opt(i)
+                            val objPoint = rawPoint as? JSONObject
+                            val yr = firstText(objPoint?.optAny("year"), objPoint?.optAny("ano"), objPoint?.optAny("period"), objPoint?.optAny("label"), yearsArr.optString(i))
+                            val pay = firstNumber(objPoint?.optAny("value"), objPoint?.optAny("valor"), objPoint?.optAny("payout"), objPoint?.optAny("percent"), objPoint?.optAny("percentage"), rawPoint)
+                            addPayoutHistoryPoint(yr, pay)
+                        }
+                    } else if (payoutArr != null) {
+                        for (i in 0 until payoutArr.length()) {
+                            val objPoint = payoutArr.optJSONObject(i)
+                            if (objPoint != null) {
+                                val yr = firstText(objPoint.optAny("year"), objPoint.optAny("ano"), objPoint.optAny("period"), objPoint.optAny("label"), "P${i + 1}")
+                                val pay = firstNumber(objPoint.optAny("value"), objPoint.optAny("valor"), objPoint.optAny("payout"), objPoint.optAny("percent"), objPoint.optAny("percentage"))
+                                addPayoutHistoryPoint(yr, pay)
+                            }
+                        }
+                    } else {
+                        val yr = firstText(source.optAny("year"), source.optAny("ano"), source.optAny("period"), source.optAny("label"))
+                        val pay = firstNumber(source.optAny("value"), source.optAny("valor"), source.optAny("payout"), source.optAny("percent"), source.optAny("percentage"))
+                        addPayoutHistoryPoint(yr, pay)
                     }
                 }
-            } else if (payoutArr != null) {
-                for (i in 0 until payoutArr.length()) {
-                    val objPoint = payoutArr.optJSONObject(i) ?: continue
-                    val yr = firstText(objPoint.optAny("year"), objPoint.optAny("ano"), objPoint.optAny("label"))
-                    val pay = firstNumber(objPoint.optAny("value"), objPoint.optAny("valor"), objPoint.optAny("payout"))
-                    if (yr.isNotBlank() && pay != 0.0) {
-                        payoutHistory.add(AssetIndicatorPoint("Payout", pay, String.format(Locale.ROOT, "%.2f%%", pay), "%", year = yr))
+                is JSONArray -> {
+                    for (i in 0 until source.length()) {
+                        val item = source.opt(i)
+                        if (item is JSONObject) {
+                            val seriesName = canonicalKey(firstText(item.optAny("key"), item.optAny("name"), item.optAny("label"), item.optAny("title")))
+                            val nested = firstArray(item.optJSONArray("points"), item.optJSONArray("data"), item.optJSONArray("values"), item.optJSONArray("items"))
+                            if (nested != null && seriesName.contains("payout")) {
+                                for (j in 0 until nested.length()) {
+                                    val point = nested.opt(j)
+                                    val yr = when (point) {
+                                        is JSONObject -> firstText(point.optAny("year"), point.optAny("ano"), point.optAny("period"), point.optAny("label"), point.optAny("date"), point.optAny("x"), "P${j + 1}")
+                                        is JSONArray -> firstText(point.opt(0), "P${j + 1}")
+                                        else -> "P${j + 1}"
+                                    }
+                                    val pay = when (point) {
+                                        is JSONObject -> firstNumber(point.optAny("value"), point.optAny("valor"), point.optAny("payout"), point.optAny("percent"), point.optAny("percentage"), point.optAny("y"))
+                                        is JSONArray -> firstNumber(if (point.length() > 1) point.opt(1) else point.opt(0))
+                                        else -> firstNumber(point)
+                                    }
+                                    addPayoutHistoryPoint(yr, pay)
+                                }
+                            } else {
+                                val yr = firstText(item.optAny("year"), item.optAny("ano"), item.optAny("period"), item.optAny("label"), item.optAny("date"), item.optAny("x"), "P${i + 1}")
+                                val pay = firstNumber(item.optAny("value"), item.optAny("valor"), item.optAny("payout"), item.optAny("percent"), item.optAny("percentage"), item.optAny("y"))
+                                addPayoutHistoryPoint(yr, pay)
+                            }
+                        }
                     }
                 }
             }
         }
+
+        listOf(
+            payoutChartSeries,
+            sections.optAny("payoutHistorico"),
+            financialCharts?.optAny("payoutHistorico"),
+            sections.optObject("demonstrativos.payoutHistorico"),
+            results.optAny("payoutHistorico"),
+            results.optAny("payoutHistory"),
+            results.optAny("payout"),
+            root.optObject("appPayload.charts.payoutHistorico"),
+            root.optObject("appPayload.charts.payoutHistory"),
+            root.optObject("appPayload.charts.payout"),
+            root.optObject("appMobileSnapshot.charts.payoutHistorico"),
+            root.optObject("appMobileSnapshot.charts.payoutHistory"),
+            root.optObject("appMobileSnapshot.charts.payout"),
+            root.optObject("assetClassContract.groups.statements.fields.payoutHistorico.value"),
+            root.optObject("assetClassContract.groups.statements.fields.payoutHistory.value"),
+            root.optObject("assetClassContract.groups.statements.fields.payout.value")
+        ).forEach(::appendPayoutHistoryFromAny)
 
         val indexComparison = mutableListOf<AssetComparisonSeries>()
         val compIndices = firstObject(
@@ -4247,202 +5071,200 @@ object B3NetworkService {
 
         val revenueProfit = mutableListOf<FinancialStatementPoint>()
         val demObj = firstObject(sections.optJSONObject("demonstrativos"), results.optJSONObject("demonstrativos"), financialCharts)
-        val revProfArr = firstArray(
-            financialCharts?.optJSONArray("receitasLucros"),
-            financialCharts?.optJSONArray("revenueProfit"),
-            financialCharts?.optJSONArray("items"),
-            demObj?.optJSONArray("receitasLucros"),
-            demObj?.optJSONArray("revenueProfit"),
-            demObj?.optJSONArray("items"),
-            sections.optJSONArray("receitasLucros"),
-            results.optJSONArray("receitasLucros")
+        revenueProfit.addAll(
+            parseFirstFinancialStatementPoints(
+                dreChartSeries,
+                financialCharts?.optAny("receitasLucros"),
+                financialCharts?.optAny("revenueProfit"),
+                financialCharts?.optAny("incomeStatement"),
+                financialCharts?.optAny("dre"),
+                financialCharts?.optAny("resultados"),
+                financialCharts?.optAny("items"),
+                demObj?.optAny("receitasLucros"),
+                demObj?.optAny("revenueProfit"),
+                demObj?.optAny("incomeStatement"),
+                demObj?.optAny("dre"),
+                demObj?.optAny("resultados"),
+                demObj?.optAny("items"),
+                sections.optAny("receitasLucros"),
+                sections.optAny("revenueProfit"),
+                sections.optObject("demonstrativos.receitasLucros"),
+                sections.optObject("demonstrativos.revenueProfit"),
+                results.optAny("receitasLucros"),
+                results.optAny("revenueProfit"),
+                results.optAny("incomeStatement"),
+                normalized?.optAny("receitasLucros"),
+                normalized?.optAny("revenueProfit"),
+                normalized?.optAny("incomeStatement"),
+                root.optObject("appPayload.charts.receitasLucros"),
+                root.optObject("appPayload.charts.revenueProfit"),
+                root.optObject("appPayload.charts.incomeStatement"),
+                root.optObject("appPayload.charts.dre"),
+                root.optObject("appMobileSnapshot.charts.receitasLucros"),
+                root.optObject("appMobileSnapshot.charts.revenueProfit"),
+                root.optObject("appMobileSnapshot.charts.incomeStatement"),
+                root.optObject("appMobileSnapshot.charts.dre"),
+                root.optObject("assetClassContract.groups.statements.fields.receitasLucros.value"),
+                root.optObject("assetClassContract.groups.statements.fields.revenueProfit.value"),
+                root.optObject("assetClassContract.groups.statements.fields.incomeStatement.value"),
+                root.optObject("assetClassContract.groups.statements.fields.dre.value"),
+                root.optObject("assetClassContract.groups.statements.fields.resultados.value")
+            )
         )
-        if (revProfArr != null) {
-            for (i in 0 until revProfArr.length()) {
-                val r = revProfArr.optJSONObject(i) ?: continue
-                val yr = firstText(r.optAny("year"), r.optAny("ano"), r.optAny("date"), "")
-                val qt = firstText(r.optAny("quarter"), r.optAny("trimestre"), r.optAny("period"), "")
-                val rev = firstNumber(r.optAny("net_revenue"), r.optAny("netRevenue"), r.optAny("revenue"), r.optAny("receitaLiquida"), r.optAny("receita"), r.optAny("faturamento"))
-                val profit = firstNumber(r.optAny("net_profit"), r.optAny("netProfit"), r.optAny("profit"), r.optAny("lucroLiquido"), r.optAny("lucro"))
-                val costVal = firstNumber(r.optAny("cost"), r.optAny("custo"), r.optAny("costs"))
-                val gp = firstNumber(r.optAny("gross_profit"), r.optAny("grossProfit"), r.optAny("lucroBruto"))
-                val ebtda = firstNumber(r.optAny("ebitda"), r.optAny("EBITDA"))
-                val ebt = firstNumber(r.optAny("ebit"), r.optAny("EBIT"))
-                if (yr.isNotBlank() && (rev != 0.0 || profit != 0.0 || costVal != 0.0 || gp != 0.0 || ebtda != 0.0 || ebt != 0.0)) {
-                    revenueProfit.add(
-                        FinancialStatementPoint(
-                            label = if (qt.isNotBlank()) "$qt/$yr" else yr,
-                            year = yr,
-                            quarter = qt,
-                            netRevenue = rev,
-                            cost = costVal,
-                            grossProfit = gp,
-                            ebitda = ebtda,
-                            ebit = ebt,
-                            netProfit = profit
-                        )
-                    )
-                }
-            }
-        }
 
         val profitVsQuote = mutableListOf<AssetComparisonPoint>()
-        val profitQuoteObj = firstObject(
-            financialCharts?.optJSONObject("lucroCotacao"),
-            financialCharts?.optJSONObject("profitVsQuote"),
-            demObj?.optJSONObject("lucroCotacao"),
-            demObj?.optJSONObject("profitVsQuote"),
-            sections.optJSONObject("lucroCotacao"),
-            results.optJSONObject("lucroCotacao")
+        profitVsQuote.addAll(
+            parseFirstProfitVsQuotePoints(
+                profitQuoteChartSeries,
+                financialCharts?.optAny("lucroCotacao"),
+                financialCharts?.optAny("profitVsQuote"),
+                financialCharts?.optAny("quoteProfit"),
+                financialCharts?.optAny("cotacaoLucro"),
+                demObj?.optAny("lucroCotacao"),
+                demObj?.optAny("profitVsQuote"),
+                demObj?.optAny("quoteProfit"),
+                sections.optAny("lucroCotacao"),
+                sections.optAny("profitVsQuote"),
+                sections.optObject("demonstrativos.lucroCotacao"),
+                results.optAny("lucroCotacao"),
+                results.optAny("profitVsQuote"),
+                normalized?.optAny("lucroCotacao"),
+                normalized?.optAny("profitVsQuote"),
+                normalized?.optAny("quoteProfit"),
+                root.optObject("appPayload.charts.lucroCotacao"),
+                root.optObject("appPayload.charts.profitVsQuote"),
+                root.optObject("appPayload.charts.quoteProfit"),
+                root.optObject("appPayload.charts.cotacaoLucro"),
+                root.optObject("appMobileSnapshot.charts.lucroCotacao"),
+                root.optObject("appMobileSnapshot.charts.profitVsQuote"),
+                root.optObject("appMobileSnapshot.charts.quoteProfit"),
+                root.optObject("appMobileSnapshot.charts.cotacaoLucro"),
+                root.optObject("assetClassContract.groups.statements.fields.lucroCotacao.value"),
+                root.optObject("assetClassContract.groups.statements.fields.profitVsQuote.value"),
+                root.optObject("assetClassContract.groups.statements.fields.quoteProfit.value"),
+                root.optObject("assetClassContract.groups.statements.fields.cotacaoLucro.value")
+            )
         )
-        if (profitQuoteObj != null) {
-            val quotesArr = profitQuoteObj.optJSONArray("quotes") ?: profitQuoteObj.optJSONArray("cotacoes") ?: profitQuoteObj.optJSONArray("cotações")
-            val profitsArr = profitQuoteObj.optJSONArray("profits") ?: profitQuoteObj.optJSONArray("lucros") ?: profitQuoteObj.optJSONArray("netProfit")
-            if (quotesArr != null && profitsArr != null) {
-                val len = kotlin.math.min(quotesArr.length(), profitsArr.length())
-                for (i in 0 until len) {
-                    val q = quotesArr.optJSONObject(i) ?: continue
-                    val p = profitsArr.optJSONObject(i) ?: continue
-                    val lbl = firstText(q.optAny("label"), q.optAny("year"), q.optAny("ano"), "P${i+1}")
-                    val quote = firstNumber(q.optAny("quotation"), q.optAny("quote"), q.optAny("cotacao"), q.optAny("value"), q.optAny("valor"))
-                    val profit = firstNumber(p.optAny("net_profit"), p.optAny("netProfit"), p.optAny("profit"), p.optAny("lucro"), p.optAny("value"), p.optAny("valor"))
-                    if (quote != 0.0 || profit != 0.0) {
-                        profitVsQuote.add(AssetComparisonPoint(label = lbl, value = quote, secondaryValue = profit))
-                    }
-                }
-            } else {
-                val years = profitQuoteObj.keys()
-                while (years.hasNext()) {
-                    val year = years.next()
-                    val obj = profitQuoteObj.optJSONObject(year) ?: continue
-                    val quote = firstNumber(obj.optAny("quotation"), obj.optAny("quote"), obj.optAny("cotacao"), obj.optAny("price"), obj.optAny("value"))
-                    val profit = firstNumber(obj.optAny("net_profit"), obj.optAny("netProfit"), obj.optAny("profit"), obj.optAny("lucro"), obj.optAny("lucroLiquido"))
-                    if ((quote != 0.0 || profit != 0.0) && year.isNotBlank()) {
-                        profitVsQuote.add(AssetComparisonPoint(label = year, value = quote, secondaryValue = profit))
-                    }
-                }
-            }
-        }
 
         val equityEvolution = mutableListOf<FinancialStatementPoint>()
-        val eqArr = firstArray(
-            financialCharts?.optJSONArray("evolucaoPatrimonio"),
-            financialCharts?.optJSONArray("equityEvolution"),
-            financialCharts?.optJSONArray("balancoPatrimonial"),
-            demObj?.optJSONArray("evolucaoPatrimonio"),
-            demObj?.optJSONArray("equityEvolution"),
-            sections.optJSONArray("evolucaoPatrimonio"),
-            results.optJSONArray("evolucaoPatrimonio")
+        equityEvolution.addAll(
+            parseFirstFinancialStatementPoints(
+                equityChartSeries,
+                financialCharts?.optAny("evolucaoPatrimonio"),
+                financialCharts?.optAny("equityEvolution"),
+                financialCharts?.optAny("balancoPatrimonial"),
+                financialCharts?.optAny("balanceSheet"),
+                demObj?.optAny("evolucaoPatrimonio"),
+                demObj?.optAny("equityEvolution"),
+                demObj?.optAny("balancoPatrimonial"),
+                demObj?.optAny("balanceSheet"),
+                sections.optAny("evolucaoPatrimonio"),
+                sections.optAny("equityEvolution"),
+                sections.optAny("balancoPatrimonial"),
+                sections.optObject("demonstrativos.evolucaoPatrimonio"),
+                sections.optObject("demonstrativos.balancoPatrimonial"),
+                results.optAny("evolucaoPatrimonio"),
+                results.optAny("equityEvolution"),
+                results.optAny("balancoPatrimonial"),
+                normalized?.optAny("evolucaoPatrimonio"),
+                normalized?.optAny("equityEvolution"),
+                normalized?.optAny("balancoPatrimonial"),
+                normalized?.optAny("balanceSheet"),
+                root.optObject("appPayload.charts.evolucaoPatrimonio"),
+                root.optObject("appPayload.charts.equityEvolution"),
+                root.optObject("appPayload.charts.balancoPatrimonial"),
+                root.optObject("appPayload.charts.balanceSheet"),
+                root.optObject("appMobileSnapshot.charts.evolucaoPatrimonio"),
+                root.optObject("appMobileSnapshot.charts.equityEvolution"),
+                root.optObject("appMobileSnapshot.charts.balancoPatrimonial"),
+                root.optObject("appMobileSnapshot.charts.balanceSheet"),
+                root.optObject("assetClassContract.groups.statements.fields.evolucaoPatrimonio.value"),
+                root.optObject("assetClassContract.groups.statements.fields.equityEvolution.value"),
+                root.optObject("assetClassContract.groups.statements.fields.balancoPatrimonial.value"),
+                root.optObject("assetClassContract.groups.statements.fields.balanceSheet.value")
+            )
         )
-        if (eqArr != null) {
-            for (i in 0 until eqArr.length()) {
-                val eq = eqArr.optJSONObject(i) ?: continue
-                val yr = firstText(eq.optAny("year"), eq.optAny("ano"), eq.optAny("date"), "")
-                val qt = firstText(eq.optAny("quarter"), eq.optAny("trimestre"), "")
-                val plVal = firstNumber(eq.optAny("net_worth"), eq.optAny("netWorth"), eq.optAny("patrimonioLiquido"), eq.optAny("pl"))
-                val assetsVal = firstNumber(eq.optAny("balance_total_assets"), eq.optAny("totalAssets"), eq.optAny("ativos"), eq.optAny("assets"), eq.optAny("ativoTotal"))
-                val liabVal = firstNumber(eq.optAny("balance_total_liabilities"), eq.optAny("totalLiabilities"), eq.optAny("passivos"), eq.optAny("liabilities"), eq.optAny("passivoTotal"))
-                if (yr.isNotBlank() && (plVal != 0.0 || assetsVal != 0.0 || liabVal != 0.0)) {
-                    equityEvolution.add(
-                        FinancialStatementPoint(
-                            label = if (qt.isNotBlank()) "$qt/$yr" else yr,
-                            year = yr,
-                            quarter = qt,
-                            netWorth = plVal,
-                            totalAssets = assetsVal,
-                            totalLiabilities = liabVal
-                        )
-                    )
-                }
-            }
-        }
 
         val revenueByRegion = mutableMapOf<String, List<AssetBreakdownPoint>>()
         val revenueByBusiness = mutableMapOf<String, List<AssetBreakdownPoint>>()
 
-        val regObj = firstObject(
-            sections.optJSONObject("regioesReceita"),
-            sections.optObject("empresa.regioesReceita"),
-            results.optJSONObject("regioesReceita"),
-            results.optJSONObject("geografiaReceita"),
-            results.optJSONObject("revenueGeography"),
-            root.optJSONObject("revenueGeography"),
-            root.optObject("appPayload.charts.revenueGeography"),
-            root.optObject("appMobileSnapshot.charts.revenueGeography"),
-            root.optObject("assetClassContract.groups.statements.fields.regioesReceita.value"),
-            root.optObject("assetClassContract.groups.statements.fields.revenueGeography.value")
+        revenueByRegion.putAll(
+            parseFirstBreakdownMap(
+                revenueRegionChartSeries,
+                sections.optAny("regioesReceita"),
+                sections.optObject("empresa.regioesReceita"),
+                results.optAny("regioesReceita"),
+                results.optAny("geografiaReceita"),
+                results.optAny("revenueGeography"),
+                results.optAny("revenueByRegion"),
+                results.optAny("distribuicaoFaturamento.regioes"),
+                results.optAny("distribuicaoFaturamento.regioesReceita"),
+                root.optAny("revenueGeography"),
+                root.optAny("revenueByRegion"),
+                normalized?.optAny("revenueGeography"),
+                normalized?.optAny("revenueByRegion"),
+                normalized?.optAny("regioesReceita"),
+                root.optObject("appPayload.charts.revenueGeography"),
+                root.optObject("appPayload.charts.regioesReceita"),
+                root.optObject("appPayload.charts.revenueByRegion"),
+                root.optAny("appPayload.charts.revenueBreakdowns.geography"),
+                root.optAny("appPayload.charts.revenueBreakdowns.byRegion"),
+                root.optAny("appPayload.charts.revenueBreakdowns.regions"),
+                root.optObject("appPayload.charts.revenueBreakdowns.revenueGeography"),
+                root.optObject("appPayload.charts.revenueBreakdowns.regioesReceita"),
+                root.optObject("appPayload.charts.revenueBreakdowns.revenueByRegion"),
+                root.optAny("appMobileSnapshot.revenueBreakdowns.geography"),
+                root.optAny("appMobileSnapshot.revenueBreakdowns.byRegion"),
+                root.optAny("appMobileSnapshot.revenueBreakdowns.regions"),
+                root.optObject("appMobileSnapshot.revenueBreakdowns.revenueGeography"),
+                root.optObject("appMobileSnapshot.revenueBreakdowns.regioesReceita"),
+                root.optObject("appMobileSnapshot.revenueBreakdowns.revenueByRegion"),
+                root.optObject("assetClassContract.groups.statements.fields.regioesReceita.value"),
+                root.optObject("assetClassContract.groups.statements.fields.revenueGeography.value")
+            )
         )
-        if (regObj != null) {
-            val years = regObj.keys()
-            while (years.hasNext()) {
-                val yr = years.next()
-                val list = mutableListOf<AssetBreakdownPoint>()
-                val yrObj = regObj.optJSONObject(yr)
-                if (yrObj != null) {
-                    val regions = yrObj.keys()
-                    while (regions.hasNext()) {
-                        val rName = regions.next()
-                        val rObj = yrObj.optJSONObject(rName) ?: continue
-                        val valPct = firstNumber(rObj.optAny("valuePercent"), rObj.optAny("percent"), rObj.optAny("value"))
-                        val disp = firstText(rObj.optAny("displayValue"), rObj.optAny("revenue"), rObj.optAny("faturamento"))
-                        if (rName.isNotBlank() && valPct != 0.0) list.add(AssetBreakdownPoint(name = rName, valuePercent = valPct, displayValue = disp, year = yr))
-                    }
-                } else {
-                    val yrArr = regObj.optJSONArray(yr)
-                    if (yrArr != null) {
-                        for (i in 0 until yrArr.length()) {
-                            val r = yrArr.optJSONObject(i) ?: continue
-                            val rName = firstText(r.optAny("name"), r.optAny("region"), r.optAny("regiao"))
-                            val valPct = firstNumber(r.optAny("valuePercent"), r.optAny("percent"), r.optAny("value"))
-                            if (rName.isNotBlank() && valPct != 0.0) list.add(AssetBreakdownPoint(name = rName, valuePercent = valPct, year = yr))
-                        }
-                    }
-                }
-                if (list.isNotEmpty()) revenueByRegion[yr] = list
-            }
-        }
 
-        val busObj = firstObject(
-            sections.optJSONObject("negociosReceita"),
-            sections.optObject("empresa.negociosReceita"),
-            results.optJSONObject("negociosReceita"),
-            results.optJSONObject("segmentosReceita"),
-            results.optJSONObject("revenueSegment"),
-            root.optJSONObject("revenueSegment"),
-            root.optObject("appPayload.charts.revenueSegment"),
-            root.optObject("appPayload.charts.revenueByBusiness"),
-            root.optObject("appMobileSnapshot.charts.revenueSegment"),
-            root.optObject("assetClassContract.groups.statements.fields.negociosReceita.value"),
-            root.optObject("assetClassContract.groups.statements.fields.revenueSegment.value")
+        revenueByBusiness.putAll(
+            parseFirstBreakdownMap(
+                revenueBusinessChartSeries,
+                sections.optAny("negociosReceita"),
+                sections.optObject("empresa.negociosReceita"),
+                results.optAny("negociosReceita"),
+                results.optAny("segmentosReceita"),
+                results.optAny("revenueSegment"),
+                results.optAny("revenueByBusiness"),
+                results.optAny("distribuicaoFaturamento.negocios"),
+                results.optAny("distribuicaoFaturamento.negociosReceita"),
+                results.optAny("distribuicaoFaturamento.segmentosReceita"),
+                root.optAny("revenueSegment"),
+                root.optAny("revenueByBusiness"),
+                normalized?.optAny("negociosReceita"),
+                normalized?.optAny("segmentosReceita"),
+                normalized?.optAny("revenueSegment"),
+                normalized?.optAny("revenueByBusiness"),
+                root.optObject("appPayload.charts.revenueSegment"),
+                root.optObject("appPayload.charts.revenueByBusiness"),
+                root.optObject("appPayload.charts.negociosReceita"),
+                root.optObject("appPayload.charts.segmentosReceita"),
+                root.optAny("appPayload.charts.revenueBreakdowns.business"),
+                root.optAny("appPayload.charts.revenueBreakdowns.byBusiness"),
+                root.optAny("appPayload.charts.revenueBreakdowns.segments"),
+                root.optObject("appPayload.charts.revenueBreakdowns.revenueSegment"),
+                root.optObject("appPayload.charts.revenueBreakdowns.revenueByBusiness"),
+                root.optObject("appPayload.charts.revenueBreakdowns.negociosReceita"),
+                root.optObject("appPayload.charts.revenueBreakdowns.segmentosReceita"),
+                root.optAny("appMobileSnapshot.revenueBreakdowns.business"),
+                root.optAny("appMobileSnapshot.revenueBreakdowns.byBusiness"),
+                root.optAny("appMobileSnapshot.revenueBreakdowns.segments"),
+                root.optObject("appMobileSnapshot.revenueBreakdowns.revenueSegment"),
+                root.optObject("appMobileSnapshot.revenueBreakdowns.revenueByBusiness"),
+                root.optObject("appMobileSnapshot.revenueBreakdowns.negociosReceita"),
+                root.optObject("appMobileSnapshot.revenueBreakdowns.segmentosReceita"),
+                root.optObject("assetClassContract.groups.statements.fields.negociosReceita.value"),
+                root.optObject("assetClassContract.groups.statements.fields.revenueSegment.value"),
+                root.optObject("assetClassContract.groups.statements.fields.revenueByBusiness.value")
+            )
         )
-        if (busObj != null) {
-            val years = busObj.keys()
-            while (years.hasNext()) {
-                val yr = years.next()
-                val list = mutableListOf<AssetBreakdownPoint>()
-                val yrObj = busObj.optJSONObject(yr)
-                if (yrObj != null) {
-                    val businesses = yrObj.keys()
-                    while (businesses.hasNext()) {
-                        val bName = businesses.next()
-                        val bObj = yrObj.optJSONObject(bName) ?: continue
-                        val valPct = firstNumber(bObj.optAny("valuePercent"), bObj.optAny("percent"), bObj.optAny("value"))
-                        if (bName.isNotBlank() && valPct != 0.0) list.add(AssetBreakdownPoint(name = bName, valuePercent = valPct, year = yr))
-                    }
-                } else {
-                    val yrArr = busObj.optJSONArray(yr)
-                    if (yrArr != null) {
-                        for (i in 0 until yrArr.length()) {
-                            val b = yrArr.optJSONObject(i) ?: continue
-                            val bName = firstText(b.optAny("name"), b.optAny("business"), b.optAny("negocio"))
-                            val valPct = firstNumber(b.optAny("valuePercent"), b.optAny("percent"), b.optAny("value"))
-                            if (bName.isNotBlank() && valPct != 0.0) list.add(AssetBreakdownPoint(name = bName, valuePercent = valPct, year = yr))
-                        }
-                    }
-                }
-                if (list.isNotEmpty()) revenueByBusiness[yr] = list
-            }
-        }
 
         if (!hasUsableBreakdownMap(revenueByRegion)) {
             revenueByRegion.clear()
@@ -4450,12 +5272,16 @@ object B3NetworkService {
                 parseBreakdownMap(
                     firstObject(
                         results.optJSONObject("revenueGeography"),
+                        results.optJSONObject("revenueByRegion"),
                         results.optJSONObject("regioesReceita"),
                         results.optJSONObject("geografiaReceita"),
+                        results.optJSONObject("distribuicaoFaturamento"),
                         sections.optJSONObject("revenueGeography"),
                         sections.optJSONObject("geografiaReceita"),
                         root.optObject("appPayload.charts.revenueGeography"),
-                        root.optObject("appMobileSnapshot.charts.revenueGeography"),
+                        root.optObject("appPayload.charts.revenueByRegion"),
+                        root.optObject("appPayload.charts.revenueBreakdowns.revenueGeography"),
+                        root.optObject("appMobileSnapshot.revenueBreakdowns.revenueGeography"),
                         root.optObject("assetClassContract.groups.statements.fields.regioesReceita.value"),
                         root.optObject("assetClassContract.groups.statements.fields.revenueGeography.value")
                     )
@@ -4471,11 +5297,13 @@ object B3NetworkService {
                         results.optJSONObject("revenueByBusiness"),
                         results.optJSONObject("negociosReceita"),
                         results.optJSONObject("segmentosReceita"),
+                        results.optJSONObject("distribuicaoFaturamento"),
                         sections.optJSONObject("revenueSegment"),
                         sections.optJSONObject("segmentosReceita"),
                         root.optObject("appPayload.charts.revenueSegment"),
                         root.optObject("appPayload.charts.revenueByBusiness"),
-                        root.optObject("appMobileSnapshot.charts.revenueSegment"),
+                        root.optObject("appPayload.charts.revenueBreakdowns.revenueByBusiness"),
+                        root.optObject("appMobileSnapshot.revenueBreakdowns.revenueByBusiness"),
                         root.optObject("assetClassContract.groups.statements.fields.negociosReceita.value"),
                         root.optObject("assetClassContract.groups.statements.fields.revenueSegment.value")
                     )
@@ -4541,14 +5369,49 @@ object B3NetworkService {
                 if (cn > 0.0) fiiPatrimonialInfo.add(AssetIndicatorPoint("Número de Cotas", cn, numCotas))
             }
             if (pvpVal > 0.0) fiiPatrimonialInfo.add(AssetIndicatorPoint("P/VP", pvpVal, String.format(Locale.ROOT, "%.2f", pvpVal)))
-            if (plTotal > 0.0) fiiPatrimonialInfo.add(AssetIndicatorPoint("Patrimônio Total", plTotal, String.format(Locale.ROOT, "R$ %.2f B", plTotal / 1_000_000_000.0)))
+            if (plTotal > 0.0) fiiPatrimonialInfo.add(AssetIndicatorPoint("Patrimônio Total", plTotal, formatCurrencyPtBr(plTotal)))
 
-            val compFiisObj = sections.optJSONObject("comparador") ?: sections.optJSONObject("comparadorFiis") ?: sections.optJSONObject("mediaTipoSegmento")
+            val compFiisObj = mergedObject(
+                sections.optJSONObject("comparador"),
+                sections.optJSONObject("comparadorFiis"),
+                sections.optJSONObject("mediaTipoSegmento"),
+                sections.optJSONObject("mediaSetor"),
+                sections.optJSONObject("comparativoSetor"),
+                sections.optJSONObject("peerAverage"),
+                results.optJSONObject("comparador"),
+                results.optJSONObject("comparadorFiis"),
+                results.optJSONObject("mediaTipoSegmento"),
+                results.optJSONObject("mediaSetor"),
+                results.optJSONObject("comparativoSetor"),
+                results.optJSONObject("peerAverage"),
+                appPayload?.optJSONObject("comparador"),
+                appPayload?.optJSONObject("peerAverage"),
+                appPayload?.optJSONObject("segmentAverage"),
+                appPayload?.optObject("charts.peerAverage"),
+                appSnapshot?.optJSONObject("peerAverage"),
+                appSnapshot?.optJSONObject("segmentAverage"),
+                root.optObject("data.comparador"),
+                root.optObject("data.peerAverage"),
+                root.optObject("data.segmentAverage")
+            )
             if (compFiisObj != null) {
-                val avgPvp = firstNumber(compFiisObj.optAny("vpaMedia"), compFiisObj.optAny("pvpMedia"), compFiisObj.optAny("avgPvp"))
-                val avgDy = firstNumber(compFiisObj.optAny("dyMedia"), compFiisObj.optAny("avgDy"))
-                if (avgPvp != 0.0) fiiPeerAverage.add(AssetComparisonPoint("P/VP", pvpVal, avgPvp))
-                if (avgDy != 0.0) fiiPeerAverage.add(AssetComparisonPoint("DY 12M", dyVal, avgDy))
+                val avgPvp = firstNumber(
+                    compFiisObj.optAny("pvpMedia"), compFiisObj.optAny("avgPvp"), compFiisObj.optAny("mediaPvp"),
+                    compFiisObj.optAny("pvpSetor"), compFiisObj.optAny("pvpSegmento"), compFiisObj.optAny("pvpTipo"),
+                    compFiisObj.optAny("mediaPVP"), compFiisObj.optAny("P/VP")
+                )
+                val avgDy = firstNumber(
+                    compFiisObj.optAny("dyMedia"), compFiisObj.optAny("avgDy"), compFiisObj.optAny("mediaDy"),
+                    compFiisObj.optAny("dySetor"), compFiisObj.optAny("dySegmento"), compFiisObj.optAny("yieldMedia"),
+                    compFiisObj.optAny("dividendYieldMedia"), compFiisObj.optAny("DY")
+                )
+                val avgVacancy = firstNumber(
+                    compFiisObj.optAny("vacanciaMedia"), compFiisObj.optAny("avgVacancy"), compFiisObj.optAny("vacanciaSetor"),
+                    compFiisObj.optAny("vacanciaSegmento"), compFiisObj.optAny("vacancyAverage")
+                )
+                if (avgPvp > 0.0 && pvpVal > 0.0) fiiPeerAverage.add(AssetComparisonPoint("P/VP", pvpVal, avgPvp))
+                if (avgDy > 0.0 && dyVal > 0.0) fiiPeerAverage.add(AssetComparisonPoint("DY 12M", dyVal, avgDy))
+                if (avgVacancy > 0.0 && vacancia > 0.0) fiiPeerAverage.add(AssetComparisonPoint("Vacância", vacancia, avgVacancy))
             }
 
             val distAtivos = firstArray(
@@ -4641,7 +5504,7 @@ object B3NetworkService {
             fiiPatrimonialInfo = fiiPatrimonialInfo,
             fiiAssetDistribution = fiiAssetDistribution,
             warnings = warnings,
-            source = "Valorae Proxy / Investidor10"
+            source = "VALORAE / Investidor10"
         )
     }
 
@@ -4710,10 +5573,10 @@ object B3NetworkService {
 
 
     /**
-     * Fallback direto legado. O caminho principal usa Valorae Proxy.
+     * Fallback direto legado. O caminho principal usa Serviço de dados VALORAE.
      */
     private fun fetchAssetDataDirect(ticker: String, bypassCache: Boolean = false): B3AssetData? {
-        Log.w("B3NetworkService", "Fallback direto desativado para $ticker. Use somente Valorae Proxy.")
+        Log.w("B3NetworkService", "Fallback direto desativado para $ticker. Use somente Serviço de dados VALORAE.")
         return null
     }
 
@@ -4722,7 +5585,7 @@ object B3NetworkService {
      * Fetch historical chart points for graphing
      */
     private fun fetchHistoricalChartDirect(ticker: String, range: String = "1y"): List<ChartPoint> {
-        Log.w("B3NetworkService", "Histórico direto desativado para $ticker/$range. Use somente Valorae Proxy.")
+        Log.w("B3NetworkService", "Histórico direto desativado para $ticker/$range. Use somente Serviço de dados VALORAE.")
         return emptyList()
     }
 
@@ -4731,13 +5594,13 @@ object B3NetworkService {
      * Fetch news RSS search for Brazilian stocks
      */
     private fun fetchNewsDirect(ticker: String = ""): List<NewsItem> {
-        Log.w("B3NetworkService", "Notícias diretas desativadas para ${ticker.ifBlank { "mercado" }}. Use somente Valorae Proxy.")
+        Log.w("B3NetworkService", "Notícias diretas desativadas para ${ticker.ifBlank { "mercado" }}. Use somente Serviço de dados VALORAE.")
         return emptyList()
     }
 
 
     private fun enrichAssetDetails(base: B3AssetData): B3AssetData {
-        // Não adiciona dados inventados. O caminho principal e único para dados de mercado é o Valorae Proxy.
+        // Não adiciona dados inventados. O caminho principal e único para dados de mercado é o Serviço de dados VALORAE.
         return base
     }
 }

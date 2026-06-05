@@ -488,4 +488,190 @@ class B3NetworkServiceParserTest {
         assertTrue(bundle.revenueByBusiness["Atual"]?.any { it.name == "Serviços" && it.valuePercent == 30.0 } == true)
     }
 
+    @Test
+    fun testDailyMovementsRankingsParsing() {
+        val jsonString = """
+            {
+                "status": "OK",
+                "type": "ACAO",
+                "source": "VALORAE PROXY",
+                "data": {
+                    "rankings": {
+                        "altas": [
+                            {
+                                "ticker": "CSMG3",
+                                "name": "Copasa",
+                                "price": 60.00,
+                                "priceDisplay": "R$ 60,00",
+                                "change": 1.88,
+                                "changeDisplay": "+1,88%"
+                            },
+                            {
+                                "ticker": "CSED3",
+                                "name": "Cogna",
+                                "price": 3.86,
+                                "priceDisplay": "R$ 3,86",
+                                "change": 1.58,
+                                "changeDisplay": "+1,58%"
+                            }
+                        ],
+                        "baixas": [
+                            {
+                                "ticker": "AMAR3",
+                                "name": "Marisa Lojas",
+                                "price": 0.60,
+                                "priceDisplay": "R$ 0,60",
+                                "change": -1.64,
+                                "changeDisplay": "-1,64%"
+                            },
+                            {
+                                "ticker": "CGAS3",
+                                "name": "Comgás",
+                                "price": 124.00,
+                                "priceDisplay": "R$ 124,00",
+                                "change": -1.57,
+                                "changeDisplay": "-1,57%"
+                            }
+                        ]
+                    }
+                }
+            }
+        """.trimIndent()
+
+        val snapshot = B3NetworkService.parseMarketRankingSnapshot(JSONObject(jsonString), "ACAO")
+        
+        org.junit.Assert.assertNotNull(snapshot)
+        assertEquals("ACAO", snapshot?.type)
+        assertEquals(2, snapshot?.highs?.size)
+        assertEquals(2, snapshot?.lows?.size)
+
+        val firstHigh = snapshot?.highs?.get(0)
+        assertEquals("CSMG3", firstHigh?.ticker)
+        assertEquals("Copasa", firstHigh?.name)
+        assertEquals(60.00, firstHigh?.price ?: 0.0, 0.001)
+        assertEquals("R$ 60,00", firstHigh?.priceDisplay)
+        assertEquals(1.88, firstHigh?.changePercent ?: 0.0, 0.001)
+        assertEquals("+1,88%", firstHigh?.changeDisplay)
+
+        val firstLow = snapshot?.lows?.get(0)
+        assertEquals("AMAR3", firstLow?.ticker)
+        assertEquals("Marisa Lojas", firstLow?.name)
+        assertEquals(0.60, firstLow?.price ?: 0.0, 0.001)
+        assertEquals("R$ 0,60", firstLow?.priceDisplay)
+        assertEquals(-1.64, firstLow?.changePercent ?: 0.0, 0.001)
+        // Note: the parser might extract kotlin.math.abs or raw percent. Let's make sure it equals either -1.64 or 1.64 % based on parser's implementation
+        assertTrue(firstLow?.changePercent == -1.64 || firstLow?.changePercent == 1.64)
+    }
+
+    @Test
+    fun testRankingsV211259AliasesAndCompleteFields() {
+        val jsonString = """
+            {
+                "status": "OK",
+                "type": "ACAO",
+                "rankingSource": "investidor10-live-complete",
+                "captureMode": "complete",
+                "rankings": {
+                    "topGainers": [
+                        {
+                            "ticker": "ABCD3",
+                            "nome": "Empresa Alta",
+                            "preco": "R$ 10,25",
+                            "precoFormatado": "R$ 10,25",
+                            "variacao": "+7,50%",
+                            "changeDisplay": "+7,50%"
+                        }
+                    ],
+                    "maioresBaixas": [
+                        {
+                            "ticker": "WXYZ3",
+                            "nome": "Empresa Baixa",
+                            "preco": "R$ 8,40",
+                            "precoFormatado": "R$ 8,40",
+                            "variacao": "-6,80%",
+                            "changeDisplay": "-6,80%"
+                        }
+                    ]
+                },
+                "completeness": {
+                    "complete": true
+                }
+            }
+        """.trimIndent()
+
+        val snapshot = B3NetworkService.parseMarketRankingSnapshot(JSONObject(jsonString), "ACAO")
+
+        org.junit.Assert.assertNotNull(snapshot)
+        assertEquals(1, snapshot?.highs?.size)
+        assertEquals(1, snapshot?.lows?.size)
+        assertEquals("ABCD3", snapshot?.highs?.firstOrNull()?.ticker)
+        assertEquals("WXYZ3", snapshot?.lows?.firstOrNull()?.ticker)
+        assertEquals(10.25, snapshot?.highs?.firstOrNull()?.price ?: 0.0, 0.001)
+        assertEquals("+7,50%", snapshot?.highs?.firstOrNull()?.changeDisplay)
+        assertEquals(-6.80, snapshot?.lows?.firstOrNull()?.changePercent ?: 0.0, 0.001)
+        assertEquals("-6,80%", snapshot?.lows?.firstOrNull()?.changeDisplay)
+    }
+
+    @Test
+    fun testRankingsPayloadEnvelopeAndAlternativeFieldNames() {
+        val jsonPayloadString = """
+            {
+                "status": "OK",
+                "payload": {
+                    "rankings": {
+                        "altas": [
+                            {
+                                "codigo": "VALE3",
+                                "companyName": "Vale S.A.",
+                                "preco": 85.50,
+                                "percentual": 3.42,
+                                "volume": 1200000.0,
+                                "setor": "Materiais Básicos",
+                                "segmento": "Mineração",
+                                "url": "https://valorae.com/vale3",
+                                "source": "Investidor10"
+                            }
+                        ],
+                        "baixas": [
+                            {
+                                "symbol": "PETR4",
+                                "nome": "Petrobras",
+                                "cotacao": 38.20,
+                                "variacao": -1.5,
+                                "vol": 2500000.0,
+                                "sector": "Petróleo",
+                                "segment": "Exploração"
+                            }
+                        ]
+                    }
+                }
+            }
+        """.trimIndent()
+
+        val snapshotPayload = B3NetworkService.parseMarketRankingSnapshot(JSONObject(jsonPayloadString), "ACAO")
+        org.junit.Assert.assertNotNull(snapshotPayload)
+        assertEquals(1, snapshotPayload?.highs?.size)
+        assertEquals(1, snapshotPayload?.lows?.size)
+
+        val vale = snapshotPayload?.highs?.firstOrNull()
+        assertEquals("VALE3", vale?.ticker)
+        assertEquals("Vale S.A.", vale?.name)
+        assertEquals(85.50, vale?.price ?: 0.0, 0.001)
+        assertEquals(3.42, vale?.changePercent ?: 0.0, 0.001)
+        assertEquals(1200000.0, vale?.volume ?: 0.0, 0.001)
+        assertEquals("Materiais Básicos", vale?.setor)
+        assertEquals("Mineração", vale?.segmento)
+        assertEquals("https://valorae.com/vale3", vale?.url)
+        assertEquals("Investidor10", vale?.source)
+
+        val petr = snapshotPayload?.lows?.firstOrNull()
+        assertEquals("PETR4", petr?.ticker)
+        assertEquals("Petrobras", petr?.name)
+        assertEquals(38.20, petr?.price ?: 0.0, 0.001)
+        assertEquals(-1.5, petr?.changePercent ?: 0.0, 0.001)
+        assertEquals(2500000.0, petr?.volume ?: 0.0, 0.001)
+        assertEquals("Petróleo", petr?.setor)
+        assertEquals("Exploração", petr?.segmento)
+    }
+
 }

@@ -8,9 +8,9 @@ build = (root/'app/build.gradle.kts').read_text()
 readme = (root/'README.md').read_text()
 update = (root/'update.json').read_text()
 checks = {
-    'App versionName atualizado para 1.1.8': 'versionName = "1.1.8"' in build,
-    'App versionCode atualizado para 11': 'versionCode = 11' in build,
-    'Manifesto local update.json acompanha versão 1.1.8': '"versionName": "1.1.8"' in update and '"latestVersionCode": 11' in update,
+    'App versionName atualizado para 1.1.8': 'versionName = "1.1.9"' in build,
+    'App versionCode atualizado para 11': 'versionCode = 12' in build,
+    'Manifesto local update.json acompanha versão 1.1.8': '"versionName": "1.1.9"' in update and '"latestVersionCode": 12' in update,
     'Busca de ativo limpa dados antigos ao trocar ticker': 'previousTicker != null && previousTicker != clean' in vm and '_searchQueryResult.value = null' in vm,
     'Notícias preservam último bloco bom em falha': 'Preserve o último bloco bom de notícias' in vm and 'if (force || _newsFeed.value.isEmpty())' not in vm,
     'Importação JSON aceita números e datas flexíveis': 'parseImportedNumber(value: Any?)' in vm and 'parseImportedDateMillis(value: Any?)' in vm and 'movimentacoes' in vm,

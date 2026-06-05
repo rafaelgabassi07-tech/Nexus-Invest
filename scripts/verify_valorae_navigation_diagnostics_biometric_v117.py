@@ -11,11 +11,11 @@ checks = {
     'Diagnóstico força atualização manual real': 'viewModel.refreshProxyHealth(force = true)' in settings,
     'Bloqueio biométrico valida disponibilidade no boot': all(x in main for x in ['canUseDeviceAuth', 'onDisableBiometric', 'setBiometricEnabled(false)', 'onAuthenticationFailed']),
     'Ativação de biometria exige autenticação prévia': all(x in settings for x in ['requestAuthenticationToEnable', 'onAuthenticationSucceeded', 'setBiometricEnabled(true)', 'setAllowedAuthenticators(authenticators)']),
-    'Versão do app atualizada para a entrega': ('versionCode = 10' in build or 'versionCode = 11' in build) and ('versionName = "1.1.7"' in build or 'versionName = "1.1.8"' in build),
+    'Versão do app atualizada para a entrega': ('versionCode = 10' in build or 'versionCode = 12' in build) and ('versionName = "1.1.7"' in build or 'versionName = "1.1.9"' in build),
 }
 failed = [name for name, ok in checks.items() if not ok]
 for name, ok in checks.items():
     print(('OK' if ok else 'FAIL'), '-', name)
 if failed:
-    raise SystemExit('Falhas na verificação v1.1.7/v1.1.8: ' + '; '.join(failed))
+    raise SystemExit('Falhas na verificação v1.1.7/v1.1.9: ' + '; '.join(failed))
 print('Valorae navigation, diagnostics and biometric audit OK')

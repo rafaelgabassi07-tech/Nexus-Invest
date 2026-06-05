@@ -14,7 +14,7 @@ checks = {
     'Proxy+ não roda no refresh geral quando nunca aberto': 'if (_proxyCapabilities.value.lastUpdated > 0L)' in vm,
     'Proxy+ tem trava contra chamadas concorrentes': 'proxyCapabilitiesJob?.isActive' in vm,
     'OkHttp com concorrência moderada': 'maxRequests = 8' in service and 'maxRequestsPerHost = 4' in service,
-    'Rankings ao vivo com timeout curto': '"timeoutMs" to if (live) "2500" else "1800"' in service,
+    'Rankings ao vivo suportam modo completo com fallback': '"timeoutMs" to when {' in service and '"14000"' in service and '"9000"' in service and '"mode" to "complete"' in service,
     'Batch de ativos não vira dezenas de chamadas individuais': 'stillMissing.take(if (bypassCache) 8 else 4)' in service,
     'Diagnóstico do Proxy tem cache': 'proxy_diagnostics_summary' in service and 'putInCache("proxy_diagnostics_summary"' in service,
     'Proxy+ limita blocos avançados por abertura': 'PROXY_PLUS_ASSET_ADVANCED_LIMIT' in service and 'PROXY_PLUS_PORTFOLIO_LIMIT' in service and 'PROXY_PLUS_DIAGNOSTIC_LIMIT' in service,

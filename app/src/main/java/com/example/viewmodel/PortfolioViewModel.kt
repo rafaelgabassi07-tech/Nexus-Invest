@@ -266,7 +266,7 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
             val avgPrice = if (currentShares > 0.0 && remainingCostBasis > 0.0) remainingCostBasis / currentShares else 0.0
             val totalCostBasis = remainingCostBasis.coerceAtLeast(0.0)
 
-            val livePrice = liveInfo?.price?.takeIf { it.isFinite() && it > 0.0 } ?: avgPrice
+            val livePrice = liveInfo?.price?.takeIf { it.isFinite() && it > 0.0 } ?: 0.0
             val liveDY = liveInfo?.dy?.takeIf { it.isFinite() } ?: 0.0
             val liveChange = liveInfo?.changePercent?.takeIf { it.isFinite() } ?: 0.0
             val lastDiv = liveInfo?.lastDividend?.takeIf { it.isFinite() } ?: 0.0
@@ -292,7 +292,10 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
                 nextEarningsDate = nextEarningsDate
             )
         }.filter { it.sharesCount > 0 }.sortedByDescending { it.totalCurrentValue }
-    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }
+        .distinctUntilChanged()
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val darfSummaries: StateFlow<List<DarfMonthSummary>> = transactions.map { txs ->
         if (txs.isEmpty()) return@map emptyList<DarfMonthSummary>()
@@ -375,7 +378,10 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
                 totalTax = sTax + fTax
             )
         }.sortedByDescending { it.monthIdx }
-    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }
+        .distinctUntilChanged()
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val portfolioSummary: StateFlow<PortfolioSummary> = assetSummaries.map { summaries ->
         if (summaries.isEmpty()) return@map PortfolioSummary()
@@ -416,7 +422,10 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
             totalStocksCurrent = totalStocksCurrent,
             totalFiisCurrent = totalFiisCurrent
         )
-    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PortfolioSummary())
+    }
+        .distinctUntilChanged()
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PortfolioSummary())
 
     // News state
     private val _newsFeed = MutableStateFlow<List<NewsItem>>(emptyList())
@@ -534,7 +543,7 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
             refreshLiveMarketRankings(force = false)
         }
 
-        // Proxy+ é carregado sob demanda ao abrir a página/ao tocar em Atualizar.
+        // Dados avançados é carregado sob demanda ao abrir a página/ao tocar em Atualizar.
         // Evita disparar dezenas de endpoints avançados na abertura do app, preservando
         // fluidez, bateria e compatibilidade com Vercel Free.
 
@@ -551,7 +560,7 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
                             liveMarketRanking = current.liveMarketRanking,
                             stockMarketRanking = current.stockMarketRanking,
                             fiiMarketRanking = current.fiiMarketRanking,
-                            source = if (current.liveMarketRanking != null || current.stockMarketRanking != null || current.fiiMarketRanking != null) "Rankings de mercado do Valorae Proxy" else "Aguardando carteira",
+                            source = if (current.liveMarketRanking != null || current.stockMarketRanking != null || current.fiiMarketRanking != null) "Rankings de mercado" else "Aguardando carteira",
                             lastUpdated = current.lastUpdated
                         )
                     }
@@ -682,7 +691,7 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
                         selectedTicker = selected,
                         assetCapabilities = assetCaps,
                         portfolioCapabilities = portfolioCaps,
-                        error = if (assetCaps == null && portfolioCaps == null) "O Proxy não retornou módulos avançados para o contexto atual." else "",
+                        error = if (assetCaps == null && portfolioCaps == null) "O serviço de dados não retornou módulos avançados para o contexto atual." else "",
                         lastUpdated = System.currentTimeMillis()
                     )
                 }
@@ -691,7 +700,7 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
                     _proxyCapabilities.value = current.copy(
                         isLoading = false,
                         selectedTicker = selected,
-                        error = e.message ?: "Falha ao consultar recursos avançados do Proxy",
+                        error = e.message ?: "Falha ao consultar recursos avançados",
                         lastUpdated = System.currentTimeMillis()
                     )
                 }
@@ -704,7 +713,9 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
         if (!force && isFresh(lastProxyHealthRefreshAt, PROXY_HEALTH_SOFT_TTL_MS) && _proxyHealth.value.lastCheckedAt > 0L) return
         proxyHealthJob = viewModelScope.launch {
             val diagnostics = withContext(Dispatchers.IO) {
-                runCatching { B3NetworkService.fetchProxyDiagnosticsSummary() }.getOrNull()
+                withTimeoutOrNull(3_500) {
+                    runCatching { B3NetworkService.fetchProxyDiagnosticsSummary() }.getOrNull()
+                }
             }
             lastProxyHealthRefreshAt = System.currentTimeMillis()
             _proxyHealth.value = if (diagnostics != null) {
@@ -739,9 +750,8 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
                 fetchGlobalNews(force = true)
                 if (assetSummaries.value.isNotEmpty()) {
                     refreshPortfolioAnalytics(assetSummaries.value, transactions.value, force = true)
-                } else {
-                    refreshLiveMarketRankings(force = true, full = true)
                 }
+                refreshLiveMarketRankings(force = true, full = true)
                 if (_proxyCapabilities.value.lastUpdated > 0L) {
                     refreshProxyCapabilities(force = true)
                 }
@@ -764,29 +774,46 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
         if (marketRankingsJob?.isActive == true) {
             if (full) marketRankingsJob?.cancel() else return
         }
+
+        _portfolioAnalytics.value = currentState.copy(isLoading = true)
+
         marketRankingsJob = viewModelScope.launch {
-            val (live, stock, fii) = withContext(Dispatchers.IO) {
-                coroutineScope {
-                    val liveDeferred = async { runCatching { B3NetworkService.fetchLiveStockRankings() }.getOrNull() }
-                    if (full) {
-                        val stockDeferred = async { runCatching { B3NetworkService.fetchStockFundamentalRankings() }.getOrNull() }
-                        val fiiDeferred = async { runCatching { B3NetworkService.fetchFiiFundamentalRankings() }.getOrNull() }
-                        Triple(liveDeferred.await(), stockDeferred.await(), fiiDeferred.await())
-                    } else {
-                        Triple(liveDeferred.await(), currentState.stockMarketRanking, currentState.fiiMarketRanking)
+            try {
+                val baseState = _portfolioAnalytics.value
+                val (live, stock, fii) = withContext(Dispatchers.IO) {
+                    coroutineScope {
+                        // A Home sempre usa o modo completo do Proxy para maiores altas/baixas.
+                        // O próprio serviço cai para modo leve caso o endpoint completo demore ou volte vazio.
+                        val liveDeferred = async {
+                            withTimeoutOrNull(if (full) 18_000 else 14_000) {
+                                runCatching { B3NetworkService.fetchLiveStockRankings(complete = true) }.getOrNull()
+                            }
+                        }
+                        if (full) {
+                            val stockDeferred = async { withTimeoutOrNull(18_000) { runCatching { B3NetworkService.fetchStockFundamentalRankings(complete = true) }.getOrNull() } }
+                            val fiiDeferred = async { withTimeoutOrNull(18_000) { runCatching { B3NetworkService.fetchFiiFundamentalRankings(complete = true) }.getOrNull() } }
+                            Triple(liveDeferred.await(), stockDeferred.await(), fiiDeferred.await())
+                        } else {
+                            Triple(liveDeferred.await(), baseState.stockMarketRanking, baseState.fiiMarketRanking)
+                        }
                     }
                 }
+                lastMarketRankingsRefreshAt = System.currentTimeMillis()
+                val current = _portfolioAnalytics.value
+                _portfolioAnalytics.value = current.copy(
+                    isLoading = false,
+                    liveMarketRanking = live ?: current.liveMarketRanking,
+                    stockMarketRanking = stock ?: current.stockMarketRanking,
+                    fiiMarketRanking = fii ?: current.fiiMarketRanking,
+                    source = if (current.analysis != null || current.portfolioRanking != null) current.source else "Rankings de mercado",
+                    lastUpdated = System.currentTimeMillis()
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.e("PortfolioViewModel", "Erro ao carregar rankings da Home", e)
+                _portfolioAnalytics.value = _portfolioAnalytics.value.copy(isLoading = false)
             }
-            lastMarketRankingsRefreshAt = System.currentTimeMillis()
-            val current = _portfolioAnalytics.value
-            _portfolioAnalytics.value = current.copy(
-                isLoading = false,
-                liveMarketRanking = live ?: current.liveMarketRanking,
-                stockMarketRanking = stock ?: current.stockMarketRanking,
-                fiiMarketRanking = fii ?: current.fiiMarketRanking,
-                source = if (current.analysis != null || current.portfolioRanking != null) current.source else "Rankings de mercado do Valorae Proxy",
-                lastUpdated = System.currentTimeMillis()
-            )
         }
     }
 
@@ -840,7 +867,9 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
             try {
                 val news = withContext(Dispatchers.IO) {
                     val userTicker = transactions.value.firstOrNull()?.ticker
-                    runCatching { B3NetworkService.fetchNews(userTicker ?: "") }.getOrDefault(emptyList())
+                    withTimeoutOrNull(5_500) {
+                        runCatching { B3NetworkService.fetchNews(userTicker ?: "") }.getOrDefault(emptyList())
+                    }.orEmpty()
                 }
                 _newsFeed.value = news
                 lastNewsRefreshAt = System.currentTimeMillis()
@@ -867,11 +896,15 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
             _isLoadingChartBundle.value = true
             try {
                 val bundle = withContext(Dispatchers.IO) {
-                    B3NetworkService.fetchAssetChartBundle(clean, normalizedRange)
+                    withTimeoutOrNull(12_000) {
+                        B3NetworkService.fetchAssetChartBundle(clean, normalizedRange)
+                    }
                 }
-                val current = _assetChartBundles.value.toMutableMap()
-                current[clean] = bundle
-                _assetChartBundles.value = current
+                if (bundle != null) {
+                    val current = _assetChartBundles.value.toMutableMap()
+                    current[clean] = bundle
+                    _assetChartBundles.value = current
+                }
             } catch (e: Exception) {
                 android.util.Log.e("PortfolioViewModel", "Error loading asset chart bundle", e)
             } finally {
@@ -1044,12 +1077,12 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
                         analysis = remoteAnalysis ?: buildLocalPortfolioAnalysis(summaries),
                         portfolioHistory = ageAdjustedHistory,
                         ipcaSeries = ageAdjustedIpca,
-                        dividendEvents = eligibleDividends.ifEmpty { buildLocalDividendEvents(summaries) },
+                        dividendEvents = eligibleDividends,
                         portfolioRanking = remotePortfolioRanking ?: currentMarketState.portfolioRanking,
                         liveMarketRanking = currentMarketState.liveMarketRanking,
                         stockMarketRanking = currentMarketState.stockMarketRanking,
                         fiiMarketRanking = currentMarketState.fiiMarketRanking,
-                        source = if (remoteAnalysis != null || remoteHistory.isNotEmpty() || remoteIpca.isNotEmpty() || remoteDividends.isNotEmpty() || remotePortfolioRanking != null) "Valorae Proxy + carteira local ajustado à carteira" else "Carteira local + indicadores disponíveis",
+                        source = if (remoteAnalysis != null || remoteHistory.isNotEmpty() || remoteIpca.isNotEmpty() || remoteDividends.isNotEmpty() || remotePortfolioRanking != null) "Dados VALORAE + carteira local ajustada" else "Carteira local + indicadores disponíveis",
                         lastUpdated = System.currentTimeMillis()
                     )
                 }
@@ -1062,7 +1095,7 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
                 analysis = buildLocalPortfolioAnalysis(summaries),
                 portfolioHistory = buildLocalPortfolioHistory(txs, summaries),
                 ipcaSeries = buildIpcaFallbackSeries(portfolioAgeMonths(firstPortfolioPurchaseMillis(txs))),
-                dividendEvents = buildLocalDividendEvents(summaries),
+                dividendEvents = emptyList(),
                 portfolioRanking = currentMarketState.portfolioRanking,
                 liveMarketRanking = currentMarketState.liveMarketRanking,
                 stockMarketRanking = currentMarketState.stockMarketRanking,
@@ -1282,23 +1315,6 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
             warnings = warnings,
             source = "Calculado pela carteira local"
         )
-    }
-
-    private fun buildLocalDividendEvents(summaries: List<AssetSummary>): List<DividendEvent> {
-        return summaries.mapNotNull { summary ->
-            val estimated = summary.lastDividend * summary.sharesCount
-            if (estimated <= 0.0 && summary.nextEarningsDate.isBlank()) return@mapNotNull null
-            DividendEvent(
-                ticker = summary.ticker,
-                dateCom = summary.nextEarningsDate,
-                paymentDate = "",
-                valuePerShare = summary.lastDividend,
-                quantity = summary.sharesCount,
-                estimatedAmount = estimated.coerceAtLeast(0.0),
-                status = if (summary.nextEarningsDate.isBlank()) "Estimado sem data confirmada" else "Data COM informada",
-                source = "Carteira local"
-            )
-        }.sortedByDescending { it.estimatedAmount }
     }
 
     private data class LocalPositionSnapshot(

@@ -88,6 +88,18 @@ fun AssetDetailModal(
     var chartBundle by remember(tickerKey) { mutableStateOf(initialChartBundle) }
     var isLoadingChartBundle by remember(tickerKey) { mutableStateOf(isLoadingInitialChartBundle && initialChartBundle == null) }
 
+    var newsItems by remember(tickerKey) { mutableStateOf<List<com.example.network.NewsItem>>(emptyList()) }
+    var isLoadingNews by remember(tickerKey) { mutableStateOf(true) }
+
+    LaunchedEffect(tickerKey) {
+        isLoadingNews = true
+        val fetchedNews = withContext(Dispatchers.IO) {
+            runCatching { B3NetworkService.fetchNews(tickerKey) }.getOrDefault(emptyList())
+        }
+        newsItems = fetchedNews
+        isLoadingNews = false
+    }
+
     val isFii = assetData.isFii || asset.type.equals("FII", ignoreCase = true) || B3NetworkService.inferIsFii(asset.ticker)
     val lineColor = GoldPrimary
 
@@ -169,9 +181,11 @@ fun AssetDetailModal(
         isLoadingChartBundle = false
     }
 
-    // Calculate Yield on Cost (YOC)
-    val annualDividend = asset.currentPrice * (asset.dividendYield / 100.0)
-    val yieldOnCost = if (asset.averageCost > 0.0) {
+    // Yield on Cost usa somente dividend yield e preço confirmados pelo Proxy.
+    val proxyPriceForYoc = assetData.price.takeIf { it.isFinite() && it > 0.0 } ?: 0.0
+    val proxyDyForYoc = assetData.dy.takeIf { it.isFinite() && it > 0.0 } ?: 0.0
+    val annualDividend = proxyPriceForYoc * (proxyDyForYoc / 100.0)
+    val yieldOnCost = if (asset.averageCost > 0.0 && annualDividend > 0.0) {
         (annualDividend / asset.averageCost) * 100.0
     } else {
         0.0
@@ -234,7 +248,7 @@ fun AssetDetailModal(
                     val realData = assetData
 
                     var mainTabIdx by remember { mutableStateOf(0) }
-                    val mainTabs = listOf("Resumo & Gráficos", "Indicadores & Perfil", "Minha Custódia", "Transações")
+                    val mainTabs = listOf("Resumo & Gráficos", "Finanças & DRE", "Proventos & Dividendos", "Indicadores Gerais", "Perfil & Dados", "Minha Custódia", "Transações")
                     
                     LazyRow(
                         modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
@@ -286,7 +300,7 @@ fun AssetDetailModal(
                                         CircularProgressIndicator(color = GoldPrimary, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                                         Spacer(modifier = Modifier.width(10.dp))
                                         Text(
-                                            text = "Atualizando dados do Proxy para $tickerKey...",
+                                            text = "Atualizando dados de $tickerKey...",
                                             color = TextSecondary,
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.SemiBold
@@ -342,152 +356,105 @@ fun AssetDetailModal(
                                     }
 
                                     Column(horizontalAlignment = Alignment.End) {
-                                        val priceToDisplay = realData?.price ?: asset.currentPrice
+                                        val proxyPrice = realData.price.takeIf { it.isFinite() && it > 0.0 }
                                         Text(
-                                            text = "R$ ${String.format("%.2f", priceToDisplay)}",
+                                            text = proxyPrice?.let { "R$ ${String.format("%.2f", it)}" } ?: "Proxy indisponível",
                                             fontWeight = FontWeight.Black,
-                                            fontSize = 24.sp,
+                                            fontSize = if (proxyPrice != null) 24.sp else 13.sp,
                                             color = MaterialTheme.colorScheme.onSurface,
                                             letterSpacing = (-0.5).sp
                                         )
                                         Spacer(modifier = Modifier.height(2.dp))
-                                        val changeToDisplay = realData?.changePercent ?: asset.dailyChangePercent
-                                        val isPos = changeToDisplay >= 0.0
-                                        val trendColor = if (isPos) SuccessGreen else DangerRed
-                                        Surface(
-                                            color = trendColor.copy(alpha = 0.1f),
-                                            shape = RoundedCornerShape(8.dp)
-                                        ) {
-                                            Text(
-                                                text = "${if (isPos) "+" else ""}${String.format("%.2f", changeToDisplay)}%",
-                                                color = trendColor,
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Black,
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                                            )
+                                        val changeToDisplay = realData.changePercent.takeIf { it.isFinite() && it != 0.0 }
+                                        if (changeToDisplay != null) {
+                                            val isPos = changeToDisplay >= 0.0
+                                            val trendColor = if (isPos) SuccessGreen else DangerRed
+                                            Surface(
+                                                color = trendColor.copy(alpha = 0.1f),
+                                                shape = RoundedCornerShape(8.dp)
+                                            ) {
+                                                Text(
+                                                    text = "${if (isPos) "+" else ""}${String.format("%.2f", changeToDisplay)}%",
+                                                    color = trendColor,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Black,
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        } else {
+                                            Text("Variação indisponível", color = TextSecondary, fontSize = 10.sp)
                                         }
                                     }
                                 }
                             }
                         }
 
-                        // 1.05 Diagnóstico de dados do Valorae Proxy
+                        // Finanças & DRE: dados do VALORAE Proxy para DRE, Patrimônio, etc.
                         if (mainTabIdx == 1) {
-                        if (realData != null) {
-                            item {
-                                val filledFields = listOf(
-                                    realData.price, realData.dy, realData.pvp, realData.vpa, realData.lastDividend,
-                                    realData.marketCap, realData.roe, realData.roic, realData.margins,
-                                    realData.dailyLiquidity, realData.high52, realData.low52
-                                ).count { it > 0.0 } + listOf(
-                                    realData.name, realData.cnpj, realData.assetDescription, realData.subSector,
-                                    realData.fiiSegment, realData.fiiTotalHolders, realData.fiiIssuedShares
-                                ).count { it.isNotBlank() }
-                                val calculatedCompleteness = ((filledFields / 19.0) * 100.0).coerceIn(0.0, 100.0)
-                                val completeness = realData.extractionCompleteness.takeIf { it > 0.0 } ?: calculatedCompleteness
-                                val dataStateLabel = when {
-                                    realData.fromLocalSnapshot -> "Usando cache local"
-                                    realData.isPartial -> "PARTIAL"
-                                    realData.proxyStatus.isNotBlank() -> realData.proxyStatus
-                                    else -> "OK"
-                                }
-                                val dataStateColor = when {
-                                    realData.fromLocalSnapshot || realData.isPartial -> WarningOrange
-                                    else -> SuccessGreen
-                                }
-                                Surface(
-                                    color = GoldPrimary.copy(alpha = 0.06f),
-                                    shape = RoundedCornerShape(20.dp),
-                                    border = BorderStroke(1.dp, GoldPrimary.copy(alpha = 0.16f)),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text("DADOS RECEBIDOS PELO PROXY", color = GoldPrimary, fontWeight = FontWeight.Black, fontSize = 10.sp, letterSpacing = 0.8.sp)
-                                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                                Surface(color = dataStateColor.copy(alpha = 0.12f), shape = RoundedCornerShape(50)) {
-                                                    Text(dataStateLabel, color = dataStateColor, fontSize = 9.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
-                                                }
-                                                Text("${String.format("%.0f", completeness)}%", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Black, fontSize = 12.sp)
-                                            }
-                                        }
-                                        Text(
-                                            text = "Fonte: ${realData.source}. Campos ausentes permanecem vazios para evitar dados simulados.",
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            fontSize = 11.sp,
-                                            lineHeight = 15.sp
+                            val bundleProfile = chartBundle
+                            if (bundleProfile != null) {
+                                item {
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    if (isFii) {
+                                        ChartCategoryHeader(
+                                            title = "Ativos e Patrimônio Imobiliário",
+                                            subtitle = "Composição física imobiliária, segmentos e estados"
                                         )
-                                        if (realData.isPartial || realData.fromLocalSnapshot || realData.partialDataGuidance.isNotBlank()) {
-                                            Text(
-                                                text = realData.partialDataGuidance.ifBlank { "Resposta parcial: o app manteve o último snapshot bom e renderizou somente campos disponíveis." },
-                                                color = WarningOrange,
-                                                fontSize = 11.sp,
-                                                lineHeight = 15.sp,
-                                                fontWeight = FontWeight.SemiBold
-                                            )
-                                        }
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        FiiPatrimonialTab(bundleProfile)
+                                    } else {
+                                        ChartCategoryHeader(
+                                            title = "DRE, Saúde Financeira e Divisões de Receitas",
+                                            subtitle = "Faturamento, margens, balanço patrimonial, payout e faturamento por segmento/geografia"
+                                        )
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        StockDreTab(bundleProfile)
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        StockBusinessTab(bundleProfile)
                                     }
                                 }
-                            }
-                        }
-
-                        // 1.1 Perfil Operacional card (if available)
-                        if (realData != null && realData.assetDescription.isNotEmpty()) {
-                            item {
-                                Surface(
-                                    color = DarkSurface,
-                                    shape = RoundedCornerShape(24.dp),
-                                    border = BorderStroke(1.2.dp, BorderColor.copy(alpha = 0.12f)),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Column(modifier = Modifier.padding(16.dp)) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Text(
-                                                text = "PERFIL OPERACIONAL",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                fontWeight = FontWeight.Black,
-                                                color = GoldPrimary,
-                                                letterSpacing = 0.5.sp
-                                            )
-                                            val actSector = if (isFii) realData.fiiSegment else realData.subSector
-                                            if (actSector.isNotEmpty()) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .background(DarkBackground, RoundedCornerShape(8.dp))
-                                                        .border(1.dp, BorderColor.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
-                                                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                                                ) {
-                                                    Text(
-                                                        text = actSector,
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        fontWeight = FontWeight.SemiBold,
-                                                        color = TextPrimary,
-                                                        fontSize = 9.sp
-                                                    )
-                                                }
-                                            }
-                                        }
-                                        Spacer(modifier = Modifier.height(10.dp))
-                                        Text(
-                                            text = realData.assetDescription,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = TextPrimary,
-                                            lineHeight = 16.sp
+                            } else {
+                                item {
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    ChartCardContainer(title = "Gráficos Financeiros") {
+                                        EmptyChartState(
+                                            title = "Dados indisponíveis",
+                                            message = "O VALORAE Proxy não retornou dados de DRE ou patrimônio para este ativo."
                                         )
                                     }
                                 }
                             }
-                        }
+                        } // End Finanças & DRE
 
-                        } // End mainTabIdx == 1
+                        // Proventos & Dividendos
+                        if (mainTabIdx == 2) {
+                            val currentBundle = chartBundle
+                            if (currentBundle != null) {
+                                item {
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    ChartCategoryHeader(
+                                        title = "Proventos e Dividendos",
+                                        subtitle = if (isFii) "Histórico de rendimentos e distribuição mensal" else "Históricos anuais, dividend yield, sazonalidade e proventos pagos"
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    if (isFii) {
+                                        FiiDividendTab(currentBundle)
+                                    } else {
+                                        StockDividendTab(currentBundle)
+                                    }
+                                }
+                            } else {
+                                item {
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    ChartCardContainer(title = "Histórico de Proventos") {
+                                        EmptyChartState(
+                                            title = "Dados indisponíveis",
+                                            message = "O VALORAE Proxy não retornou histórico de proventos para este ativo."
+                                        )
+                                    }
+                                }
+                            }
+                        } // End Proventos & Dividendos
 
                         // 1.2 Oscilação 52 Semanas (if available)
                         if (mainTabIdx == 0) {
@@ -557,256 +524,31 @@ fun AssetDetailModal(
 
                         } // End Tab 0
 
-                        // 1.3 Indicadores Fundamentalistas Grid
-                        if (mainTabIdx == 1) {
-                        item {
-                            Surface(
-                                color = DarkSurface,
-                                shape = RoundedCornerShape(20.dp),
-                                border = BorderStroke(1.2.dp, BorderColor.copy(alpha = 0.12f)),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(modifier = Modifier.padding(16.dp)) {
-                                    Text(
-                                        text = "INDICADORES FUNDAMENTALISTAS",
-                                        color = GoldPrimary,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Black,
-                                        letterSpacing = 1.sp
-                                    )
-                                    Spacer(modifier = Modifier.height(20.dp))
-
-                                    val metrics = mutableListOf<Triple<String, String, String>>()
-
-                                    if (realData != null) {
-                                        metrics.add(Triple("Dividend Yield", B3UIUtils.formatValue(realData.dy, suffix = "%"), "Retorno em proventos"))
-                                        metrics.add(Triple("P/VP", B3UIUtils.formatValue(realData.pvp), "Preço / Valor Patrimonial"))
-                                        metrics.add(Triple(if (isFii) "Últ. Provento" else "P/L", if (isFii) B3UIUtils.formatValue(realData.lastDividend, prefix = "R$ ") else B3UIUtils.formatValue(realData.pl), if (isFii) "Baseado na última distr." else "Preço / Lucro anual"))
-                                        metrics.add(Triple("VPA", B3UIUtils.formatValue(realData.vpa, prefix = "R$ "), "Valor Justo Contábil"))
-                                        
-                                        if (isFii) {
-                                            metrics.add(Triple("Vacância", B3UIUtils.formatValue(realData.fiiVacancy, suffix = "%", precision = 1), "Proporção de área vaga nos imóveis"))
-                                            metrics.add(Triple("Liquidez Diária", B3UIUtils.formatLargeNumber(realData.dailyLiquidity).replace("R$ ", ""), "Volume financeiro mensal"))
-                                            metrics.add(Triple("Segmento", B3UIUtils.formatText(realData.fiiSegment, "Outros"), "Tipo de operação do FII"))
-                                            metrics.add(Triple("Número de Imóveis", if (realData.fiiPropertyCount == 0) "--" else "${realData.fiiPropertyCount} prop.", "Ativos físicos"))
-                                            metrics.add(Triple("P/VP Máximo Alvo", "1.00", "Parâmetro do mercado de tijolo"))
-                                            if (realData.magicNumber > 0) {
-                                                metrics.add(Triple("Magic Number", "${realData.magicNumber.toInt()} cotas", "Para comprar 1 cota c/ div."))
-                                            }
-                                         } else {
-                                             metrics.add(Triple("LPA", B3UIUtils.formatValue(realData.lpa, prefix = "R$ "), "Lucro líquido por ação anual"))
-                                             metrics.add(Triple("P/Receita (PSR)", B3UIUtils.formatValue(realData.priceToSales), "Preço / Receita Líquida"))
-                                             metrics.add(Triple("Margem Líquida", B3UIUtils.formatValue(realData.margins, suffix = "%"), "Eficiência líquida"))
-                                             metrics.add(Triple("Margem Bruta", B3UIUtils.formatValue(realData.grossMargin, suffix = "%"), "Eficiência bruta"))
-                                             metrics.add(Triple("Margem Ebit", B3UIUtils.formatValue(realData.ebitMargin, suffix = "%"), "Eficiência Ebit"))
-                                             metrics.add(Triple("Margem Ebitda", B3UIUtils.formatValue(realData.ebitdaMargin, suffix = "%"), "Eficiência Ebtida"))
-                                             metrics.add(Triple("EV/Ebitda", B3UIUtils.formatValue(realData.evEbitda), "Valor da Firma / Ebitda"))
-                                             metrics.add(Triple("EV/Ebit", B3UIUtils.formatValue(realData.evEbit), "Valor da Firma / Ebit"))
-                                             metrics.add(Triple("P/Ebitda", B3UIUtils.formatValue(realData.priceEbitda), "Preço / Ebitda"))
-                                             metrics.add(Triple("P/Ebit", B3UIUtils.formatValue(realData.priceEbit), "Preço / Ebit"))
-                                             metrics.add(Triple("P/Ativo", B3UIUtils.formatValue(realData.priceAsset), "Preço / Ativo Total"))
-                                             metrics.add(Triple("P/Cap.Giro", B3UIUtils.formatValue(realData.priceCapGiro), "Preço / Capital de Giro"))
-                                             metrics.add(Triple("P/Ativo Circ. Liq.", B3UIUtils.formatValue(realData.priceAtivoCircLiq), "Preço / Ativo Circ. Líq."))
-                                             metrics.add(Triple("Giro Ativos", B3UIUtils.formatValue(realData.giroAtivos), "Giro de Ativos"))
-                                             metrics.add(Triple("ROE", B3UIUtils.formatValue(realData.roe, suffix = "%"), "Retorno s/ Patrimônio Líq."))
-                                             metrics.add(Triple("ROIC", B3UIUtils.formatValue(realData.roic, suffix = "%"), "Retorno s/ Capital Invest."))
-                                             metrics.add(Triple("ROA", B3UIUtils.formatValue(realData.roa, suffix = "%"), "Retorno s/ Ativos"))
-                                             metrics.add(Triple("Dív. Líq / Patrimônio", B3UIUtils.formatValue(realData.divLiqPatrimonio), "Dívida Líquida / Patrimônio"))
-                                             metrics.add(Triple("Dív. Líq / EBITDA", B3UIUtils.formatValue(realData.debtEbitda), "Dívida Líquida / EBITDA"))
-                                             metrics.add(Triple("Dívida Líq / Ebit", B3UIUtils.formatValue(realData.divLiqEbit), "Dívida Líq. / EBIT"))
-                                             metrics.add(Triple("Dívida Bruta / Patrim.", B3UIUtils.formatValue(realData.divBrutaPatrimonio), "Dívida Bruta / Patrimônio"))
-                                             metrics.add(Triple("Patrimônio / Ativos", B3UIUtils.formatValue(realData.patrimonioAtivos), "Patrimônio / Ativos"))
-                                             metrics.add(Triple("Passivos / Ativos", B3UIUtils.formatValue(realData.passivosAtivos), "Passivos / Ativos"))
-                                             metrics.add(Triple("Liquidez Corrente", B3UIUtils.formatValue(realData.liquidezCorrente), "Liquidez Corrente"))
-                                             metrics.add(Triple("CAGR Receitas (5a)", B3UIUtils.formatValue(realData.cagrRevenue5y, suffix = "%"), "Cresc. Receita Anual"))
-                                             metrics.add(Triple("CAGR Lucros (5a)", B3UIUtils.formatValue(realData.cagrProfit5y, suffix = "%"), "Cresc. Lucro Anual"))
-                                             metrics.add(Triple("Payout", B3UIUtils.formatValue(realData.payout, suffix = "%"), "Lucro distribuído"))
-                                         }
-                                    } else {
-                                        // Fallback to local asset stats
-                                        metrics.add(Triple("Dividend Yield", B3UIUtils.formatValue(asset.dividendYield, suffix = "%"), "Últimos 12 meses"))
-                                        metrics.add(Triple("P/VP", "--", "Preço / Valor Patrimonial (Est.)"))
-                                        metrics.add(Triple("VPA", "--", "Valor Patrimonial por Ação (Est.)"))
-                                        metrics.add(Triple("Últ. Provento", B3UIUtils.formatValue(asset.lastDividend, prefix = "R$ "), "Última distribuição paga"))
-                                    }
-
-                                    // Completa o grid com indicadores vindos do bundle avançado.
-                                    // Alguns campos do Investidor10/Proxy chegam somente no pacote de gráficos
-                                    // e não no B3AssetData resumido; sem este merge a aba Detalhes parecia incompleta.
-                                    val existingMetricLabels = metrics.map { it.first.lowercase() }.toMutableSet()
-                                    chartBundle?.indicatorCards
-                                        ?.filter { it.label.isNotBlank() && (it.display.isNotBlank() || it.value.isFinite()) }
-                                        ?.forEach { point ->
-                                            val key = point.label.lowercase()
-                                            if (!existingMetricLabels.contains(key)) {
-                                                val valueText = point.display.ifBlank {
-                                                    when (point.unit) {
-                                                        "%" -> B3UIUtils.formatValue(point.value, suffix = "%")
-                                                        "BRL" -> B3UIUtils.formatValue(point.value, prefix = "R$ ")
-                                                        "number" -> B3UIUtils.formatLargeNumber(point.value).replace("R$ ", "")
-                                                        else -> B3UIUtils.formatValue(point.value)
-                                                    }
-                                                }
-                                                metrics.add(Triple(point.label, valueText, "Dado normalizado pelo Valorae Proxy/Investidor10"))
-                                                existingMetricLabels.add(key)
-                                            }
-                                        }
-
-                                    Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                                        metrics.chunked(2).forEachIndexed { index, rowItems ->
-                                            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                                rowItems.forEach { (label, value, desc) ->
-                                                    IndicatorItemFromAnalysis(
-                                                        label = label,
-                                                        value = value,
-                                                        desc = desc,
-                                                        modifier = Modifier.weight(1f)
-                                                    )
-                                                }
-                                                if (rowItems.size == 1) {
-                                                    Spacer(modifier = Modifier.weight(1f))
-                                                }
-                                            }
-                                            if (index < (metrics.size + 1) / 2 - 1) {
-                                                HorizontalDivider(color = BorderColor.copy(alpha = 0.08f), thickness = 1.dp)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // 1.4 Conselho Valorae (Qualitative Analysis Box)
-                        if (realData != null) {
+                        // Indicadores Gerais: todos os indicadores vêm do VALORAE Proxy ou do bundle oficial.
+                        if (mainTabIdx == 3) {
                             item {
-                                Surface(
-                                    color = GoldPrimary.copy(alpha = 0.05f),
-                                    shape = RoundedCornerShape(16.dp),
-                                    border = BorderStroke(1.2.dp, GoldPrimary.copy(alpha = 0.15f)),
+                                AssetProxyIndicatorSection(
+                                    assetData = realData,
+                                    bundle = chartBundle,
+                                    isFii = isFii,
                                     modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(16.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Outlined.Info,
-                                            contentDescription = null,
-                                            tint = GoldPrimary,
-                                            modifier = Modifier.size(24.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(16.dp))
-                                        Column {
-                                            Text(
-                                                text = "CONSELHO VALORAE",
-                                                color = GoldPrimary,
-                                                style = MaterialTheme.typography.labelSmall,
-                                                fontWeight = FontWeight.Black
-                                            )
-                                            Spacer(modifier = Modifier.height(4.dp))
-                                            val advice = when {
-                                                isFii && realData.fiiVacancy > 15.0 -> 
-                                                    "ALERTA: Vacância acima de 15%. Verifique o motivo da desocupação e a localização dos imóveis antes de aportar."
-                                                !isFii && realData.debtEbitda > 4.0 -> 
-                                                    "CUIDADO: Alavancagem financeira elevada (Dívida/EBITDA > 4x). A empresa pode ter dificuldades em cenários de juros altos."
-                                                realData.pvp < 0.8 && realData.dy > 8.0 -> 
-                                                    "OPORTUNIDADE: Ativo descontado (P/VP < 0.8) e com DY atrativo. Pode haver uma distorção de preço favorável."
-                                                realData.pvp > 1.5 -> 
-                                                    "ÁGIO ELEVADO: O mercado está pagando um prêmio alto por este ativo. Certifique-se de que o crescimento futuro justifica o preço."
-                                                else -> 
-                                                    "FUNDAMENTOS SÓLIDOS: Ativo com indicadores em equilíbrio. Ideal para estratégia de longo prazo focada em rendimentos."
-                                            }
-                                            Text(
-                                                text = advice,
-                                                color = TextPrimary,
-                                                fontSize = 13.sp,
-                                                lineHeight = 18.sp
-                                            )
-                                        }
-                                    }
-                                }
+                                )
                             }
+                        } // End Indicadores Gerais
 
-                            // 1.5 Valuation Section
+                        // Perfil & Dados
+                        if (mainTabIdx == 4) {
                             item {
-                                Surface(
-                                    color = DarkSurface,
-                                    shape = RoundedCornerShape(16.dp),
-                                    border = BorderStroke(1.2.dp, BorderColor.copy(alpha = 0.12f)),
+                                AssetProxyProfileSection(
+                                    assetData = realData,
+                                    bundle = chartBundle,
+                                    isFii = isFii,
+                                    newsItems = newsItems,
+                                    isLoadingNews = isLoadingNews,
                                     modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Column(modifier = Modifier.padding(16.dp)) {
-                                        Text(
-                                            text = "ANÁLISE DE VALUATION E PREÇO TETO",
-                                            color = GoldPrimary,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Black,
-                                            letterSpacing = 1.sp
-                                        )
-                                        Spacer(modifier = Modifier.height(20.dp))
-
-                                        val grahamValue = kotlin.math.sqrt(22.5 * realData.lpa * realData.vpa).takeIf { !it.isNaN() } ?: 0.0
-                                        val marginGraham = if (grahamValue > 0) ((grahamValue / realData.price) - 1.0) * 100 else 0.0
-                                        
-                                        if (!isFii) {
-                                            // Graham Formula
-                                            val marginColorG = if (marginGraham > 0) SuccessGreen else DangerRed
-
-                                            Surface(
-                                                color = DarkBackground,
-                                                shape = RoundedCornerShape(16.dp),
-                                                border = BorderStroke(1.2.dp, BorderColor.copy(alpha = 0.12f)),
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Column(modifier = Modifier.padding(16.dp)) {
-                                                    Text("Fórmula de Benjamin Graham", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.Bold)
-                                                    Row(
-                                                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                                        verticalAlignment = Alignment.CenterVertically
-                                                    ) {
-                                                        Text("Preço Justo (VI): R$ ${String.format("%.2f", grahamValue)}", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Black)
-                                                        Box(modifier = Modifier.background(marginColorG.copy(alpha=0.1f), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp)) {
-                                                            Text("Margem: ${String.format("%+.1f%%", marginGraham)}", color = marginColorG, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            Spacer(modifier = Modifier.height(12.dp))
-                                        }
-
-                                        // Décio Bazin Formula (Based on Dividends)
-                                        val bazinYieldTarget = 0.06 // 6%
-                                        val bazinValue = realData.lastDividend / bazinYieldTarget
-                                        val marginBazin = if (bazinValue > 0) ((bazinValue / realData.price) - 1.0) * 100 else 0.0
-                                        val marginColorB = if (marginBazin > 0) SuccessGreen else DangerRed
-
-                                        Surface(
-                                            color = DarkBackground,
-                                            shape = RoundedCornerShape(16.dp),
-                                            border = BorderStroke(1.2.dp, BorderColor.copy(alpha = 0.12f)),
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Column(modifier = Modifier.padding(16.dp)) {
-                                                Text("Método Décio Bazin (Mín. 6% DY)", fontSize = 11.sp, color = TextSecondary, fontWeight = FontWeight.Bold)
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Text("Preço Teto: R$ ${String.format("%.2f", bazinValue)}", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Black)
-                                                    Box(modifier = Modifier.background(marginColorB.copy(alpha=0.1f), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp)) {
-                                                        Text("Margem: ${String.format("%+.1f%%", marginBazin)}", color = marginColorB, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
+                                )
                             }
-                        }
-
-                        } // End Tab 1
+                        } // End Perfil & Dados
 
                         // 3. Interactive Chart
                         if (mainTabIdx == 0) {
@@ -920,16 +662,29 @@ fun AssetDetailModal(
                                 }
                             } else if (bundle != null) {
                                 Spacer(modifier = Modifier.height(12.dp))
-                                AssetChartBundlePanel(
-                                    bundle = bundle,
-                                    isFii = isFii,
-                                    currentRange = localChartRange,
-                                    onRangeChange = { selectedRange ->
-                                        localChartRange = selectedRange
-                                        onRangeChange(selectedRange)
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
+                                ChartCategoryHeader(
+                                    title = "Desempenho e Rentabilidade",
+                                    subtitle = if (isFii) "Evolução do FII e histórico de retornos" else "Rentabilidade histórica comparando nominal vs real"
                                 )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                if (isFii) {
+                                    FiiGeneralTab(bundle)
+                                } else {
+                                    StockAnalysisTab(bundle)
+                                }
+
+                                Spacer(modifier = Modifier.height(16.dp))
+
+                                ChartCategoryHeader(
+                                    title = "Comparação e Correlações",
+                                    subtitle = if (isFii) "Retorno acumulado contra o IFIX e médias do segmento" else "Evolução comparativa contra índices e cotação de commodities"
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                if (isFii) {
+                                    FiiComparisonTab(bundle)
+                                } else {
+                                    StockComparisonTab(bundle)
+                                }
                                 Spacer(modifier = Modifier.height(12.dp))
                             } else {
                                 Surface(
@@ -953,7 +708,7 @@ fun AssetDetailModal(
 
                         } // end of mainTabIdx == 0
 
-                        if (mainTabIdx == 2) { // Detalhes da Posição
+                        if (mainTabIdx == 5) { // Detalhes da Posição
                         // 2. Personal Holdings Dashboard summary
                         item {
                             Text(
@@ -1099,9 +854,9 @@ fun AssetDetailModal(
                             }
                         }
 
-                        } // end of mainTabIdx == 2
+                        } // end of mainTabIdx == 5
 
-                        if (mainTabIdx == 3) { // Transações
+                        if (mainTabIdx == 6) { // Transações
                         // 4. Detailed Purchase Logs
                         item {
                             Spacer(modifier = Modifier.height(8.dp))
@@ -1148,7 +903,7 @@ fun AssetDetailModal(
                                 val itemColor = if (isSale) DangerRed else SuccessGreen
                                 val bgColor = itemColor.copy(alpha = 0.05f)
                                 
-                                val currentPriceToUse = realData?.price ?: asset.currentPrice
+                                val currentPriceToUse = realData.price.takeIf { it.isFinite() && it > 0.0 } ?: 0.0
                                 val txTotalValue = tx.quantity * tx.purchasePrice
                                 
                                 val currentTxValue = if (isPurchase) currentPriceToUse * tx.quantity else 0.0
@@ -1287,7 +1042,7 @@ fun AssetDetailModal(
                                 }
                             }
                         }
-                        } // end mainTabIdx == 3
+                        } // end mainTabIdx == 6
 
                         item {
                             Spacer(modifier = Modifier.navigationBarsPadding().height(56.dp))
@@ -1339,27 +1094,27 @@ private fun AssetSummary.toFallbackB3AssetData(): B3AssetData {
     return B3AssetData(
         ticker = ticker.trim().uppercase(),
         name = ticker.trim().uppercase(),
-        price = currentPrice.takeIf { it > 0.0 } ?: averageCost,
-        changePercent = dailyChangePercent,
-        dy = dividendYield,
-        lastDividend = lastDividend,
+        price = 0.0,
+        changePercent = 0.0,
+        dy = 0.0,
+        lastDividend = 0.0,
         isFii = inferredFii,
-        source = "Carteira local + aguardando Proxy"
+        source = "Carteira local — aguardando VALORAE Proxy"
     )
 }
 
 private fun B3AssetData.hasUsefulProxyData(): Boolean {
     return price > 0.0 || dy > 0.0 || pvp > 0.0 || pl > 0.0 || marketCap > 0.0 ||
-        assetDescription.isNotBlank() || cnpj.isNotBlank() || name.isNotBlank()
+        assetDescription.isNotBlank() || cnpj.isNotBlank() || extractionCompleteness > 0.0
 }
 
 private fun B3AssetData.mergeWithFallback(fallback: B3AssetData): B3AssetData {
     return copy(
         name = name.ifBlank { fallback.name },
-        price = if (price > 0.0) price else fallback.price,
-        changePercent = if (changePercent != 0.0) changePercent else fallback.changePercent,
-        dy = if (dy > 0.0) dy else fallback.dy,
-        lastDividend = if (lastDividend > 0.0) lastDividend else fallback.lastDividend,
+        price = price,
+        changePercent = changePercent,
+        dy = dy,
+        lastDividend = lastDividend,
         isFii = isFii || fallback.isFii,
         source = if (source.isNotBlank()) source else fallback.source
     )

@@ -44,9 +44,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.border
 import androidx.compose.foundation.BorderStroke
@@ -64,7 +67,6 @@ import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import com.example.ui.screens.AnalysisScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.NewsScreen
-import com.example.ui.screens.RankingsScreen
 import com.example.network.B3NetworkService
 import com.example.ui.theme.*
 import com.example.viewmodel.PortfolioViewModel
@@ -77,6 +79,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         B3NetworkService.initialize(applicationContext)
         
         // Initialize local database database context dependencies manually (simple injection)
@@ -166,18 +169,26 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 var updateDismissedAtStartup by rememberSaveable { mutableStateOf(false) }
                 var showSystemUpdateCenter by rememberSaveable { mutableStateOf(false) }
 
-                if (!isAppUnlocked) {
-                    LockScreen(
-                        biometricEnabled = biometricEnabledState.value,
-                        onUnlock = { isAppUnlocked = true },
-                        onDisableBiometric = {
-                            appScope.launch {
-                                themePreferences.setBiometricEnabled(false)
-                                isAppUnlocked = true
+                when {
+                    biometricEnabledState.value == null -> {
+                        BrandedLoadingScreen(
+                            message = "Preparando o Valorae",
+                            detail = "Carregando preferências e proteção da carteira"
+                        )
+                    }
+                    !isAppUnlocked -> {
+                        LockScreen(
+                            biometricEnabled = biometricEnabledState.value,
+                            onUnlock = { isAppUnlocked = true },
+                            onDisableBiometric = {
+                                appScope.launch {
+                                    themePreferences.setBiometricEnabled(false)
+                                    isAppUnlocked = true
+                                }
                             }
-                        }
-                    )
-                } else {
+                        )
+                    }
+                    else -> {
                     // Collect state reactively with lifecycle awareness
                     val portfolioSummary by viewModel.portfolioSummary.collectAsStateWithLifecycle()
                     val assetSummaries by viewModel.assetSummaries.collectAsStateWithLifecycle()
@@ -462,7 +473,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                                     Box(Modifier.size(6.dp).background(proxyChipColor, CircleShape))
                                                     Text(
                                                         text = when {
-                                                            proxyHealth.isOnline -> "Proxy"
+                                                            proxyHealth.isOnline -> "Dados"
                                                             proxyHealth.isUsingCache -> "Cache"
                                                             proxyHealth.status.equals("Parcial", true) -> "Parcial"
                                                             else -> "Offline"
@@ -548,7 +559,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                         icon = { 
                                             Icon(
                                                 imageVector = if (activePage == 0) Icons.Default.Home else Icons.Outlined.Home, 
-                                                contentDescription = "Dashboard",
+                                                contentDescription = "Início",
                                                 modifier = Modifier.size(24.dp)
                                             ) 
                                         },
@@ -572,20 +583,20 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                     NavigationBarItem(
                                         selected = activePage == 1,
                                         onClick = { activePage = 1 },
-                                        icon = {
+                                        icon = { 
                                             Icon(
-                                                imageVector = if (activePage == 1) Icons.Filled.Leaderboard else Icons.Outlined.Leaderboard,
-                                                contentDescription = "Rankings",
+                                                imageVector = if (activePage == 1) Icons.Default.AccountBalanceWallet else Icons.Outlined.AccountBalanceWallet, 
+                                                contentDescription = "Ativos",
                                                 modifier = Modifier.size(24.dp)
-                                            )
+                                            ) 
                                         },
-                                        label = {
+                                        label = { 
                                             Text(
-                                                text = "Rankings",
-                                                fontSize = 10.5.sp,
+                                                text = "Ativos", 
+                                                fontSize = 11.sp,
                                                 fontWeight = if (activePage == 1) FontWeight.ExtraBold else FontWeight.Medium,
-                                                letterSpacing = 0.2.sp
-                                            )
+                                                letterSpacing = 0.5.sp
+                                            ) 
                                         },
                                         colors = NavigationBarItemDefaults.colors(
                                             selectedIconColor = MaterialTheme.colorScheme.primary,
@@ -662,7 +673,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                         },
                                         label = { 
                                             Text(
-                                                text = "Notícias",
+                                                text = "Notícias", 
                                                 fontSize = 11.sp,
                                                 fontWeight = if (activePage == 4) FontWeight.ExtraBold else FontWeight.Medium,
                                                 letterSpacing = 0.5.sp
@@ -724,18 +735,34 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                             onPortfolioClick = { showingPortfolioDetail = true },
                                             updateStatus = updateStatus,
                                             analytics = portfolioAnalytics,
-                                            onOpenRankings = { activePage = 1 },
-                                            onUpdateAvailable = { showStartupUpdateDialog = true }
+                                            onOpenRankings = { activePage = 3 },
+                                            onUpdateAvailable = { showStartupUpdateDialog = true },
+                                            onRefreshRankings = { viewModel.refreshLiveMarketRankings(force = true, full = true) }
                                         )
                                     }
-                                    1 -> RankingsScreen(
-                                        viewModel = viewModel,
-                                        onAssetClick = { ticker ->
-                                            viewModel.searchTickerInput.value = ticker
-                                            viewModel.searchAndAnalyzeAsset(ticker)
-                                            activePage = 2
-                                        }
-                                    )
+                                    1 -> {
+                                        com.example.ui.screens.AssetsScreen(
+                                            assets = assetSummaries,
+                                            transactions = transactions,
+                                            cachedAssetData = cachedAssetData,
+                                            assetChartBundles = assetChartBundles,
+                                            isLoadingChartBundle = isLoadingChartBundle,
+                                            onLoadAssetChartBundle = { ticker, range -> viewModel.loadAssetChartBundle(ticker, range) },
+                                            chartRange = chartRange,
+                                            onRangeChange = { range -> viewModel.changeSearchChartRange(range) },
+                                            isSearchingChart = isSearchingAsset,
+                                            hideValues = hideValues,
+                                            onAddTransaction = { ticker, qty, prc, type, broker, sector, date, notes, isSell ->
+                                                viewModel.insertTransaction(ticker, qty, prc, type, broker, sector, date, notes, isSell)
+                                            },
+                                            onDeleteTransaction = { tx ->
+                                                viewModel.deleteTransaction(tx)
+                                            },
+                                            onUpdateTransaction = { id, ticker, qty, prc, type, broker, sector, date, notes, isSell ->
+                                                viewModel.updateTransaction(id, ticker, qty, prc, type, broker, sector, date, notes, isSell)
+                                            }
+                                        )
+                                    }
                                     2 -> {
                                         AnalysisScreen(
                                             tickerInput = tickerInput,
@@ -786,12 +813,12 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                         onAssetClick = { ticker ->
                                             viewModel.searchTickerInput.value = ticker
                                             viewModel.searchAndAnalyzeAsset(ticker)
-                                            activePage = 2
+                                            activePage = 1
                                         },
                                         onPortfolioClick = { showingPortfolioDetail = true },
                                         updateStatus = updateStatus,
                                         analytics = portfolioAnalytics,
-                                        onOpenRankings = { activePage = 1 },
+                                        onOpenRankings = { },
                                         onUpdateAvailable = { showStartupUpdateDialog = true }
                                     )
                                 }
@@ -819,6 +846,170 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         }
                     }
                 }
+                }
+                }
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun ValoraeBrandLockup(
+    modifier: Modifier = Modifier,
+    logoSize: androidx.compose.ui.unit.Dp = 104.dp,
+    titleSize: androidx.compose.ui.unit.TextUnit = 30.sp,
+    subtitle: String? = null,
+    animated: Boolean = true
+) {
+    val transition = rememberInfiniteTransition(label = "valoraeBrandPulse")
+    val pulse by transition.animateFloat(
+        initialValue = 0.96f,
+        targetValue = 1.04f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1400, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "valoraeLogoPulse"
+    )
+    val glowAlpha by transition.animateFloat(
+        initialValue = 0.14f,
+        targetValue = 0.30f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1600, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "valoraeGlowAlpha"
+    )
+
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(logoSize + 26.dp)
+                .background(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            GoldPrimary.copy(alpha = glowAlpha),
+                            GoldPrimary.copy(alpha = 0.04f),
+                            Color.Transparent
+                        )
+                    ),
+                    shape = CircleShape
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(logoSize)
+                    .scale(if (animated) pulse else 1f)
+                    .background(Color.White.copy(alpha = 0.055f), CircleShape)
+                    .border(1.dp, GoldPrimary.copy(alpha = 0.22f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    painter = androidx.compose.ui.res.painterResource(id = R.drawable.valorae_logo_vector),
+                    contentDescription = "Logotipo Valorae",
+                    modifier = Modifier.size(logoSize * 0.66f),
+                    tint = Color.Unspecified
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        Text(
+            text = "Valorae",
+            style = MaterialTheme.typography.headlineMedium.copy(
+                fontSize = titleSize,
+                letterSpacing = 0.5.sp,
+                fontWeight = FontWeight.Black
+            ),
+            color = GoldPrimary,
+            textAlign = TextAlign.Center
+        )
+
+        if (!subtitle.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.labelMedium.copy(
+                    letterSpacing = 1.8.sp,
+                    fontWeight = FontWeight.Bold
+                ),
+                color = Color.White.copy(alpha = 0.48f),
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+@Composable
+private fun BrandedLoadingScreen(
+    message: String,
+    detail: String = ""
+) {
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = Color.Transparent
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFF040404),
+                            Color(0xFF0F1115),
+                            Color(0xFF070707)
+                        )
+                    )
+                )
+                .padding(horizontal = 36.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                ValoraeBrandLockup(
+                    logoSize = 108.dp,
+                    titleSize = 32.sp,
+                    subtitle = "CARTEIRA DE INVESTIMENTOS",
+                    animated = true
+                )
+
+                Spacer(modifier = Modifier.height(42.dp))
+
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth(0.68f)
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(99.dp)),
+                    color = GoldPrimary,
+                    trackColor = Color.White.copy(alpha = 0.10f)
+                )
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.74f),
+                    textAlign = TextAlign.Center
+                )
+
+                if (detail.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = detail,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.44f),
+                        textAlign = TextAlign.Center,
+                        lineHeight = 18.sp
+                    )
                 }
             }
         }
@@ -859,7 +1050,7 @@ fun LockScreen(
         if (activity == null || isPromptRunning) return
 
         isPromptRunning = true
-        statusMessage = "Aguardando autenticação do Android"
+        statusMessage = "Aguardando sua digital ou credencial do aparelho"
         lastError = ""
 
         val executor = androidx.core.content.ContextCompat.getMainExecutor(context)
@@ -882,15 +1073,15 @@ fun LockScreen(
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                     super.onAuthenticationError(errorCode, errString)
                     isPromptRunning = false
-                    statusMessage = "Autenticação necessária para abrir o VALORAE"
+                    statusMessage = "Autenticação necessária para abrir o Valorae"
                     lastError = errString.toString().ifBlank { "Autenticação cancelada ou indisponível." }
                 }
             }
         )
 
         val promptInfo = androidx.biometric.BiometricPrompt.PromptInfo.Builder()
-            .setTitle("Desbloqueio VALORAE")
-            .setSubtitle("Use biometria, PIN, senha ou padrão do aparelho")
+            .setTitle("Valorae")
+            .setSubtitle("Use digital, rosto, PIN, senha ou padrão do aparelho")
             .setAllowedAuthenticators(authenticators)
             .build()
 
@@ -926,41 +1117,11 @@ fun LockScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Box(
-                modifier = Modifier
-                    .size(100.dp)
-                    .background(Color.White.copy(alpha = 0.05f), CircleShape)
-                    .border(1.dp, Color.White.copy(alpha = 0.1f), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    painter = androidx.compose.ui.res.painterResource(id = R.drawable.valorae_logo_vector),
-                    contentDescription = null,
-                    modifier = Modifier.size(64.dp),
-                    tint = GoldPrimary
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            Text(
-                text = "VALORAE",
-                style = MaterialTheme.typography.headlineMedium.copy(
-                    letterSpacing = 8.sp,
-                    fontWeight = FontWeight.Black
-                ),
-                color = GoldPrimary
-            )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            Text(
-                text = "INVESTIDOR",
-                style = MaterialTheme.typography.labelSmall.copy(
-                    letterSpacing = 4.sp,
-                    fontWeight = FontWeight.Black
-                ),
-                color = Color.White.copy(alpha = 0.4f)
+            ValoraeBrandLockup(
+                logoSize = 104.dp,
+                titleSize = 31.sp,
+                subtitle = "ACESSO SEGURO",
+                animated = !isPromptRunning
             )
 
             Spacer(modifier = Modifier.height(42.dp))

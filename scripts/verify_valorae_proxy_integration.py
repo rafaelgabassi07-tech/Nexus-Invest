@@ -26,7 +26,7 @@ required_service = [
     '"/api/observability"',
     '"/api/fields"',
     '"/api/openapi"',
-    'source = "Valorae Proxy"',
+    'source = "Serviço de dados VALORAE"',
 ]
 missing = []
 text = service.read_text(encoding='utf-8')
@@ -81,7 +81,7 @@ if 'AssetChartBundlePanel' not in analysis_screen and 'StockAnalysisTab' not in 
     missing.append('AnalysisScreen sem painel/abas de gráficos avançados do AssetChartBundle')
 
 asset_detail = (root / 'app/src/main/java/com/example/ui/components/AssetDetailModal.kt').read_text(encoding='utf-8')
-for needle in ['DADOS RECEBIDOS PELO PROXY', 'realData.source', 'HistoricalPriceLineChart', 'initialAssetData', 'onLoadChartBundle', 'toFallbackB3AssetData', 'mergeWithFallback']:
+for needle in ['DADOS RECEBIDOS', 'realData.source', 'HistoricalPriceLineChart', 'initialAssetData', 'onLoadChartBundle', 'toFallbackB3AssetData', 'mergeWithFallback']:
     if needle not in asset_detail:
         missing.append(f'AssetDetailModal sem {needle}')
 
@@ -269,4 +269,4 @@ if wrapper_warnings:
 if missing:
     print('\n'.join(missing))
     raise SystemExit(1)
-print('Valorae Proxy integration audit OK')
+print('Valorae data integration audit OK')
