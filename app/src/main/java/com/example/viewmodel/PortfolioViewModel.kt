@@ -568,32 +568,137 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
         }
     }
 
+    private fun normalizedTicker(raw: String): String {
+        return raw.trim().uppercase(java.util.Locale.ROOT).replace(Regex("\\s+"), "")
+    }
+
+    private fun normalizedTransactionType(ticker: String, rawType: String): String {
+        val declared = rawType.trim().uppercase(java.util.Locale.ROOT)
+        return when {
+            B3NetworkService.inferIsFii(ticker) -> "FII"
+            declared == "FII" -> "FII"
+            else -> "ACAO"
+        }
+    }
+
+    private fun ownedQuantityAt(
+        txs: List<Transaction>,
+        ticker: String,
+        upToDate: Long,
+        excludedTransactionId: Int? = null
+    ): Double {
+        val key = normalizedTicker(ticker)
+        if (key.isBlank()) return 0.0
+        return txs
+            .asSequence()
+            .filter { tx ->
+                tx.id != excludedTransactionId &&
+                    normalizedTicker(tx.ticker) == key &&
+                    tx.date <= upToDate &&
+                    tx.quantity.isFinite() &&
+                    tx.quantity > 0.0
+            }
+            .sortedBy { it.date }
+            .fold(0.0) { acc, tx ->
+                val next = if (tx.isSell) acc - tx.quantity else acc + tx.quantity
+                next.coerceAtLeast(0.0)
+            }
+    }
+
+    private fun buildTransactionOrError(
+        id: Int = 0,
+        ticker: String,
+        quantity: Double,
+        purchasePrice: Double,
+        type: String,
+        broker: String,
+        sector: String,
+        date: Long?,
+        notes: String,
+        isSell: Boolean,
+        snapshot: List<Transaction>
+    ): Pair<Transaction?, String?> {
+        val cleanTicker = normalizedTicker(ticker)
+        val effectiveDate = date ?: System.currentTimeMillis()
+        val todayEnd = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 23)
+            set(java.util.Calendar.MINUTE, 59)
+            set(java.util.Calendar.SECOND, 59)
+            set(java.util.Calendar.MILLISECOND, 999)
+        }.timeInMillis
+
+        val error = when {
+            cleanTicker.length < 4 -> "Ticker inválido. Use o código B3, como PETR4 ou MXRF11."
+            !quantity.isFinite() || quantity <= 0.0 -> "Quantidade inválida para $cleanTicker."
+            !purchasePrice.isFinite() || purchasePrice <= 0.0 -> "Preço inválido para $cleanTicker."
+            effectiveDate > todayEnd -> "A data da transação de $cleanTicker não pode ser futura."
+            isSell && ownedQuantityAt(snapshot, cleanTicker, effectiveDate, id.takeIf { it > 0 }) + 0.000001 < quantity -> {
+                val owned = ownedQuantityAt(snapshot, cleanTicker, effectiveDate, id.takeIf { it > 0 })
+                "Venda maior que a posição disponível em $cleanTicker na data informada (${String.format(java.util.Locale("pt", "BR"), "%.2f", owned)})."
+            }
+            else -> null
+        }
+        if (error != null) return null to error
+
+        val normalizedType = normalizedTransactionType(cleanTicker, type)
+        return Transaction(
+            id = id,
+            ticker = cleanTicker,
+            name = cleanTicker,
+            quantity = quantity,
+            purchasePrice = purchasePrice,
+            type = normalizedType,
+            isSell = isSell,
+            broker = broker.trim(),
+            sector = sector.trim(),
+            date = effectiveDate,
+            notes = notes.trim()
+        ) to null
+    }
+
+    private suspend fun addSystemNotification(title: String, description: String, iconName: String = "TRENDING") {
+        repository.insertNotification(
+            DbNotification(
+                title = title,
+                description = description,
+                category = "SISTEMA",
+                date = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.getDefault()).format(java.util.Date()),
+                iconName = iconName,
+                isRead = false
+            )
+        )
+    }
+
     fun insertTransaction(
         ticker: String, quantity: Double, purchasePrice: Double, type: String,
         broker: String = "", sector: String = "", date: Long? = null, notes: String = "",
         isSell: Boolean = false
     ) {
         viewModelScope.launch(Dispatchers.IO) {
-            val sanitizedTicker = ticker.trim().uppercase()
-            val tx = Transaction(
-                ticker = sanitizedTicker,
-                name = sanitizedTicker,
+            val snapshot = repository.getAllTransactionsSync()
+            val (tx, error) = buildTransactionOrError(
+                ticker = ticker,
                 quantity = quantity,
                 purchasePrice = purchasePrice,
                 type = type,
-                isSell = isSell,
                 broker = broker,
                 sector = sector,
-                date = date ?: System.currentTimeMillis(),
-                notes = notes
+                date = date,
+                notes = notes,
+                isSell = isSell,
+                snapshot = snapshot
             )
+            if (tx == null) {
+                addSystemNotification("Transação não registrada", error ?: "Dados inválidos na transação.", "WALLET")
+                return@launch
+            }
             repository.insert(tx)
             
-            val action = if (isSell) "Venda" else "Compra"
+            val action = if (tx.isSell) "Venda" else "Compra"
             repository.insertNotification(
                 DbNotification(
-                    title = "$action de $sanitizedTicker Registrada",
-                    description = "Transação de $action de ${String.format("%.2f", quantity)} cotas/ações de $sanitizedTicker a R$ ${String.format("%.2f", purchasePrice)} foi adicionada com sucesso ao portfólio.",
+                    title = "$action de ${tx.ticker} Registrada",
+                    description = "Transação de $action de ${String.format(java.util.Locale("pt", "BR"), "%.2f", tx.quantity)} cotas/ações de ${tx.ticker} a R$ ${String.format(java.util.Locale("pt", "BR"), "%.2f", tx.purchasePrice)} foi adicionada com sucesso ao portfólio.",
                     category = "TRANSAÇÃO",
                     date = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.getDefault()).format(java.util.Date()),
                     iconName = "WALLET",
@@ -615,20 +720,24 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
         isSell: Boolean = false
     ) {
         viewModelScope.launch(Dispatchers.IO) {
-            val sanitizedTicker = ticker.trim().uppercase()
-            val tx = Transaction(
+            val snapshot = repository.getAllTransactionsSync()
+            val (tx, error) = buildTransactionOrError(
                 id = id,
-                ticker = sanitizedTicker,
-                name = sanitizedTicker,
+                ticker = ticker,
                 quantity = quantity,
                 purchasePrice = purchasePrice,
                 type = type,
-                isSell = isSell,
                 broker = broker,
                 sector = sector,
-                date = date ?: System.currentTimeMillis(),
-                notes = notes
+                date = date,
+                notes = notes,
+                isSell = isSell,
+                snapshot = snapshot
             )
+            if (tx == null) {
+                addSystemNotification("Edição não salva", error ?: "Dados inválidos na transação.", "WALLET")
+                return@launch
+            }
             repository.insert(tx)
         }
     }

@@ -9,6 +9,10 @@ class TransactionRepository(
 ) {
     val allTransactions: Flow<List<Transaction>> = transactionDao.getAllTransactions()
 
+    suspend fun getAllTransactionsSync(): List<Transaction> {
+        return transactionDao.getAllTransactionsSync()
+    }
+
     suspend fun insert(transaction: Transaction) {
         transactionDao.insertTransaction(transaction)
     }

@@ -80,7 +80,7 @@ fun AssetsScreen(
                         fontWeight = FontWeight.Black
                     )
                     Text(
-                        text = "Gerencie seus ativos e histórico de compras.",
+                        text = "Gerencie posições, compras, vendas e histórico operacional.",
                         color = TextSecondary,
                         fontSize = 12.sp
                     )
@@ -101,7 +101,7 @@ fun AssetsScreen(
                         modifier = Modifier.weight(1f)
                     )
                     TabButton(
-                        text = "Histórico de Compras",
+                        text = "Histórico",
                         selected = activeTab == 1,
                         onClick = { activeTab = 1 },
                         modifier = Modifier.weight(1f)
@@ -176,14 +176,19 @@ fun AssetsScreen(
                 } else {
                     transactionsByMonth.forEach { (monthYear, monthTxs) ->
                         item(key = "header_$monthYear") {
-                            val totalMonth = monthTxs.sumOf { it.quantity * it.purchasePrice }
+                            val totalMonth = monthTxs.sumOf { tx -> (if (tx.isSell) -1 else 1) * tx.quantity * tx.purchasePrice }
                             Row(
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(monthYear, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                Text("Total: R$ ${String.format("%.2f", totalMonth)}", color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text(
+                                    text = "Mov.: ${if (totalMonth < 0) "-" else ""}R$ ${String.format(java.util.Locale("pt", "BR"), "%,.2f", kotlin.math.abs(totalMonth))}",
+                                    color = if (totalMonth < 0) DangerRed else MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                         }
                         
