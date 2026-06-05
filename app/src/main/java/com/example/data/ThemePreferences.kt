@@ -15,6 +15,19 @@ enum class CornerStyle(val radius: Int) { SHARP(0), MODERN(12), ROUNDED(24) }
 enum class DarkVariant { CARBON, OLED, DEEP_SEA }
 enum class LightVariant { CLASSIC, VALOR_GOLD, IVORY_CREAM }
 
+private inline fun <reified T : Enum<T>> safeEnumValue(raw: String?, fallback: T): T {
+    return raw?.let { value -> runCatching { enumValueOf<T>(value) }.getOrNull() } ?: fallback
+}
+
+private fun normalizeFavoriteTickers(raw: String): List<String> {
+    return raw
+        .split(",")
+        .map { it.trim().uppercase() }
+        .filter { it.isNotEmpty() }
+        .distinct()
+        .take(24)
+}
+
 class ThemePreferences(private val context: Context) {
     private val THEME_KEY = stringPreferencesKey("app_theme")
     private val FONT_SCALE_KEY = stringPreferencesKey("font_scale")
@@ -28,16 +41,12 @@ class ThemePreferences(private val context: Context) {
     private val FAVORITES_KEY = stringPreferencesKey("favorite_tickers")
 
     val theme: Flow<AppTheme> = context.dataStore.data.map { pref ->
-        AppTheme.valueOf(pref[THEME_KEY] ?: AppTheme.SYSTEM.name)
+        safeEnumValue(pref[THEME_KEY], AppTheme.SYSTEM)
     }
 
     val favoriteTickers: Flow<List<String>> = context.dataStore.data.map { pref ->
         val raw = pref[FAVORITES_KEY] ?: ""
-        if (raw.isEmpty()) {
-            emptyList()
-        } else {
-            raw.split(",").map { it.trim().uppercase() }.filter { it.isNotEmpty() }
-        }
+        normalizeFavoriteTickers(raw)
     }
 
     suspend fun toggleFavorite(ticker: String) {
@@ -45,30 +54,30 @@ class ThemePreferences(private val context: Context) {
             val cleanTicker = ticker.trim().uppercase()
             if (cleanTicker.isEmpty()) return@edit
             val raw = pref[FAVORITES_KEY] ?: ""
-            val current = if (raw.isEmpty()) emptyList() else raw.split(",").map { it.trim().uppercase() }.filter { it.isNotEmpty() }
+            val current = normalizeFavoriteTickers(raw)
             val updated = if (current.contains(cleanTicker)) {
                 current.filter { it != cleanTicker }
             } else {
                 current + cleanTicker
             }
-            pref[FAVORITES_KEY] = updated.joinToString(",")
+            pref[FAVORITES_KEY] = updated.distinct().take(24).joinToString(",")
         }
     }
 
     val fontScale: Flow<FontScale> = context.dataStore.data.map { pref ->
-        FontScale.valueOf(pref[FONT_SCALE_KEY] ?: FontScale.MEDIUM.name)
+        safeEnumValue(pref[FONT_SCALE_KEY], FontScale.MEDIUM)
     }
 
     val cornerStyle: Flow<CornerStyle> = context.dataStore.data.map { pref ->
-        CornerStyle.valueOf(pref[CORNER_STYLE_KEY] ?: CornerStyle.MODERN.name)
+        safeEnumValue(pref[CORNER_STYLE_KEY], CornerStyle.MODERN)
     }
 
     val darkVariant: Flow<DarkVariant> = context.dataStore.data.map { pref ->
-        DarkVariant.valueOf(pref[DARK_VARIANT_KEY] ?: DarkVariant.CARBON.name)
+        safeEnumValue(pref[DARK_VARIANT_KEY], DarkVariant.CARBON)
     }
 
     val lightVariant: Flow<LightVariant> = context.dataStore.data.map { pref ->
-        LightVariant.valueOf(pref[LIGHT_VARIANT_KEY] ?: LightVariant.CLASSIC.name)
+        safeEnumValue(pref[LIGHT_VARIANT_KEY], LightVariant.CLASSIC)
     }
 
     val biometricEnabled: Flow<Boolean> = context.dataStore.data.map { it[BIOMETRIC_ENABLED_KEY] ?: false }

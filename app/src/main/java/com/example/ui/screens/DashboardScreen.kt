@@ -668,6 +668,21 @@ fun EmptyStateWidget(title: String, desc: String) {
     }
 }
 
+private fun parseTransactionDecimalInput(raw: String): Double? {
+    val clean = raw.trim().replace(" ", "")
+    if (clean.isBlank()) return null
+    val normalized = when {
+        clean.contains(',') && clean.contains('.') -> clean.replace(".", "").replace(',', '.')
+        clean.contains(',') -> clean.replace(',', '.')
+        else -> clean
+    }
+    return normalized.toDoubleOrNull()?.takeIf { it.isFinite() }
+}
+
+private fun formatTransactionAmount(value: Double): String {
+    return String.format(java.util.Locale("pt", "BR"), "%,.2f", value)
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddTransactionDialog(
@@ -707,25 +722,9 @@ fun AddTransactionDialog(
     var showDatePicker by remember { mutableStateOf(false) }
     
     // Value total calculation
-    val qVal = quantity.replace(",", ".").toDoubleOrNull() ?: 0.0
-    val pVal = price.let {
-        if (it.contains(",") && it.contains(".")) {
-            it.replace(".", "").replace(",", ".").toDoubleOrNull()
-        } else if (it.contains(",")) {
-            it.replace(",", ".").toDoubleOrNull()
-        } else {
-            it.toDoubleOrNull()
-        }
-    } ?: 0.0
-    val cVal = otherCosts.let {
-        if (it.contains(",") && it.contains(".")) {
-            it.replace(".", "").replace(",", ".").toDoubleOrNull()
-        } else if (it.contains(",")) {
-            it.replace(",", ".").toDoubleOrNull()
-        } else {
-            it.toDoubleOrNull()
-        }
-    } ?: 0.0
+    val qVal = parseTransactionDecimalInput(quantity) ?: 0.0
+    val pVal = parseTransactionDecimalInput(price) ?: 0.0
+    val cVal = parseTransactionDecimalInput(otherCosts) ?: 0.0
     val valorTotal = (qVal * pVal) + cVal
 
     var expandedType by remember { mutableStateOf(false) }
