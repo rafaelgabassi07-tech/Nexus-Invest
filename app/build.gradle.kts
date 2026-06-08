@@ -76,8 +76,8 @@ android {
     applicationId = "com.aistudio.valorae.nbqpyl"
     minSdk = 24
     targetSdk = 36
-    versionCode = 44
-    versionName = "2.0.34"
+    versionCode = 45
+    versionName = "2.0.35"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

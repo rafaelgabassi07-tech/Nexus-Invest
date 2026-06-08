@@ -1538,7 +1538,9 @@ fun AssetRevenueProfitChart(points: List<FinancialStatementPoint>, modifier: Mod
 @Composable
 fun AssetProfitVsQuoteChart(points: List<AssetComparisonPoint>, modifier: Modifier = Modifier) {
     val items = points
-        .filter { it.value.isFinite() && it.secondaryValue.isFinite() && (it.value != 0.0 || it.secondaryValue != 0.0) }
+        // Este gráfico só faz sentido quando o mesmo período tem cotação e lucro.
+        // Pontos parciais eram a causa da linha amarela no teto e verde no chão.
+        .filter { it.value.isFinite() && it.secondaryValue.isFinite() && it.value != 0.0 && it.secondaryValue != 0.0 }
         .sortedWith(compareBy<AssetComparisonPoint> { if (it.dateMillis > 0L) it.dateMillis else Long.MAX_VALUE }.thenBy { it.label })
     if (items.isEmpty()) return
 

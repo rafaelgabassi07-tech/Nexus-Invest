@@ -903,33 +903,105 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
         }
     }
 
+    private fun assetChartCompletenessScore(bundle: AssetChartBundle): Int {
+        fun hasFinancialPoints(points: List<FinancialStatementPoint>, requiredFields: Int = 1): Boolean =
+            points.count { p ->
+                listOf(p.netRevenue, p.netProfit, p.netWorth, p.totalAssets, p.totalLiabilities).any { it != 0.0 && it.isFinite() }
+            } >= requiredFields
+        var score = 0
+        if (bundle.profitability.isNotEmpty() || bundle.realProfitability.isNotEmpty()) score++
+        if (bundle.indexComparison.any { it.points.size >= 2 }) score++
+        if (hasFinancialPoints(bundle.revenueProfit, 2)) score++
+        if (bundle.profitVsQuote.count { it.value != 0.0 && it.secondaryValue != 0.0 } >= 2) score++
+        if (bundle.equityEvolution.count { it.netWorth != 0.0 || it.totalAssets != 0.0 } >= 2) score++
+        if (bundle.balanceSheet.count { listOf(it.totalAssets, it.netWorth, it.totalLiabilities).count { v -> v != 0.0 && v.isFinite() } >= 2 } >= 2) score++
+        if (bundle.payoutHistory.size >= 2) score++
+        if (bundle.revenueByRegion.values.flatten().isNotEmpty()) score++
+        if (bundle.revenueByBusiness.values.flatten().isNotEmpty()) score++
+        return score
+    }
+
+    private fun needsDeepFinancialRefresh(bundle: AssetChartBundle): Boolean {
+        if (bundle.type.equals("FII", ignoreCase = true)) return false
+        return assetChartCompletenessScore(bundle) < 7
+    }
+
+    private fun mergeAssetChartBundles(base: AssetChartBundle, extra: AssetChartBundle): AssetChartBundle {
+        fun <T> richer(a: List<T>, b: List<T>): List<T> = if (b.size > a.size) b else a
+        fun <K, V> richerMap(a: Map<K, List<V>>, b: Map<K, List<V>>): Map<K, List<V>> =
+            if (b.values.sumOf { it.size } > a.values.sumOf { it.size }) b else a
+        return base.copy(
+            priceHistory = richer(base.priceHistory, extra.priceHistory),
+            profitability = richer(base.profitability, extra.profitability),
+            realProfitability = richer(base.realProfitability, extra.realProfitability),
+            indicatorCards = richer(base.indicatorCards, extra.indicatorCards),
+            indicatorHistory = if (extra.indicatorHistory.values.sumOf { it.size } > base.indicatorHistory.values.sumOf { it.size }) extra.indicatorHistory else base.indicatorHistory,
+            dividendEvents = richer(base.dividendEvents, extra.dividendEvents),
+            dividendMonthly = richer(base.dividendMonthly, extra.dividendMonthly),
+            dividendYearly = richer(base.dividendYearly, extra.dividendYearly),
+            dividendYieldHistory = richer(base.dividendYieldHistory, extra.dividendYieldHistory),
+            indexComparison = richer(base.indexComparison, extra.indexComparison),
+            commodityComparison = richer(base.commodityComparison, extra.commodityComparison),
+            revenueProfit = richer(base.revenueProfit, extra.revenueProfit),
+            profitVsQuote = richer(base.profitVsQuote, extra.profitVsQuote),
+            equityEvolution = richer(base.equityEvolution, extra.equityEvolution),
+            balanceSheet = richer(base.balanceSheet, extra.balanceSheet),
+            payoutHistory = richer(base.payoutHistory, extra.payoutHistory),
+            revenueByRegion = richerMap(base.revenueByRegion, extra.revenueByRegion),
+            revenueByBusiness = richerMap(base.revenueByBusiness, extra.revenueByBusiness),
+            warnings = (base.warnings + extra.warnings).distinct(),
+            coverageCaptured = (base.coverageCaptured + extra.coverageCaptured).distinct(),
+            coverageMissing = extra.coverageMissing.ifEmpty { base.coverageMissing },
+            source = if (extra.source.isNotBlank()) extra.source else base.source
+        )
+    }
+
     fun loadAssetChartBundle(ticker: String, range: String = "1Y") {
         val clean = ticker.trim().uppercase(java.util.Locale.ROOT)
         if (clean.isEmpty()) return
         val normalizedRange = normalizeAssetRange(range)
         val alreadyLoaded = _assetChartBundles.value[clean]
-        if (alreadyLoaded != null && alreadyLoaded.range.equals(normalizedRange, ignoreCase = true)) return
+        if (alreadyLoaded != null && alreadyLoaded.range.equals(normalizedRange, ignoreCase = true) && !needsDeepFinancialRefresh(alreadyLoaded)) return
         val loadingKey = "$clean:$normalizedRange"
         if (loadingChartBundleKeys.contains(loadingKey)) return
         viewModelScope.launch {
             loadingChartBundleKeys.add(loadingKey)
             _isLoadingChartBundle.value = true
+            var fastBundle: AssetChartBundle? = null
             try {
-                val bundle = withContext(Dispatchers.IO) {
-                    withTimeoutOrNull(6_500) {
-                        B3NetworkService.fetchAssetChartBundle(clean, normalizedRange)
+                fastBundle = withContext(Dispatchers.IO) {
+                    withTimeoutOrNull(7_500) {
+                        B3NetworkService.fetchAssetChartBundle(clean, normalizedRange, deepFinancial = false)
                     }
                 }
-                if (bundle != null) {
+                if (fastBundle != null) {
                     val current = _assetChartBundles.value.toMutableMap()
-                    current[clean] = bundle
+                    current[clean] = mergeAssetChartBundles(current[clean] ?: fastBundle, fastBundle)
                     _assetChartBundles.value = current
                 }
             } catch (e: Exception) {
-                android.util.Log.e("PortfolioViewModel", "Error loading asset chart bundle", e)
+                android.util.Log.e("PortfolioViewModel", "Error loading fast asset chart bundle", e)
             } finally {
                 loadingChartBundleKeys.remove(loadingKey)
                 _isLoadingChartBundle.value = loadingChartBundleKeys.isNotEmpty()
+            }
+
+            val currentBundle = _assetChartBundles.value[clean] ?: fastBundle
+            if (currentBundle != null && needsDeepFinancialRefresh(currentBundle)) {
+                launch(Dispatchers.IO) {
+                    try {
+                        val deepBundle = withTimeoutOrNull(22_000) {
+                            B3NetworkService.fetchAssetChartBundle(clean, normalizedRange, deepFinancial = true)
+                        } ?: return@launch
+                        withContext(Dispatchers.Main) {
+                            val current = _assetChartBundles.value.toMutableMap()
+                            current[clean] = mergeAssetChartBundles(current[clean] ?: currentBundle, deepBundle)
+                            _assetChartBundles.value = current
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.w("PortfolioViewModel", "Deep financial chart refresh did not complete for $clean", e)
+                    }
+                }
             }
         }
     }

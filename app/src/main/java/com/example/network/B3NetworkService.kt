@@ -1906,12 +1906,20 @@ object B3NetworkService {
         return out
     }
 
+    private fun financialPointCompleteness(point: FinancialStatementPoint): Int {
+        return listOf(
+            point.netRevenue, point.netProfit, point.cost, point.grossProfit, point.ebitda, point.ebit,
+            point.netWorth, point.totalAssets, point.totalLiabilities
+        ).count { it != 0.0 && it.isFinite() }
+    }
+
     private fun parseFirstFinancialStatementPoints(vararg sources: Any?): List<FinancialStatementPoint> {
-        for (source in sources) {
-            val parsed = parseFinancialStatementPointsFromAny(source)
-            if (parsed.isNotEmpty()) return parsed
-        }
-        return emptyList()
+        val all = sources.flatMap { parseFinancialStatementPointsFromAny(it) }
+        // Antes a função retornava a primeira fonte não vazia. Isso quebrava o Balanço/Evolução
+        // quando uma fonte parcial trazia apenas PL e uma fonte seguinte trazia Ativo/Passivo.
+        return mergeFinancialStatementPoints(all)
+            .filter { financialPointCompleteness(it) > 0 }
+            .sortedWith(compareBy<FinancialStatementPoint> { it.year.ifBlank { it.label } }.thenBy { it.quarter })
     }
 
     private fun parseFinancialStatementPointsFromAny(source: Any?, fallbackYear: String = ""): List<FinancialStatementPoint> {
@@ -2165,11 +2173,23 @@ object B3NetworkService {
     }
 
     private fun parseFirstProfitVsQuotePoints(vararg sources: Any?): List<AssetComparisonPoint> {
+        val byLabel = linkedMapOf<String, AssetComparisonPoint>()
         for (source in sources) {
-            val parsed = parseProfitVsQuotePointsFromAny(source)
-            if (parsed.isNotEmpty()) return parsed
+            for (point in parseProfitVsQuotePointsFromAny(source)) {
+                val label = point.label
+                if (label.isBlank()) continue
+                val key = canonicalKey(label)
+                val current = byLabel[key] ?: AssetComparisonPoint(label = label, value = 0.0, secondaryValue = 0.0, dateMillis = point.dateMillis)
+                byLabel[key] = current.copy(
+                    value = if (current.value != 0.0) current.value else point.value,
+                    secondaryValue = if (current.secondaryValue != 0.0) current.secondaryValue else point.secondaryValue,
+                    dateMillis = if (current.dateMillis != 0L) current.dateMillis else point.dateMillis
+                )
+            }
         }
-        return emptyList()
+        return byLabel.values
+            .filter { it.label.isNotBlank() && (it.value != 0.0 || it.secondaryValue != 0.0) }
+            .sortedBy { extractYearFromLabel(it.label).ifBlank { it.label } }
     }
 
     private fun parseProfitVsQuotePointsFromAny(source: Any?): List<AssetComparisonPoint> {
@@ -4727,10 +4747,10 @@ object B3NetworkService {
         return summary
     }
 
-    fun fetchAssetChartBundle(ticker: String, range: String = "1Y", bypassCache: Boolean = false): AssetChartBundle {
+    fun fetchAssetChartBundle(ticker: String, range: String = "1Y", bypassCache: Boolean = false, deepFinancial: Boolean = false): AssetChartBundle {
         val clean = ticker.trim().uppercase(Locale.ROOT)
         val normalizedRange = normalizeProxyRange(range)
-        val cacheKey = "asset_chart_bundle_${clean}_$normalizedRange"
+        val cacheKey = "asset_chart_bundle_${clean}_${normalizedRange}_${if (deepFinancial) "deep" else "fast"}"
         if (!bypassCache) {
             getFromCache<AssetChartBundle>(cacheKey)?.let { return it }
         }
@@ -4743,8 +4763,35 @@ object B3NetworkService {
          * "Finanças & Balanço" por até ~1 minuto. Agora o app pede um contrato mobile/fast
          * único, cacheável e stale-safe. O gráfico de preço vira complemento, nunca bloqueador.
          */
-        val json = getProxyJson(
-            "/api/v1/asset",
+        val requestParams = if (deepFinancial) {
+            mapOf(
+                "ticker" to clean,
+                "view" to "app",
+                "profile" to "chartdeep",
+                "performance" to "chartdeep",
+                "mode" to "financial-charts-deep",
+                "complete" to "1",
+                "full" to "1",
+                "strict" to "0",
+                "charts" to "financial-full",
+                "includeCharts" to "1",
+                "chartSource" to "investidor10",
+                "chartProfile" to "financial-deep",
+                "internalApis" to "1",
+                "adaptiveCompletion" to "1",
+                "statusInvestComplement" to "0",
+                "includeNews" to "0",
+                "returnHtml" to "1",
+                "maxHtmlChars" to "4000000",
+                "timeoutMs" to "18000",
+                "valoraeScrapeTimeoutMs" to "16000",
+                "adaptiveCompletionTimeoutMs" to "6500",
+                "staleWhileRevalidate" to "1",
+                "staleIfError" to "1",
+                "cache" to "1",
+                "nocache" to if (bypassCache) "1" else null
+            )
+        } else {
             mapOf(
                 "ticker" to clean,
                 "view" to "app",
@@ -4772,7 +4819,8 @@ object B3NetworkService {
                 "cache" to "1",
                 "nocache" to if (bypassCache) "1" else null
             )
-        )
+        }
+        val json = getProxyJson("/api/v1/asset", requestParams)
 
         val root = unwrapValoraePayload(json) ?: JSONObject()
         val mappedAsset = mapProxyAsset(root)
