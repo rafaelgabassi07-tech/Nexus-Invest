@@ -1,0 +1,17 @@
+Comando tentado:
+./gradlew :app:assembleDebug --offline
+
+Resultado:
+Falhou no ambiente de execução porque o Gradle Wrapper tentou baixar a distribuição Gradle 9.3.1 em:
+https://services.gradle.org/distributions/gradle-9.3.1-bin.zip
+
+Erro principal:
+java.net.UnknownHostException: services.gradle.org
+
+Impacto:
+Não indica erro no código alterado. O ambiente atual não possui internet/cache local suficiente para baixar a distribuição Gradle. A alteração principal foi feita no index.html raiz e em metadados de versão.
+
+Validação realizada:
+- index.html gerado como arquivo único.
+- script JavaScript validado com `node --check` sem erros de sintaxe.
+- screenshots renderizados via Chromium headless com storage em memória.
