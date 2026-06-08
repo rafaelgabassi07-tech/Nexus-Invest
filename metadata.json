@@ -5,6 +5,8 @@
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ],
-  "versionName": "2.0.29",
-  "versionCode": 39
+  "versionName": "2.0.30",
+  "versionCode": 40,
+  "generatedAt": "2026-06-08T19:50:00.000-03:00",
+  "notes": "Agenda de dividendos com varredura de meses futuros e evolução de proventos com histórico retroativo real via Proxy v21.12.67."
 }

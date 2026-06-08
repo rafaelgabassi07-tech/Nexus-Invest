@@ -1071,7 +1071,7 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
                     val analysisDeferred = async { withTimeoutOrNull(8_000) { runCatching { B3NetworkService.fetchPortfolioAnalysis(positions) }.getOrNull() } }
                     val historyDeferred = async { withTimeoutOrNull(8_000) { runCatching { B3NetworkService.fetchPortfolioHistory(positions, "1Y") }.getOrDefault(emptyList()) }.orEmpty() }
                     val ipcaDeferred = async { withTimeoutOrNull(4_500) { runCatching { B3NetworkService.fetchIpcaSeries(12) }.getOrDefault(emptyList()) }.orEmpty() }
-                    val dividendsDeferred = async { withTimeoutOrNull(20_000) { runCatching { B3NetworkService.fetchNextDividends(positions) }.getOrDefault(emptyList()) }.orEmpty() }
+                    val dividendsDeferred = async { withTimeoutOrNull(35_000) { runCatching { B3NetworkService.fetchNextDividends(positions) }.getOrDefault(emptyList()) }.orEmpty() }
                     val portfolioRankingDeferred = async { withTimeoutOrNull(6_000) { runCatching { B3NetworkService.fetchPortfolioRankings(positions) }.getOrNull() } }
 
                     val remoteAnalysis = analysisDeferred.await()
@@ -1276,44 +1276,37 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
         summaries: List<AssetSummary>
     ): List<DividendEvent> {
         val currentQty = summaries.associateBy({ it.ticker.trim().uppercase(java.util.Locale.ROOT) }, { it.sharesCount })
-        val todayStart = startOfDayMillis(System.currentTimeMillis())
         return events.mapNotNull { event ->
             val ticker = event.ticker.trim().uppercase(java.util.Locale.ROOT)
             if (ticker.isBlank()) return@mapNotNull null
-
-            val comDateMillis = parsePortfolioDateMillis(event.dateCom).takeIf { it > 0L }
-            val paymentDateMillis = parsePortfolioDateMillis(event.paymentDate).takeIf { it > 0L }
-            val eligibilityMillis = comDateMillis ?: paymentDateMillis
-            val relevantMillis = paymentDateMillis ?: comDateMillis
-            val isFutureOrProvisioned = relevantMillis == null || relevantMillis >= todayStart
-
-            val ownedAtEligibility = eligibilityMillis?.let { sharesOwnedAt(txs, ticker, endOfDayMillis(it)) } ?: 0.0
-            val currentShares = currentQty[ticker] ?: 0.0
-            val eligibleShares = when {
-                ownedAtEligibility > 0.0001 -> ownedAtEligibility
-                isFutureOrProvisioned && currentShares > 0.0001 -> currentShares
-                isFutureOrProvisioned && event.quantity > 0.0001 -> event.quantity
-                else -> 0.0
+            val rawDate = parsePortfolioDateMillis(event.dateCom).takeIf { it > 0L }
+                ?: parsePortfolioDateMillis(event.paymentDate).takeIf { it > 0L }
+            val now = System.currentTimeMillis()
+            val isPastEvent = rawDate != null && rawDate < startOfDayMillis(now)
+            val eligibleShares = if (rawDate != null) {
+                val owned = sharesOwnedAt(txs, ticker, endOfDayMillis(rawDate))
+                when {
+                    owned > 0.0 -> owned
+                    !isPastEvent -> currentQty[ticker] ?: event.quantity
+                    else -> 0.0
+                }
+            } else {
+                currentQty[ticker] ?: event.quantity
             }.coerceAtLeast(0.0)
-
-            val hasRealEventMarker = event.dateCom.isNotBlank() || event.paymentDate.isNotBlank() || event.source.isNotBlank()
-            if (eligibleShares <= 0.0001 && !isFutureOrProvisioned) return@mapNotNull null
-            if (eligibleShares <= 0.0001 && !hasRealEventMarker) return@mapNotNull null
 
             val amountFromUnit = if (event.valuePerShare > 0.0 && eligibleShares > 0.0) event.valuePerShare * eligibleShares else 0.0
             val proratedAmount = if (amountFromUnit > 0.0) amountFromUnit
                 else if (event.estimatedAmount > 0.0 && event.quantity > 0.0 && eligibleShares > 0.0) event.estimatedAmount * (eligibleShares / event.quantity)
-                else if (isFutureOrProvisioned) event.estimatedAmount
-                else 0.0
+                else event.estimatedAmount
+            val hasRealEventMarker = event.dateCom.isNotBlank() || event.paymentDate.isNotBlank() || event.source.isNotBlank()
+            if (eligibleShares <= 0.0001 && rawDate != null && rawDate < startOfDayMillis(System.currentTimeMillis())) return@mapNotNull null
             if (proratedAmount <= 0.0 && event.valuePerShare <= 0.0 && !hasRealEventMarker) return@mapNotNull null
-
             event.copy(
-                ticker = ticker,
                 quantity = if (eligibleShares > 0.0) eligibleShares else event.quantity,
                 estimatedAmount = proratedAmount.coerceAtLeast(0.0),
-                status = event.status.ifBlank { if (isFutureOrProvisioned) "Previsto" else "Recebido" }
+                status = event.status.ifBlank { if (rawDate == null) "Estimado" else "Elegível pela carteira" }
             )
-        }.distinctBy { listOf(it.ticker.trim().uppercase(java.util.Locale.ROOT), it.dateCom, it.paymentDate, it.valuePerShare).joinToString("|") }
+        }.distinctBy { listOf(it.ticker, it.dateCom, it.paymentDate, it.valuePerShare).joinToString("|") }
     }
 
     private fun buildLocalPortfolioAnalysis(summaries: List<AssetSummary>): PortfolioProxyAnalysis {

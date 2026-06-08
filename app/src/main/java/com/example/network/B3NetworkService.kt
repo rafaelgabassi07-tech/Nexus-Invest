@@ -2530,7 +2530,7 @@ object B3NetworkService {
             .put("ticker", clean)
             .put("type", assetType)
             .put("assetType", assetType)
-            .put("limit", 250)
+            .put("limit", 500)
             .put("mode", "complete")
             .put("complete", true)
             .put("includeHistory", true)
@@ -4318,16 +4318,52 @@ object B3NetworkService {
             .put("complete", true)
             .put("includeHistory", true)
             .put("includeUpcoming", true)
-            .put("limit", 250)
+            .put("limit", 500)
         val roots = mutableListOf<JSONObject>()
-        val params = mapOf("tickers" to tickers.joinToString(","), "limit" to "250", "mode" to "complete", "complete" to "1", "includeUpcoming" to "1", "includeHistory" to "1")
-        val nextJson = getProxyJson("/api/v1/portfolio/next-dividends", params)
-        val historyJson = getProxyJson("/api/v1/portfolio/dividends", params)
-        val nextPostJson = postProxyJson("/api/v1/portfolio/next-dividends", payload)
-        val historyPostJson = postProxyJson("/api/v1/portfolio/dividends", payload)
-        listOfNotNull(nextJson, historyJson, nextPostJson, historyPostJson)
+        val firstPortfolioMillis = positions.mapNotNull { it.firstPurchaseAt.takeIf { ts -> ts > 0L } }.minOrNull() ?: 0L
+        val historyMonths = if (firstPortfolioMillis > 0L) {
+            val start = Calendar.getInstance().apply { timeInMillis = firstPortfolioMillis }
+            val now = Calendar.getInstance()
+            ((now.get(Calendar.YEAR) - start.get(Calendar.YEAR)) * 12 + (now.get(Calendar.MONTH) - start.get(Calendar.MONTH)) + 2).coerceIn(12, 72)
+        } else 36
+        val startDate = if (firstPortfolioMillis > 0L) SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(firstPortfolioMillis)) else ""
+        val params = mapOf(
+            "tickers" to tickers.joinToString(","),
+            "limit" to "500",
+            "mode" to "complete",
+            "complete" to "1",
+            "includeUpcoming" to "1",
+            "includeHistory" to "1",
+            "futureMonths" to "24",
+            "historyMonths" to historyMonths.toString(),
+            "monthsForward" to "24",
+            "monthsBack" to historyMonths.toString(),
+            "startDate" to startDate,
+            "agendaConcurrency" to "4"
+        )
+        payload
+            .put("futureMonths", 24)
+            .put("historyMonths", historyMonths)
+            .put("monthsForward", 24)
+            .put("monthsBack", historyMonths)
+            .put("startDate", startDate)
+            .put("agendaConcurrency", 4)
+        // Chamada principal consolidada: a versão nova do Proxy já devolve agenda futura e histórico
+        // no mesmo contrato. Evita até quatro varreduras mensais completas no Investidor10.
+        val primaryJson = postProxyJson("/api/v1/portfolio/dividends", payload)
+            ?: getProxyJson("/api/v1/portfolio/dividends", params)
+        listOfNotNull(primaryJson)
             .flatMap { dividendPayloadCandidates(it) }
             .forEach { candidate -> if (roots.none { it.toString() == candidate.toString() }) roots.add(candidate) }
+
+        // Fallback leve para compatibilidade com proxies antigos ou respostas vazias.
+        if (roots.isEmpty()) {
+            val fallbackJson = postProxyJson("/api/v1/portfolio/next-dividends", payload)
+                ?: getProxyJson("/api/v1/portfolio/next-dividends", params)
+            listOfNotNull(fallbackJson)
+                .flatMap { dividendPayloadCandidates(it) }
+                .forEach { candidate -> if (roots.none { it.toString() == candidate.toString() }) roots.add(candidate) }
+        }
 
         val quantityByTicker = positions.associateBy({ it.ticker.trim().uppercase(Locale.ROOT) }, { it.quantity })
         val out = mutableListOf<DividendEvent>()

@@ -322,7 +322,7 @@ fun ChartsScreen(viewModel: PortfolioViewModel, modifier: Modifier = Modifier) {
                 }
                 ChartCard(
                     title = "Agenda de Dividendos",
-                    description = "Próximas datas-com e pagamentos confirmados, evitando misturar eventos antigos na agenda.",
+                    description = "Datas-com, pagamentos, JCP, eventos anunciados/provisionados e confirmados dos seus ativos.",
                     subStats = "R$ ${String.format("%.2f", agendaPreviewAmount)} previsto",
                     icon = Icons.AutoMirrored.Outlined.EventNote,
                     onClick = { activeDetailPage = "Agenda" }
@@ -715,8 +715,14 @@ fun DividendEventsList(
             items.forEach { (event, eligibleAmount) ->
                 val payDate = event.paymentDate.ifBlank { "A confirmar" }
                 val comDate = event.dateCom.ifBlank { "A confirmar" }
+                val normalizedStatus = when {
+                    event.paymentDate.isNotBlank() -> "Confirmado"
+                    event.status.contains("provision", ignoreCase = true) || event.status.contains("anunci", ignoreCase = true) -> "Anunciado"
+                    event.status.contains("jscp", ignoreCase = true) || event.status.contains("jcp", ignoreCase = true) -> "JCP"
+                    else -> event.status.ifBlank { "Anunciado" }
+                }
                 val eligibleShares = eventEligibilityMillis(event).takeIf { it > 0L }?.let {
-                    sharesOwnedAtInsightDate(transactions, event.ticker, endOfInsightDayMillis(it))
+                    sharesOwnedAtInsightDate(transactions, event.ticker, endOfInsightDayMillis(it)).takeIf { qty -> qty > 0.0001 } ?: event.quantity
                 } ?: event.quantity
                 Surface(
                     color = DarkSurfaceElevated,
@@ -747,7 +753,7 @@ fun DividendEventsList(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(event.ticker, color = TextPrimary, fontWeight = FontWeight.Black, fontSize = 14.sp)
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text(event.status, color = TextSecondary, fontSize = 10.sp, maxLines = 1)
+                                Text(normalizedStatus, color = TextSecondary, fontSize = 10.sp, maxLines = 1)
                             }
                             Spacer(modifier = Modifier.height(3.dp))
                             Text("Data COM: $comDate · ${event.source}", color = TextSecondary, fontSize = 10.sp)
@@ -2713,27 +2719,34 @@ private fun sharesOwnedAtInsightDate(
 
 private fun eligibleDividendAmount(
     event: DividendEvent,
-    transactions: List<com.example.data.Transaction>,
-    allowProjectionFallback: Boolean = true
+    transactions: List<com.example.data.Transaction>
 ): Double {
-    val relevantTs = eventRelevantMillis(event)
-    val todayStart = startOfInsightDayMillis(System.currentTimeMillis())
-    val isFutureOrProvisioned = relevantTs <= 0L || relevantTs >= todayStart
-
-    if (transactions.isEmpty()) {
-        return if (allowProjectionFallback || isFutureOrProvisioned) safeDividendAmount(event) else 0.0
-    }
+    if (transactions.isEmpty()) return safeDividendAmount(event)
 
     val eligibilityTs = eventEligibilityMillis(event)
-    val fallbackTs = if (eligibilityTs > 0L) eligibilityTs else relevantTs.takeIf { it > 0L } ?: System.currentTimeMillis()
-    val sharesAtEligibility = sharesOwnedAtInsightDate(transactions, event.ticker, endOfInsightDayMillis(fallbackTs))
-    val projectedShares = if (allowProjectionFallback && isFutureOrProvisioned) event.quantity.takeIf { it > 0.0 } ?: 0.0 else 0.0
-    val finalShares = if (sharesAtEligibility > 0.0001) sharesAtEligibility else projectedShares
+    val relevantTs = eventRelevantMillis(event)
+    val todayStart = startOfInsightDayMillis(System.currentTimeMillis())
+    val isPastPayment = relevantTs > 0L && relevantTs < todayStart
+    val fallbackTs = if (eligibilityTs > 0L) eligibilityTs else if (relevantTs > 0L) relevantTs else System.currentTimeMillis()
+
+    val shares = sharesOwnedAtInsightDate(transactions, event.ticker, endOfInsightDayMillis(fallbackTs))
+
+    // Para eventos futuros/anunciados, usa a quantidade atual injetada pelo ViewModel como projeção.
+    // Para histórico pago, NÃO usa quantidade atual quando não há posição na data-com/pagamento,
+    // evitando criar proventos retroativos falsos.
+    val finalShares = when {
+        shares > 0.0001 -> shares
+        !isPastPayment && event.quantity > 0.0 -> event.quantity
+        !isPastPayment -> 0.0
+        else -> 0.0
+    }
 
     if (finalShares <= 0.0001) return 0.0
+
     if (event.valuePerShare > 0.0) return event.valuePerShare * finalShares
     if (event.estimatedAmount > 0.0 && event.quantity > 0.0) return event.estimatedAmount * (finalShares / event.quantity)
-    return if (allowProjectionFallback || isFutureOrProvisioned) event.estimatedAmount.coerceAtLeast(0.0) else 0.0
+
+    return event.estimatedAmount.coerceAtLeast(0.0)
 }
 
 private fun isPaidDividendEvent(event: DividendEvent, nowMillis: Long = System.currentTimeMillis()): Boolean {
@@ -2846,9 +2859,8 @@ private fun buildDividendEvolutionData(
         }
         .mapNotNull { event ->
             val ts = eventRelevantMillis(event)
-            if (ts <= 0L || ts < lowerBoundTime || !isPaidDividendEvent(event)) return@mapNotNull null
-            val amount = eligibleDividendAmount(event, transactions, allowProjectionFallback = false)
-            if (amount <= 0.0) null else event to amount
+            val amount = eligibleDividendAmount(event, transactions)
+            if (amount <= 0.0 || ts < lowerBoundTime) null else event to amount
         }
         .groupBy { (event, _) -> eventMonthLabel(event) }
 
@@ -2857,9 +2869,9 @@ private fun buildDividendEvolutionData(
         cal.add(java.util.Calendar.MONTH, i)
         val monthLabel = String.format("%02d/%d", cal.get(java.util.Calendar.MONTH) + 1, cal.get(java.util.Calendar.YEAR))
         val bucket = eventsByMonth[monthLabel].orEmpty()
-        val received = bucket.sumOf { it.second }.toFloat()
-        val projected = 0f
-
+        var received = bucket.filter { isPaidDividendEvent(it.first) }.sumOf { it.second }.toFloat()
+        var projected = bucket.filter { !isPaidDividendEvent(it.first) }.sumOf { it.second }.toFloat()
+        
         com.example.ui.components.StackedBarData(received = received, projected = projected, label = monthLabel)
     }
 }
@@ -2910,8 +2922,8 @@ private fun buildTopDividendAssetsForPeriod(
         .mapNotNull { event ->
             val ts = eventRelevantMillis(event)
             if (ts <= 0L || ts < start || ts > end) return@mapNotNull null
-            val amount = eligibleDividendAmount(event, transactions, allowProjectionFallback = false)
-            if (amount > 0.0 && isPaidDividendEvent(event)) event.ticker.trim().uppercase(java.util.Locale.ROOT) to amount else null
+            val amount = eligibleDividendAmount(event, transactions)
+            if (amount > 0.0) event.ticker.trim().uppercase(java.util.Locale.ROOT) to amount else null
         }
         .groupBy({ it.first }, { it.second })
         .mapValues { (_, values) -> values.sum() }
