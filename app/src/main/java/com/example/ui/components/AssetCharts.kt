@@ -137,6 +137,12 @@ fun AssetChartBundlePanel(
             )
         }
 
+        if (bundle.indicatorCards.isNotEmpty()) {
+            ChartCardContainer(title = "Indicadores capturados do ativo") {
+                FiiPatrimonialInfoChart(bundle.indicatorCards.take(20))
+            }
+        }
+
         if (isFii) {
             // Category 1: Desempenho e Rentabilidade
             ChartCategoryHeader(
@@ -307,16 +313,18 @@ fun StockDividendTab(bundle: AssetChartBundle) {
             }
         }
 
-        ChartCardContainer(title = "Sazonalidade Mensal (Últimos 24m)") {
-            if (bundle.dividendMonthly.isNotEmpty()) {
+        FilteredChartCard(title = "Sazonalidade Mensal", filterOptions = listOf("24M", "60M", "MAX"), defaultFilter = "60M") { filter ->
+            val limit = filter.replace("M", "").toIntOrNull() ?: Int.MAX_VALUE
+            val filteredPoints = bundle.dividendMonthly.takeLast(limit)
+            if (filteredPoints.isNotEmpty()) {
                 AssetDividendPaidChart(
-                    points = bundle.dividendMonthly,
+                    points = filteredPoints,
                     label = "Mês",
                     modifier = Modifier.height(150.dp),
                     barColor = GoldPale
                 )
             } else {
-                EmptyChartState("Sem distribuição mensal", "Distribuições mensais recentes indisponíveis.")
+                EmptyChartState("Sem distribuição mensal", "Distribuições mensais do histórico ainda não foram recebidas.")
             }
         }
 
@@ -422,7 +430,7 @@ fun StockDreTab(bundle: AssetChartBundle) {
         FilteredChartCard(title = "Balanço Patrimonial: Ativo/PL/Passivo", filterOptions = listOf("3A", "5A", "8A", "MAX"), defaultFilter = "8A") { filter ->
             val filterYears = filter.replace("A", "").toIntOrNull() ?: Int.MAX_VALUE
             val filteredPoints = bundle.balanceSheet
-                .filter { it.totalAssets != 0.0 && it.netWorth != 0.0 && it.totalLiabilities != 0.0 }
+                .filter { listOf(it.totalAssets, it.netWorth, it.totalLiabilities).count { v -> v != 0.0 } >= 2 }
                 .sortedBy { it.year }
                 .takeLast(filterYears)
             if (filteredPoints.size >= 2) {
@@ -431,7 +439,7 @@ fun StockDreTab(bundle: AssetChartBundle) {
                     modifier = Modifier.height(160.dp)
                 )
             } else {
-                EmptyChartState("Balanço real indisponível", "O APK só monta Ativo / PL / Passivo quando o Proxy entrega as três séries históricas reais do Investidor10.")
+                EmptyChartState("Balanço real indisponível", "O APK monta o gráfico quando o Proxy entrega pelo menos duas séries históricas reais entre Ativo, PL e Passivo.")
             }
         }
     }
@@ -530,16 +538,18 @@ fun FiiDividendTab(bundle: AssetChartBundle) {
             }
         }
 
-        ChartCardContainer(title = "Sazonalidade Mensal (Últimos 24m)") {
-            if (bundle.dividendMonthly.isNotEmpty()) {
+        FilteredChartCard(title = "Sazonalidade Mensal", filterOptions = listOf("24M", "60M", "MAX"), defaultFilter = "60M") { filter ->
+            val limit = filter.replace("M", "").toIntOrNull() ?: Int.MAX_VALUE
+            val filteredPoints = bundle.dividendMonthly.takeLast(limit)
+            if (filteredPoints.isNotEmpty()) {
                 AssetDividendPaidChart(
-                    points = bundle.dividendMonthly,
+                    points = filteredPoints,
                     label = "Mês",
                     modifier = Modifier.height(150.dp),
                     barColor = GoldPale
                 )
             } else {
-                EmptyChartState("Sem mensalidade", "Distribuições mensais recentes indisponíveis.")
+                EmptyChartState("Sem mensalidade", "Distribuições mensais do histórico ainda não foram recebidas.")
             }
         }
 

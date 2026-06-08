@@ -7,6 +7,6 @@
   ],
   "versionName": "2.0.31",
   "versionCode": 41,
-  "generatedAt": "2026-06-08T20:22:00.000-03:00",
-  "notes": "Index.html reconstruído como versão web avançada do APK: visual Material 3 Valorae, navegação inferior, cards, animações, carteira local, agenda/evolução de proventos e integração compatível com VALORAE Proxy."
+  "generatedAt": "2026-06-08T19:50:00.000-03:00",
+  "notes": "Agenda de dividendos com varredura de meses futuros e evolução de proventos com histórico retroativo real via Proxy v21.12.67."
 }

@@ -1,6 +1,6 @@
 {
   "latestVersionCode": 37,
-  "versionName": "2.0.32",
+  "versionName": "2.0.27",
   "downloadUrl": "",
   "releaseDate": "2026-06-06",
   "isMandatory": false,
@@ -14,7 +14,7 @@
     "Eventos reais do Proxy continuam visíveis mesmo sem valor estimado da carteira.",
     "Removidos pacotes duplicados/antigos para evitar compilação da versão errada."
   ],
-  "versionCode": 42,
+  "versionCode": 37,
   "apkUrl": "",
   "releaseNotes": "Correção profunda da integração Agenda de Dividendos ↔ VALORAE Proxy: POST/GET, aliases recursivos, fallback por ativo, refresh ao abrir Agenda/Proventos e limpeza de pacote duplicado."
 }

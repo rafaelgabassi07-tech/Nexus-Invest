@@ -2555,11 +2555,44 @@ object B3NetworkService {
         return distinct
     }
 
+    private fun dividendDateMillis(event: DividendEvent): Long {
+        return parseFlexibleDateMillis(event.paymentDate.ifBlank { event.dateCom })
+    }
+
+    private fun dividendYearKey(event: DividendEvent): String {
+        val ts = dividendDateMillis(event)
+        if (ts > 0L) return SimpleDateFormat("yyyy", Locale.getDefault()).format(Date(ts))
+        val raw = event.paymentDate.ifBlank { event.dateCom }.trim()
+        return when {
+            raw.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) -> raw.take(4)
+            raw.contains("/") -> raw.substringAfterLast("/", "").let { if (it.length == 2) "20$it" else it }
+            else -> ""
+        }
+    }
+
+    private fun dividendMonthKey(event: DividendEvent): String {
+        val ts = dividendDateMillis(event)
+        if (ts > 0L) return SimpleDateFormat("MM/yyyy", Locale.getDefault()).format(Date(ts))
+        val raw = event.paymentDate.ifBlank { event.dateCom }.trim()
+        return when {
+            raw.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) -> "${raw.substring(5, 7)}/${raw.take(4)}"
+            raw.contains("/") -> {
+                val parts = raw.split("/")
+                if (parts.size >= 3) "${parts[1].padStart(2, '0')}/${if (parts[2].length == 2) "20${parts[2]}" else parts[2]}" else ""
+            }
+            else -> ""
+        }
+    }
+
+    private fun sortMonthKey(label: String): String {
+        val parts = label.split("/")
+        return if (parts.size == 2) "${parts[1]}-${parts[0].padStart(2, '0')}" else label
+    }
+
     private fun buildDividendYearly(events: List<DividendEvent>, currentPrice: Double): Pair<List<AssetIndicatorPoint>, List<AssetIndicatorPoint>> {
         val byYear = linkedMapOf<String, Double>()
         for (event in events) {
-            val ts = parseFlexibleDateMillis(event.paymentDate.ifBlank { event.dateCom })
-            val year = if (ts > 0L) SimpleDateFormat("yyyy", Locale.getDefault()).format(Date(ts)) else event.dateCom.substringAfterLast("/", "")
+            val year = dividendYearKey(event)
             val value = event.valuePerShare.takeIf { it > 0.0 } ?: continue
             if (year.length == 4 && year.all { it.isDigit() }) byYear[year] = (byYear[year] ?: 0.0) + value
         }
@@ -2575,18 +2608,14 @@ object B3NetworkService {
         return yearly to dy
     }
 
-    private fun buildDividendMonthly(events: List<DividendEvent>, limit: Int = 24): List<AssetIndicatorPoint> {
+    private fun buildDividendMonthly(events: List<DividendEvent>, limit: Int = 120): List<AssetIndicatorPoint> {
         val byMonth = linkedMapOf<String, Double>()
         for (event in events) {
-            val ts = parseFlexibleDateMillis(event.paymentDate.ifBlank { event.dateCom })
-            val label = if (ts > 0L) SimpleDateFormat("MM/yyyy", Locale.getDefault()).format(Date(ts)) else continue
+            val label = dividendMonthKey(event)
             val value = event.valuePerShare.takeIf { it > 0.0 } ?: continue
-            byMonth[label] = (byMonth[label] ?: 0.0) + value
+            if (label.isNotBlank()) byMonth[label] = (byMonth[label] ?: 0.0) + value
         }
-        return byMonth.toSortedMap(compareBy<String> { label ->
-            val parts = label.split("/")
-            if (parts.size == 2) "${parts[1]}-${parts[0]}" else label
-        }).entries.toList().takeLast(limit).map { (period, total) ->
+        return byMonth.toSortedMap(compareBy<String> { sortMonthKey(it) }).entries.toList().takeLast(limit).map { (period, total) ->
             AssetIndicatorPoint(label = "Mensal", value = total, display = String.format(Locale.ROOT, "R$ %.4f", total), period = period)
         }
     }
@@ -5331,6 +5360,9 @@ object B3NetworkService {
         appendDividendEventsFromArray(
             ticker,
             firstArray(
+                canonicalCharts?.optJSONArray("dividendHistory"),
+                canonicalCharts?.optObject("company")?.optJSONArray("dividendHistory"),
+                canonicalCharts?.optObject("fii")?.optJSONArray("dividendHistory"),
                 results.optJSONArray("historicoDividendos"),
                 results.optJSONArray("dividends"),
                 results.optJSONArray("historicoProventos"),
@@ -5372,20 +5404,13 @@ object B3NetworkService {
             val byYear = mutableMapOf<String, Double>()
             val byMonth = mutableMapOf<String, Double>()
             for (ev in dividendEvents) {
-                val year = try {
-                    ev.paymentDate.ifBlank { ev.dateCom }.substringAfterLast("/", "Previsto")
-                } catch (_: Exception) { "Previsto" }
+                val year = dividendYearKey(ev)
                 if (year.length == 4 && year.all { it.isDigit() }) {
                     byYear[year] = (byYear[year] ?: 0.0) + ev.valuePerShare
                 }
 
-                val monthYear = try {
-                    val parts = ev.paymentDate.ifBlank { ev.dateCom }.split("/")
-                    if (parts.size >= 3) {
-                        parts[1] + "/" + parts[2]
-                    } else "Previsto"
-                } catch (_: Exception) { "Previsto" }
-                if (monthYear != "Previsto") {
+                val monthYear = dividendMonthKey(ev)
+                if (monthYear.isNotBlank()) {
                     byMonth[monthYear] = (byMonth[monthYear] ?: 0.0) + ev.valuePerShare
                 }
             }
@@ -5399,14 +5424,7 @@ object B3NetworkService {
                 }
             }
 
-            byMonth.entries.sortedWith { o1, o2 ->
-                val p1 = o1.key.split("/")
-                val p2 = o2.key.split("/")
-                if (p1.size == 2 && p2.size == 2) {
-                    val cmpYear = p1[1].compareTo(p2[1])
-                    if (cmpYear != 0) cmpYear else p1[0].compareTo(p2[0])
-                } else o1.key.compareTo(o2.key)
-            }.takeLast(24).forEach { (my, valSum) ->
+            byMonth.entries.sortedBy { sortMonthKey(it.key) }.takeLast(120).forEach { (my, valSum) ->
                 dividendMonthly.add(AssetIndicatorPoint(label = "Mensal", value = valSum, display = String.format(Locale.ROOT, "R$ %.4f", valSum), period = my))
             }
         }
