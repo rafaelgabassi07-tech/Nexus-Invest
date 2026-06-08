@@ -5,8 +5,8 @@
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ],
-  "versionName": "2.0.33",
-  "versionCode": 43,
+  "versionName": "2.0.34",
+  "versionCode": 44,
   "generatedAt": "2026-06-08T23:05:00.000-03:00",
   "notes": "Baseline/ProfileInstaller aplicado de forma conservadora: perfis manuais para startup, dashboard, detalhes do ativo, gráficos, análise e ViewModel, sem geração automática pesada no build; reportFullyDrawn/ReportDrawnWhen preparado para métricas e primeira tela utilizável."
 }

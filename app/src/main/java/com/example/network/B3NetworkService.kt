@@ -2029,9 +2029,12 @@ object B3NetworkService {
         val grossProfit = firstNumber(obj.optAny("gross_profit"), obj.optAny("grossProfit"), obj.optAny("lucroBruto"), obj.optAny("lucro_bruto"))
         val ebitda = firstNumber(obj.optAny("ebitda"), obj.optAny("EBITDA"))
         val ebit = firstNumber(obj.optAny("ebit"), obj.optAny("EBIT"))
-        val netWorth = firstNumber(obj.optAny("net_worth"), obj.optAny("netWorth"), obj.optAny("patrimonioLiquido"), obj.optAny("patrimonio_liquido"), obj.optAny("pl"), obj.optAny("equity"))
-        val totalAssets = firstNumber(obj.optAny("balance_total_assets"), obj.optAny("totalAssets"), obj.optAny("ativos"), obj.optAny("assets"), obj.optAny("ativoTotal"), obj.optAny("totalAtivos"))
-        val totalLiabilities = firstNumber(obj.optAny("balance_total_liabilities"), obj.optAny("totalLiabilities"), obj.optAny("passivos"), obj.optAny("liabilities"), obj.optAny("passivoTotal"), obj.optAny("totalPassivos"))
+        val netWorth = firstNumber(obj.optAny("net_worth"), obj.optAny("netWorth"), obj.optAny("patrimonioLiquido"), obj.optAny("patrimonio_liquido"),
+            obj.optAny("patrimonio"), obj.optAny("patrimonio_total"), obj.optAny("pl"), obj.optAny("equity"), obj.optAny("shareholdersEquity"))
+        val totalAssets = firstNumber(obj.optAny("balance_total_assets"), obj.optAny("totalAssets"), obj.optAny("total_assets"), obj.optAny("ativo"), obj.optAny("ativos"),
+            obj.optAny("assets"), obj.optAny("asset"), obj.optAny("ativoTotal"), obj.optAny("totalAtivos"), obj.optAny("total_ativos"), obj.optAny("assetsTotal"))
+        val totalLiabilities = firstNumber(obj.optAny("balance_total_liabilities"), obj.optAny("totalLiabilities"), obj.optAny("total_liabilities"), obj.optAny("passivo"), obj.optAny("passivos"),
+            obj.optAny("liabilities"), obj.optAny("liability"), obj.optAny("passivoTotal"), obj.optAny("totalPassivos"), obj.optAny("total_passivos"), obj.optAny("liabilitiesTotal"))
         val hasValues = listOf(netRevenue, netProfit, costVal, grossProfit, ebitda, ebit, netWorth, totalAssets, totalLiabilities).any { it != 0.0 && it.isFinite() }
         if (!hasValues || label.isBlank()) return null
         return FinancialStatementPoint(
@@ -2126,9 +2129,9 @@ object B3NetworkService {
             "cost" to listOf("cost", "costs", "custo", "custos"),
             "ebitda" to listOf("ebitda", "EBITDA"),
             "ebit" to listOf("ebit", "EBIT"),
-            "netWorth" to listOf("netWorth", "net_worth", "patrimonioLiquido", "patrimonio_liquido", "pl", "equity"),
-            "totalAssets" to listOf("totalAssets", "balance_total_assets", "ativos", "assets", "ativoTotal", "totalAtivos"),
-            "totalLiabilities" to listOf("totalLiabilities", "balance_total_liabilities", "passivos", "liabilities", "passivoTotal", "totalPassivos")
+            "netWorth" to listOf("netWorth", "net_worth", "patrimonioLiquido", "patrimonio_liquido", "patrimonio", "patrimonio_total", "pl", "equity", "shareholdersEquity"),
+            "totalAssets" to listOf("totalAssets", "total_assets", "balance_total_assets", "ativo", "ativos", "asset", "assets", "ativoTotal", "totalAtivos", "total_ativos", "assetsTotal"),
+            "totalLiabilities" to listOf("totalLiabilities", "total_liabilities", "balance_total_liabilities", "passivo", "passivos", "liability", "liabilities", "passivoTotal", "totalPassivos", "total_passivos", "liabilitiesTotal")
         )
         val pointsByLabel = linkedMapOf<String, FinancialStatementPoint>()
         for ((field, keys) in fieldCandidates) {
@@ -2311,9 +2314,9 @@ object B3NetworkService {
             key.contains("custo") || key.contains("cost") || key.contains("cpv") -> "cost"
             key.contains("ebitda") -> "ebitda"
             key.contains("ebit") -> "ebit"
-            key.contains("patrimonioliquido") || key == "pl" || key.contains("networth") || key.contains("equity") -> "netWorth"
-            key.contains("ativototal") || key.contains("totalativos") || key == "ativos" || key.contains("totalassets") || key.contains("assets") -> "totalAssets"
-            key.contains("passivototal") || key.contains("totalpassivos") || key == "passivos" || key.contains("totalliabilities") || key.contains("liabilities") -> "totalLiabilities"
+            key.contains("patrimonioliquido") || key == "patrimonio" || key == "pl" || key.contains("networth") || key.contains("equity") -> "netWorth"
+            key.contains("ativototal") || key.contains("totalativos") || key == "ativo" || key == "ativos" || key.contains("totalassets") || key.contains("assets") -> "totalAssets"
+            key.contains("passivototal") || key.contains("totalpassivos") || key == "passivo" || key == "passivos" || key.contains("totalliabilities") || key.contains("liabilities") -> "totalLiabilities"
             else -> ""
         }
     }
@@ -5504,6 +5507,8 @@ object B3NetworkService {
         }
 
         appendPayoutHistoryFromAny(canonicalFinancial?.optAny("payoutHistory"))
+        appendPayoutHistoryFromAny(canonicalCharts?.optAny("financial.payoutHistory"))
+        appendPayoutHistoryFromAny(canonicalCharts?.optAny("payoutHistory"))
         appendPayoutHistoryFromAny(canonicalFinancial?.optAny("payoutHistorico"))
 
         listOf(
@@ -5712,6 +5717,12 @@ object B3NetworkService {
                 results.optAny("distribuicaoFaturamento.regioesReceita"),
                 root.optAny("revenueGeography"),
                 root.optAny("revenueByRegion"),
+                canonicalCharts?.optAny("revenueGeography"),
+                canonicalCharts?.optAny("revenueByRegion"),
+                canonicalCharts?.optAny("revenueBreakdowns.geography"),
+                canonicalCharts?.optAny("revenueBreakdowns.region"),
+                canonicalCharts?.optAny("revenueBreakdowns.byRegion"),
+                canonicalCharts?.optAny("revenueBreakdowns.revenueGeography"),
                 normalized?.optAny("revenueGeography"),
                 normalized?.optAny("revenueByRegion"),
                 normalized?.optAny("regioesReceita"),
@@ -5749,6 +5760,12 @@ object B3NetworkService {
                 results.optAny("distribuicaoFaturamento.segmentosReceita"),
                 root.optAny("revenueSegment"),
                 root.optAny("revenueByBusiness"),
+                canonicalCharts?.optAny("revenueSegment"),
+                canonicalCharts?.optAny("revenueByBusiness"),
+                canonicalCharts?.optAny("revenueBreakdowns.business"),
+                canonicalCharts?.optAny("revenueBreakdowns.byBusiness"),
+                canonicalCharts?.optAny("revenueBreakdowns.segment"),
+                canonicalCharts?.optAny("revenueBreakdowns.revenueSegment"),
                 normalized?.optAny("negociosReceita"),
                 normalized?.optAny("segmentosReceita"),
                 normalized?.optAny("revenueSegment"),

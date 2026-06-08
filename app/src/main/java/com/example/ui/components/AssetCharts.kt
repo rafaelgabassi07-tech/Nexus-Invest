@@ -1537,52 +1537,139 @@ fun AssetRevenueProfitChart(points: List<FinancialStatementPoint>, modifier: Mod
 
 @Composable
 fun AssetProfitVsQuoteChart(points: List<AssetComparisonPoint>, modifier: Modifier = Modifier) {
-    val items = points.filter { it.value.isFinite() && it.secondaryValue.isFinite() }
+    val items = points
+        .filter { it.value.isFinite() && it.secondaryValue.isFinite() && (it.value != 0.0 || it.secondaryValue != 0.0) }
+        .sortedWith(compareBy<AssetComparisonPoint> { if (it.dateMillis > 0L) it.dateMillis else Long.MAX_VALUE }.thenBy { it.label })
     if (items.isEmpty()) return
 
-    val maxVal = items.maxOf { it.value.coerceAtLeast(it.secondaryValue) }.let { if (!it.isFinite() || it <= 0.0) 1.0 else it }.toFloat()
-    val minVal = items.minOf { it.value.coerceAtMost(it.secondaryValue) }.let { if (!it.isFinite()) 0.0 else it }.toFloat()
-    val range = (maxVal - minVal).takeIf { it.isFinite() && it > 0.0001f } ?: 1f
+    // Lucro e cotação têm ordens de grandeza diferentes: cotação vem em R$ e lucro geralmente em milhões/bilhões.
+    // Desenhar ambos no mesmo eixo absoluto empurrava a cotação para o chão e o lucro para o topo.
+    // Aqui cada série é indexada na própria base (=100), preservando a comparação visual sem distorcer valores reais.
+    fun firstUsable(values: List<Double>): Double = values.firstOrNull { kotlin.math.abs(it) > 0.000001 && it.isFinite() } ?: 1.0
+    val quoteBase = firstUsable(items.map { it.value })
+    val profitBase = firstUsable(items.map { it.secondaryValue })
+    val quoteIndexed = items.map { (it.value / quoteBase) * 100.0 }
+    val profitIndexed = items.map { (it.secondaryValue / profitBase) * 100.0 }
+    val allIndexed = quoteIndexed + profitIndexed
+    val rawMin = allIndexed.minOrNull()?.takeIf { it.isFinite() } ?: 90.0
+    val rawMax = allIndexed.maxOrNull()?.takeIf { it.isFinite() } ?: 110.0
+    val minIndex = kotlin.math.min(90.0, rawMin * 0.94)
+    val maxIndex = kotlin.math.max(110.0, rawMax * 1.06)
+    val range = (maxIndex - minIndex).takeIf { it.isFinite() && it > 0.000001 } ?: 1.0
 
-    Box(modifier = modifier) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val w = size.width
-            val h = size.height - 16.dp.toPx()
-            val total = items.size
-            val space = w / total
-            val pathQuote = Path()
-            val pathProfit = Path()
+    var activeIndex by remember(items) { mutableStateOf<Int?>(items.lastIndex.takeIf { it >= 0 }) }
+    fun indexForX(x: Float, width: Float): Int {
+        if (items.size <= 1 || width <= 0f) return 0
+        val step = width / (items.size - 1).coerceAtLeast(1)
+        return (x / step).roundToInt().coerceIn(0, items.size - 1)
+    }
+    fun moneyCompact(value: Double): String = when {
+        kotlin.math.abs(value) >= 1_000_000_000.0 -> String.format(Locale.ROOT, "R$ %.1f bi", value / 1_000_000_000.0)
+        kotlin.math.abs(value) >= 1_000_000.0 -> String.format(Locale.ROOT, "R$ %.1f mi", value / 1_000_000.0)
+        else -> String.format(Locale.ROOT, "R$ %.2f", value)
+    }
 
-            items.forEachIndexed { i, pt ->
-                val x = i * space + space / 2
-                val yQuote = h - (((pt.value.toFloat() - minVal) / range) * h).coerceIn(0f, h)
-                val yProfit = h - (((pt.secondaryValue.toFloat() - minVal) / range) * h).coerceIn(0f, h)
-
-                if (i == 0) {
-                    pathQuote.moveTo(x, yQuote)
-                    pathProfit.moveTo(x, yProfit)
-                } else {
-                    pathQuote.lineTo(x, yQuote)
-                    pathProfit.lineTo(x, yProfit)
+    Column(modifier = modifier) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            listOf("Cotação indexada" to GoldPrimary, "Lucro indexado" to SuccessGreen).forEach { (label, color) ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(modifier = Modifier.size(8.dp).background(color, CircleShape))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(label, color = TextSecondary, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                 }
-
-                // Interaction dots
-                drawCircle(color = GoldPrimary, radius = 2.dp.toPx(), center = Offset(x, yQuote))
-                drawCircle(color = SuccessGreen, radius = 2.dp.toPx(), center = Offset(x, yProfit))
             }
-            drawPath(path = pathQuote, color = GoldPrimary, style = Stroke(width = 2.dp.toPx()))
-            drawPath(path = pathProfit, color = SuccessGreen, style = Stroke(width = 2.dp.toPx()))
         }
+        Spacer(modifier = Modifier.height(6.dp))
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            Canvas(modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(items) {
+                    detectDragGestures(
+                        onDragStart = { offset -> activeIndex = indexForX(offset.x, size.width.toFloat()) },
+                        onDrag = { change, _ -> activeIndex = indexForX(change.position.x, size.width.toFloat()) },
+                        onDragEnd = {},
+                        onDragCancel = {}
+                    )
+                }
+                .pointerInput(items, "tap-profit-quote") {
+                    detectTapGestures(onTap = { offset -> activeIndex = indexForX(offset.x, size.width.toFloat()) })
+                }
+            ) {
+                val w = size.width
+                val h = size.height
+                for (g in 0..4) {
+                    val y = h * g / 4f
+                    drawLine(color = BorderColor.copy(alpha = 0.14f), start = Offset(0f, y), end = Offset(w, y))
+                }
+                val baseY = h - (((100.0 - minIndex) / range).toFloat() * h).coerceIn(0f, h)
+                drawLine(color = TextSecondary.copy(alpha = 0.24f), start = Offset(0f, baseY), end = Offset(w, baseY), strokeWidth = 1.dp.toPx())
 
-        Row(modifier = Modifier.fillMaxWidth().align(Alignment.BottomStart)) {
-            items.forEach { pt ->
-                Text(
-                    text = pt.label,
-                    color = TextSecondary,
-                    fontSize = 8.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.weight(1f)
-                )
+                fun yOf(indexValue: Double): Float = h - (((indexValue - minIndex) / range).toFloat() * h).coerceIn(0f, h)
+                val step = if (items.size > 1) w / (items.size - 1) else w
+                val pathQuote = Path()
+                val pathProfit = Path()
+                items.forEachIndexed { i, _ ->
+                    val x = i * step
+                    val yQuote = yOf(quoteIndexed[i])
+                    val yProfit = yOf(profitIndexed[i])
+                    if (i == 0) {
+                        pathQuote.moveTo(x, yQuote)
+                        pathProfit.moveTo(x, yProfit)
+                    } else {
+                        pathQuote.lineTo(x, yQuote)
+                        pathProfit.lineTo(x, yProfit)
+                    }
+                    drawCircle(color = GoldPrimary.copy(alpha = 0.92f), radius = 2.4.dp.toPx(), center = Offset(x, yQuote))
+                    drawCircle(color = SuccessGreen.copy(alpha = 0.92f), radius = 2.4.dp.toPx(), center = Offset(x, yProfit))
+                }
+                drawPath(path = pathQuote, color = GoldPrimary, style = Stroke(width = 2.3.dp.toPx()))
+                drawPath(path = pathProfit, color = SuccessGreen, style = Stroke(width = 2.3.dp.toPx()))
+
+                activeIndex?.coerceIn(0, items.size - 1)?.let { idx ->
+                    val x = idx * step
+                    drawLine(color = TextSecondary.copy(alpha = 0.35f), start = Offset(x, 0f), end = Offset(x, h), strokeWidth = 1.dp.toPx())
+                    drawCircle(color = GoldPrimary, radius = 4.dp.toPx(), center = Offset(x, yOf(quoteIndexed[idx])))
+                    drawCircle(color = SuccessGreen, radius = 4.dp.toPx(), center = Offset(x, yOf(profitIndexed[idx])))
+                }
+            }
+
+            activeIndex?.coerceIn(0, items.size - 1)?.let { idx ->
+                val item = items[idx]
+                Surface(
+                    color = DarkSurfaceElevated.copy(alpha = 0.94f),
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, BorderColor.copy(alpha = 0.32f)),
+                    modifier = Modifier.align(Alignment.TopEnd).padding(6.dp)
+                ) {
+                    Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) {
+                        Text(item.label, color = TextPrimary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Text("Cotação: ${moneyCompact(item.value)} · índice ${String.format(Locale.ROOT, "%.0f", quoteIndexed[idx])}", color = GoldPrimary, fontSize = 9.sp)
+                        Text("Lucro: ${moneyCompact(item.secondaryValue)} · índice ${String.format(Locale.ROOT, "%.0f", profitIndexed[idx])}", color = SuccessGreen, fontSize = 9.sp)
+                    }
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            val step = if (items.size > 8) (items.size / 4).coerceAtLeast(1) else 1
+            items.forEachIndexed { i, pt ->
+                if (i % step == 0 || i == items.lastIndex) {
+                    Text(
+                        text = pt.label.take(8),
+                        color = TextSecondary,
+                        fontSize = 8.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                } else {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
             }
         }
     }

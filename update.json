@@ -1,6 +1,6 @@
 {
   "latestVersionCode": 43,
-  "versionName": "2.0.33",
+  "versionName": "2.0.34",
   "downloadUrl": "",
   "releaseDate": "2026-06-08",
   "isMandatory": false,
@@ -12,7 +12,7 @@
     "ReportDrawnWhen configurado para sinalizar primeira tela utilizável sem aguardar rede lenta.",
     "Perfis focam em abertura, Dashboard, Detalhes do Ativo, Desempenho & Índices, Finanças & Balanço, Insights e ViewModel."
   ],
-  "versionCode": 43,
+  "versionCode": 44,
   "apkUrl": "",
   "releaseNotes": "Otimização conservadora de runtime/startup com Baseline Profile manual, Startup Profile, ProfileInstaller e sinalização de primeira tela utilizável."
 }

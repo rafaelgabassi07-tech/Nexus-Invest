@@ -212,7 +212,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     val proxyHealth by viewModel.proxyHealth.collectAsStateWithLifecycle()
                     val portfolioAnalytics by viewModel.portfolioAnalytics.collectAsStateWithLifecycle()
 
-                    // Performance v2.0.33: signal the first usable frame to Android/benchmark tooling.
+                    // Performance v2.0.34: signal the first usable frame to Android/benchmark tooling.
                     // Do not wait for slow network calls here; chart bundles and insights are loaded asynchronously.
                     ReportDrawnWhen { biometricEnabledState.value != null && isAppUnlocked }
 
