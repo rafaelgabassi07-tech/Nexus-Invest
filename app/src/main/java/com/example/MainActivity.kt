@@ -8,6 +8,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.animation.togetherWith
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.ReportDrawnWhen
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.foundation.Image
@@ -210,6 +211,10 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     val notificationsList by viewModel.notifications.collectAsStateWithLifecycle()
                     val proxyHealth by viewModel.proxyHealth.collectAsStateWithLifecycle()
                     val portfolioAnalytics by viewModel.portfolioAnalytics.collectAsStateWithLifecycle()
+
+                    // Performance v2.0.33: signal the first usable frame to Android/benchmark tooling.
+                    // Do not wait for slow network calls here; chart bundles and insights are loaded asynchronously.
+                    ReportDrawnWhen { biometricEnabledState.value != null && isAppUnlocked }
 
                     val favoriteTickers by themePreferences.favoriteTickers.collectAsStateWithLifecycle(emptyList())
                     val favoriteScope = rememberCoroutineScope()

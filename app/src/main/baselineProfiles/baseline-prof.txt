@@ -1,0 +1,10 @@
+HSPLcom/example/MainActivity;->**(**)**
+Lcom/example/MainActivity;
+HSPLcom/example/ui/theme/**->**(**)**
+HSPLcom/example/data/**->**(**)**
+HSPLcom/example/viewmodel/**->**(**)**
+HSPLcom/example/network/**->**(**)**
+HSPLcom/example/ui/screens/**->**(**)**
+HSPLcom/example/ui/components/**->**(**)**
+HSPLcom/example/ui/B3UIUtilsKt;->**(**)**
+HSPLcom/example/utils/**->**(**)**

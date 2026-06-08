@@ -916,7 +916,7 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
             _isLoadingChartBundle.value = true
             try {
                 val bundle = withContext(Dispatchers.IO) {
-                    withTimeoutOrNull(12_000) {
+                    withTimeoutOrNull(6_500) {
                         B3NetworkService.fetchAssetChartBundle(clean, normalizedRange)
                     }
                 }
@@ -1068,11 +1068,11 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
         val result = try {
             withContext(Dispatchers.IO) {
                 coroutineScope {
-                    val analysisDeferred = async { withTimeoutOrNull(8_000) { runCatching { B3NetworkService.fetchPortfolioAnalysis(positions) }.getOrNull() } }
-                    val historyDeferred = async { withTimeoutOrNull(8_000) { runCatching { B3NetworkService.fetchPortfolioHistory(positions, "1Y") }.getOrDefault(emptyList()) }.orEmpty() }
+                    val analysisDeferred = async { withTimeoutOrNull(6_000) { runCatching { B3NetworkService.fetchPortfolioAnalysis(positions) }.getOrNull() } }
+                    val historyDeferred = async { withTimeoutOrNull(6_000) { runCatching { B3NetworkService.fetchPortfolioHistory(positions, "1Y") }.getOrDefault(emptyList()) }.orEmpty() }
                     val ipcaDeferred = async { withTimeoutOrNull(4_500) { runCatching { B3NetworkService.fetchIpcaSeries(12) }.getOrDefault(emptyList()) }.orEmpty() }
-                    val dividendsDeferred = async { withTimeoutOrNull(35_000) { runCatching { B3NetworkService.fetchNextDividends(positions) }.getOrDefault(emptyList()) }.orEmpty() }
-                    val portfolioRankingDeferred = async { withTimeoutOrNull(6_000) { runCatching { B3NetworkService.fetchPortfolioRankings(positions) }.getOrNull() } }
+                    val dividendsDeferred = async { withTimeoutOrNull(9_000) { runCatching { B3NetworkService.fetchNextDividends(positions) }.getOrDefault(emptyList()) }.orEmpty() }
+                    val portfolioRankingDeferred = async { withTimeoutOrNull(4_500) { runCatching { B3NetworkService.fetchPortfolioRankings(positions) }.getOrNull() } }
 
                     val remoteAnalysis = analysisDeferred.await()
                     val remoteHistory = historyDeferred.await()

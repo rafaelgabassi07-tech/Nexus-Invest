@@ -43,6 +43,7 @@ import com.example.viewmodel.AssetSummary
 import com.example.ui.B3UIUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -94,7 +95,9 @@ fun AssetDetailModal(
     LaunchedEffect(tickerKey) {
         isLoadingNews = true
         val fetchedNews = withContext(Dispatchers.IO) {
-            runCatching { B3NetworkService.fetchNews(tickerKey) }.getOrDefault(emptyList())
+            withTimeoutOrNull(2_500) {
+                runCatching { B3NetworkService.fetchNews(tickerKey) }.getOrDefault(emptyList())
+            }.orEmpty()
         }
         newsItems = fetchedNews
         isLoadingNews = false
@@ -144,20 +147,25 @@ fun AssetDetailModal(
 
         isLoadingData = needsAssetRefresh
         isFetchingChart = needsHistoryRefresh
-        isLoadingChartBundle = needsBundleRefresh || isLoadingInitialChartBundle
+        isLoadingChartBundle = needsBundleRefresh && chartBundle == null
+
         if (needsBundleRefresh) {
+            // O ViewModel é o único responsável pelo bundle pesado. A modal não dispara mais
+            // fetchAssetChartBundle local duplicado, evitando 2 chamadas completas ao Proxy.
             onLoadChartBundle(tickerKey, localChartRange)
         }
 
-        val shouldFetchBundleLocally = needsBundleRefresh && (chartBundle == null || localChartPoints.isEmpty())
         val result = withContext(Dispatchers.IO) {
-            val fetchedAsset = if (needsAssetRefresh) runCatching { B3NetworkService.fetchAssetData(tickerKey) }.getOrNull() else null
-            val fetchedHistory = if (needsHistoryRefresh) runCatching { B3NetworkService.fetchHistoricalChart(tickerKey, localChartRange) }.getOrDefault(emptyList()) else emptyList()
-            val fetchedBundle = if (shouldFetchBundleLocally) runCatching { B3NetworkService.fetchAssetChartBundle(tickerKey, localChartRange) }.getOrNull() else null
-            Triple(fetchedAsset, fetchedHistory, fetchedBundle)
+            val fetchedAsset = if (needsAssetRefresh) {
+                withTimeoutOrNull(3_500) { runCatching { B3NetworkService.fetchAssetData(tickerKey) }.getOrNull() }
+            } else null
+            val fetchedHistory = if (needsHistoryRefresh) {
+                withTimeoutOrNull(4_500) { runCatching { B3NetworkService.fetchHistoricalChart(tickerKey, localChartRange) }.getOrDefault(emptyList()) }.orEmpty()
+            } else emptyList()
+            fetchedAsset to fetchedHistory
         }
 
-        val (fetchedAsset, fetchedHistory, fetchedBundle) = result
+        val (fetchedAsset, fetchedHistory) = result
         if (fetchedAsset != null) {
             assetData = fetchedAsset.mergeWithFallback(fallbackAssetData)
         } else if (!assetData.hasUsefulProxyData()) {
@@ -166,18 +174,14 @@ fun AssetDetailModal(
         if (fetchedHistory.isNotEmpty()) {
             localChartPoints = fetchedHistory
         }
-        if (fetchedBundle != null) {
-            chartBundle = fetchedBundle
-            if (fetchedBundle.priceHistory.isNotEmpty()) {
-                localChartPoints = fetchedBundle.priceHistory
-            }
-        }
-        val receivedFreshHistory = fetchedHistory.isNotEmpty() || fetchedBundle?.priceHistory?.isNotEmpty() == true
+        val receivedFreshHistory = fetchedHistory.isNotEmpty() || chartBundle?.priceHistory?.isNotEmpty() == true
         if (!chartRangeChanged || receivedFreshHistory) {
             lastResolvedChartRange = localChartRange
         }
         isLoadingData = false
         isFetchingChart = false
+        // Não deixe spinner eterno se o contrato avançado atrasar; quando o ViewModel receber o
+        // bundle, o LaunchedEffect(initialChartBundle) acima atualiza a UI automaticamente.
         isLoadingChartBundle = false
     }
 

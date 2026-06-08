@@ -4732,69 +4732,62 @@ object B3NetworkService {
             getFromCache<AssetChartBundle>(cacheKey)?.let { return it }
         }
 
-        val priceHistory = fetchHistoricalChart(clean, normalizedRange)
-
-        var json = getProxyJson(
+        /*
+         * Performance fix v2.0.32:
+         * A versão anterior buscava histórico primeiro e depois chamava /api/v1/asset em modo
+         * max/complete com timeouts de 25s + 18s + 5s. Quando o Investidor10/Vercel estava lento,
+         * a tela Detalhes do Ativo ficava presa aguardando as abas "Desempenho & Índices" e
+         * "Finanças & Balanço" por até ~1 minuto. Agora o app pede um contrato mobile/fast
+         * único, cacheável e stale-safe. O gráfico de preço vira complemento, nunca bloqueador.
+         */
+        val json = getProxyJson(
             "/api/v1/asset",
             mapOf(
                 "ticker" to clean,
                 "view" to "app",
-                "profile" to "max",
-                "mode" to "complete",
-                "complete" to "1",
-                "strict" to "1",
-                "charts" to "full",
+                "profile" to "chartfast",
+                "performance" to "chartfast",
+                "mode" to "charts-fast",
+                "complete" to "0",
+                "full" to "0",
+                "strict" to "0",
+                "charts" to "mobile",
                 "includeCharts" to "1",
                 "chartSource" to "investidor10",
+                "chartProfile" to "mobile-fast",
                 "internalApis" to "1",
-                "adaptiveCompletion" to "1",
-                "statusInvestComplement" to "1",
-                "timeoutMs" to "25000",
+                "adaptiveCompletion" to "0",
+                "statusInvestComplement" to "0",
                 "includeNews" to "0",
+                "returnHtml" to "1",
+                "maxHtmlChars" to "1200000",
+                "timeoutMs" to "5500",
+                "valoraeScrapeTimeoutMs" to "4500",
+                "adaptiveCompletionTimeoutMs" to "1500",
+                "staleWhileRevalidate" to "1",
+                "staleIfError" to "1",
+                "cache" to "1",
                 "nocache" to if (bypassCache) "1" else null
             )
         )
-        if (json == null) {
-            json = getProxyJson(
-                "/api/v1/asset",
-                mapOf(
-                    "ticker" to clean,
-                    "view" to "app",
-                    "profile" to "turbo",
-                    "mode" to "complete",
-                    "complete" to "1",
-                    "charts" to "full",
-                    "includeCharts" to "1",
-                    "chartSource" to "investidor10",
-                    "internalApis" to "1",
-                    "timeoutMs" to "18000",
-                    "includeNews" to "0",
-                    "nocache" to if (bypassCache) "1" else null
-                )
-            )
-        }
-        if (json == null) {
-            json = getProxyJson(
-                "/api/v1/asset",
-                mapOf(
-                    "ticker" to clean,
-                    "view" to "app",
-                    "profile" to "fast",
-                    "charts" to "basic",
-                    "includeCharts" to "1",
-                    "timeoutMs" to "5000",
-                    "nocache" to if (bypassCache) "1" else null
-                )
-            )
-        }
 
         val root = unwrapValoraePayload(json) ?: JSONObject()
         val mappedAsset = mapProxyAsset(root)
         val isFii = mappedAsset?.isFii ?: inferIsFii(clean)
+        var bundle = parseAssetChartBundle(clean, isFii, root, emptyList()).copy(range = normalizedRange)
 
-        var bundle = parseAssetChartBundle(clean, isFii, root, priceHistory).copy(range = normalizedRange)
+        val mustFetchPriceHistory = bundle.priceHistory.isEmpty()
+        val priceHistory = if (mustFetchPriceHistory) {
+            runCatching { fetchHistoricalChart(clean, normalizedRange) }.getOrDefault(emptyList())
+        } else {
+            bundle.priceHistory
+        }
+        if (priceHistory.isNotEmpty() && bundle.priceHistory.isEmpty()) {
+            bundle = bundle.copy(priceHistory = priceHistory)
+        }
+
         if (bundle.dividendEvents.isEmpty()) {
-            val dividendFallback = fetchAssetDividendEvents(clean)
+            val dividendFallback = runCatching { fetchAssetDividendEvents(clean) }.getOrDefault(emptyList())
             if (dividendFallback.isNotEmpty()) {
                 val currentPrice = mappedAsset?.price?.takeIf { it > 0.0 }
                     ?: firstNumber(root.optObject("results.cotacao")?.optAny("precoAtual"), root.optObject("results")?.optAny("precoAtual"))
@@ -4808,10 +4801,17 @@ object B3NetworkService {
                 )
             }
         }
-        // Gráficos de rentabilidade e comparação devem vir do Investidor10 via Proxy.
-        // Não fabricamos mais série nominal a partir do histórico de preço nem misturamos /compare,
-        // pois isso gerava divergência visual em relação aos gráficos da página do ativo no Investidor10.
-        putInCache(cacheKey, bundle, rangeCacheTtlMinutes(normalizedRange))
+
+        val coverageWarnings = mutableListOf<String>()
+        if (json == null) coverageWarnings.add("Proxy não respondeu dentro do orçamento mobile-fast; exibindo histórico/carteira quando disponível.")
+        if (bundle.profitability.isEmpty() && bundle.indexComparison.isEmpty() && bundle.revenueProfit.isEmpty() && bundle.balanceSheet.isEmpty()) {
+            coverageWarnings.add("Dados avançados ainda não vieram no contrato rápido; toque em atualizar ou aguarde cache quente do Proxy.")
+        }
+        if (coverageWarnings.isNotEmpty()) {
+            bundle = bundle.copy(warnings = (bundle.warnings + coverageWarnings).distinct())
+        }
+
+        putInCache(cacheKey, bundle, rangeCacheTtlMinutes(normalizedRange).coerceAtLeast(20))
         return bundle
     }
 

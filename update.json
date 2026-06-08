@@ -1,20 +1,18 @@
 {
-  "latestVersionCode": 37,
-  "versionName": "2.0.27",
+  "latestVersionCode": 43,
+  "versionName": "2.0.33",
   "downloadUrl": "",
-  "releaseDate": "2026-06-06",
+  "releaseDate": "2026-06-08",
   "isMandatory": false,
   "minRequiredVersionCode": 1,
   "fileSize": "Projeto-fonte Android; APK final deve ser compilado no Android Studio/Gradle",
   "changelog": [
-    "Agenda de Dividendos força sincronização ao abrir as páginas Proventos/Agenda.",
-    "APK tenta GET e POST nos endpoints portfolio/dividends e portfolio/next-dividends.",
-    "Fallback por ativo reforçado para asset/dividends e asset/next-dividend.",
-    "Parser de dividendos aceita wrappers e mapas por ticker de forma recursiva.",
-    "Eventos reais do Proxy continuam visíveis mesmo sem valor estimado da carteira.",
-    "Removidos pacotes duplicados/antigos para evitar compilação da versão errada."
+    "Baseline Profile e Startup Profile manuais adicionados para rotas críticas do VALORAE.",
+    "ProfileInstaller incluído para instalar perfis em dispositivos compatíveis, especialmente sideload/APK fora da Play Store.",
+    "ReportDrawnWhen configurado para sinalizar primeira tela utilizável sem aguardar rede lenta.",
+    "Perfis focam em abertura, Dashboard, Detalhes do Ativo, Desempenho & Índices, Finanças & Balanço, Insights e ViewModel."
   ],
-  "versionCode": 37,
+  "versionCode": 43,
   "apkUrl": "",
-  "releaseNotes": "Correção profunda da integração Agenda de Dividendos ↔ VALORAE Proxy: POST/GET, aliases recursivos, fallback por ativo, refresh ao abrir Agenda/Proventos e limpeza de pacote duplicado."
+  "releaseNotes": "Otimização conservadora de runtime/startup com Baseline Profile manual, Startup Profile, ProfileInstaller e sinalização de primeira tela utilizável."
 }
