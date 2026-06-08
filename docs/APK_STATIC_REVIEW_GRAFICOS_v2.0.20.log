@@ -1,0 +1,10 @@
+asset model balanceSheet: True
+parse balanceSheet: True
+return balanceSheet: True
+payout in dividend tab: True
+evolucao patrimonial visible: True
+balanco uses balanceSheet: True
+indicator history visible: True
+no generic panel called in Analysis: True
+version 2.0.20: True
+STATIC_APK_GRAFICOS_FINAL_V220_OK

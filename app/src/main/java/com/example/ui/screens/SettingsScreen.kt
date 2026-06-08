@@ -1111,7 +1111,7 @@ private fun AboutSettingsPage() {
             shadowElevation = 4.dp
         ) {
             Image(
-                painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.valorae_logo_vector),
+                painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.valorae_premium_logo_1779327613624),
                 contentDescription = "VALORAE Logo",
                 modifier = Modifier.fillMaxSize(),
                 contentScale = androidx.compose.ui.layout.ContentScale.Fit
@@ -2512,7 +2512,8 @@ private fun DataBackupPage(viewModel: com.example.viewmodel.PortfolioViewModel) 
                         try {
                             filePickerLauncher.launch("*/*")
                         } catch (e: Exception) {
-                            e.printStackTrace()
+                            errorMsg = "Erro: Aplicativo de arquivos não disponível. Instale um gerenciador de arquivos."
+                            showErrorBanner = true
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
@@ -2660,7 +2661,8 @@ private fun DataBackupPage(viewModel: com.example.viewmodel.PortfolioViewModel) 
                             try {
                                 exportJsonLauncher.launch("valorae_backup.json")
                             } catch (e: Exception) {
-                                e.printStackTrace()
+                                errorMsg = "Erro: Aplicativo de arquivos não encontrado."
+                                showErrorBanner = true
                             }
                         }
                     ) {
@@ -2676,7 +2678,8 @@ private fun DataBackupPage(viewModel: com.example.viewmodel.PortfolioViewModel) 
                             try {
                                 exportCsvLauncher.launch("valorae_transacoes.csv")
                             } catch (e: Exception) {
-                                e.printStackTrace()
+                                errorMsg = "Erro: Aplicativo de arquivos não encontrado."
+                                showErrorBanner = true
                             }
                         }
                     ) {

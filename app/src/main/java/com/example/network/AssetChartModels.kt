@@ -19,6 +19,7 @@ data class AssetChartBundle(
     val revenueProfit: List<FinancialStatementPoint> = emptyList(),
     val profitVsQuote: List<AssetComparisonPoint> = emptyList(),
     val equityEvolution: List<FinancialStatementPoint> = emptyList(),
+    val balanceSheet: List<FinancialStatementPoint> = emptyList(),
     val payoutHistory: List<AssetIndicatorPoint> = emptyList(),
     val revenueByRegion: Map<String, List<AssetBreakdownPoint>> = emptyMap(),
     val revenueByBusiness: Map<String, List<AssetBreakdownPoint>> = emptyMap(),
@@ -27,7 +28,10 @@ data class AssetChartBundle(
     val fiiPatrimonialInfo: List<AssetIndicatorPoint> = emptyList(),
     val fiiAssetDistribution: Map<String, List<AssetBreakdownPoint>> = emptyMap(),
     val warnings: List<String> = emptyList(),
-    val source: String = "VALORAE / Investidor10"
+    val coverageCaptured: List<String> = emptyList(),
+    val coverageMissing: List<String> = emptyList(),
+    val coverageNotApplicable: List<String> = emptyList(),
+    val source: String = "Valorae Proxy / Investidor10"
 )
 
 data class AssetPeriodReturn(
@@ -44,7 +48,7 @@ data class AssetIndicatorPoint(
     val unit: String = "",
     val year: String = "",
     val period: String = "",
-    val source: String = "Serviço de dados VALORAE"
+    val source: String = "Valorae Proxy"
 )
 
 data class AssetComparisonSeries(

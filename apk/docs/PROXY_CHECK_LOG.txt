@@ -1,5 +1,0 @@
-
-> valorae-proxy@21.12.0 check
-> node -e "const fs=require('fs'),path=require('path');const roots=['api','routes','lib','test','scripts'];const files=[];function walk(d){for(const e of fs.readdirSync(d,{withFileTypes:true})){const p=path.join(d,e.name);if(e.isDirectory())walk(p);else if(p.endsWith('.js'))files.push(p)}}roots.forEach(r=>fs.existsSync(r)&&walk(r));const cp=require('child_process');for(const f of files){cp.execFileSync(process.execPath,['--check',f],{stdio:'inherit'})}console.log('Checked '+files.length+' JS files')"
-
-Checked 275 JS files

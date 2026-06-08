@@ -81,7 +81,6 @@ fun DashboardScreen(
     onPortfolioClick: () -> Unit = {},
     updateStatus: com.example.network.UpdateManager.UpdateStatus = com.example.network.UpdateManager.UpdateStatus.Idle,
     analytics: PortfolioAnalyticsState = PortfolioAnalyticsState(),
-    onOpenRankings: () -> Unit = {},
     onUpdateAvailable: () -> Unit = {},
     onRefreshRankings: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -165,9 +164,9 @@ fun DashboardScreen(
                 HomeMarketMoversPreview(
                     ranking = analytics.liveMarketRanking,
                     assetData = cachedAssetData,
-                    onOpenRankings = onOpenRankings,
                     onAssetClick = onAssetClick,
                     isLoading = analytics.isLoading,
+                    rankingsAttempted = analytics.marketRankingsAttempted,
                     onRetry = onRefreshRankings
                 )
             }
@@ -902,7 +901,7 @@ fun AddTransactionDialog(
                                     .fillMaxWidth()
                                     .menuAnchor(type = MenuAnchorType.PrimaryNotEditable, enabled = true),
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    unfocusedBorderColor = Color(0xFF262626),
+                                    unfocusedBorderColor = Color(0xFF444444),
                                     focusedBorderColor = GoldPrimary,
                                     unfocusedTextColor = Color.White,
                                     focusedTextColor = Color.White
@@ -949,7 +948,7 @@ fun AddTransactionDialog(
                             modifier = Modifier.fillMaxWidth(),
                             keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Next),
                             colors = OutlinedTextFieldDefaults.colors(
-                                unfocusedBorderColor = Color(0xFF262626),
+                                unfocusedBorderColor = Color(0xFF444444),
                                 focusedBorderColor = GoldPrimary,
                                 unfocusedTextColor = Color.White,
                                 focusedTextColor = Color.White
@@ -1049,7 +1048,7 @@ fun AddTransactionDialog(
                                     }
                                 },
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    unfocusedBorderColor = Color(0xFF262626),
+                                    unfocusedBorderColor = Color(0xFF444444),
                                     focusedBorderColor = GoldPrimary,
                                     unfocusedTextColor = Color.White,
                                     focusedTextColor = Color.White
@@ -1074,7 +1073,7 @@ fun AddTransactionDialog(
                                 textStyle = LocalTextStyle.current.copy(fontSize = 13.sp, fontWeight = FontWeight.Bold),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = androidx.compose.ui.text.input.ImeAction.Next),
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    unfocusedBorderColor = Color(0xFF262626),
+                                    unfocusedBorderColor = Color(0xFF444444),
                                     focusedBorderColor = GoldPrimary,
                                     unfocusedTextColor = Color.White,
                                     focusedTextColor = Color.White
@@ -1102,19 +1101,13 @@ fun AddTransactionDialog(
                             OutlinedTextField(
                                 value = price,
                                 onValueChange = { raw -> 
-                                    val cleanString = raw.filter { it.isDigit() }
-                                    if (cleanString.isNotEmpty()) {
-                                        val parsed = cleanString.toDouble() / 100
-                                        price = String.format(java.util.Locale("pt", "BR"), "%,.2f", parsed)
-                                    } else {
-                                        price = ""
-                                    }
+                                    price = raw
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                                 textStyle = LocalTextStyle.current.copy(fontSize = 13.sp, fontWeight = FontWeight.Bold),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = androidx.compose.ui.text.input.ImeAction.Next),
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    unfocusedBorderColor = Color(0xFF262626),
+                                    unfocusedBorderColor = Color(0xFF444444),
                                     focusedBorderColor = GoldPrimary,
                                     unfocusedTextColor = Color.White,
                                     focusedTextColor = Color.White
@@ -1135,19 +1128,13 @@ fun AddTransactionDialog(
                             OutlinedTextField(
                                 value = otherCosts,
                                 onValueChange = { raw -> 
-                                    val cleanString = raw.filter { it.isDigit() }
-                                    if (cleanString.isNotEmpty()) {
-                                        val parsed = cleanString.toDouble() / 100
-                                        otherCosts = String.format(java.util.Locale("pt", "BR"), "%,.2f", parsed)
-                                    } else {
-                                        otherCosts = ""
-                                    }
+                                    otherCosts = raw
                                 },
                                 modifier = Modifier.fillMaxWidth(),
                                 textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = androidx.compose.ui.text.input.ImeAction.Done),
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    unfocusedBorderColor = Color(0xFF262626),
+                                    unfocusedBorderColor = Color(0xFF444444),
                                     focusedBorderColor = GoldPrimary,
                                     unfocusedTextColor = Color.White,
                                     focusedTextColor = Color.White
@@ -1582,10 +1569,14 @@ private fun homeMarketMoverChangeText(
     isPositive: Boolean
 ): String {
     val arrow = if (isPositive) "▲" else "▼"
-    val display = item.changeDisplay.ifBlank {
+    val rawDisplay = item.changeDisplay.ifBlank {
         if (item.displayValue.contains("%")) item.displayValue else ""
-    }.trim().replace("+", "").replace("-", "")
-    if (display.isNotBlank()) return "$arrow $display"
+    }.trim()
+    val display = rawDisplay.replace("+", "").replace("-", "")
+    if (display.isNotBlank()) {
+        val normalized = if (display.contains("%")) display else "$display%"
+        return "$arrow $normalized"
+    }
     val magnitude = homeMarketMoverChangeMagnitude(item, asset)
     return if (magnitude > 0.0) {
         "$arrow ${String.format(java.util.Locale("pt", "BR"), "%.2f%%", magnitude)}"
@@ -1598,16 +1589,16 @@ private fun homeMarketMoverChangeText(
 fun HomeMarketMoversPreview(
     ranking: com.example.network.MarketRankingSnapshot?,
     assetData: Map<String, B3AssetData>,
-    onOpenRankings: () -> Unit,
     onAssetClick: (String) -> Unit,
     isLoading: Boolean = false,
+    rankingsAttempted: Boolean = false,
     onRetry: () -> Unit = {}
 ) {
-    val highs = ranking?.highs.orEmpty().filter { it.ticker.isNotBlank() }.take(6)
-    val lows = ranking?.lows.orEmpty().filter { it.ticker.isNotBlank() }.take(6)
+    val highs = remember(ranking) { ranking?.highs.orEmpty().filter { it.ticker.isNotBlank() }.take(6) }
+    val lows = remember(ranking) { ranking?.lows.orEmpty().filter { it.ticker.isNotBlank() }.take(6) }
 
     if (ranking == null || (highs.isEmpty() && lows.isEmpty())) {
-        if (isLoading) {
+        if (isLoading || (!rankingsAttempted && ranking == null)) {
             MarketMoversSkeleton()
         } else {
             MarketMoversErrorCard(onRetry = onRetry)
@@ -1795,32 +1786,17 @@ fun HomeMarketMoversPreview(
                 }
             }
 
-            Spacer(modifier = Modifier.height(2.dp))
-            HorizontalDivider(color = Color(0xFF1F1F1F), thickness = 0.5.dp)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onOpenRankings() }
-                    .padding(vertical = 8.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = "Ver Ranking Completo",
-                        color = GoldPrimary,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                        contentDescription = null,
-                        tint = GoldPrimary,
-                        modifier = Modifier.size(12.dp)
-                    )
-                }
+            if (ranking.warnings.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(2.dp))
+                HorizontalDivider(color = Color(0xFF1F1F1F), thickness = 0.5.dp)
+                Text(
+                    text = ranking.warnings.first().take(96),
+                    color = TextSecondary,
+                    fontSize = 9.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
             }
         }
     }

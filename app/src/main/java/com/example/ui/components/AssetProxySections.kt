@@ -306,6 +306,75 @@ fun AssetProxyIndicatorSection(
                 fields = othersList
             )
         }
+        AssetIndicatorHistorySection(bundle = bundle)
+    }
+}
+
+@Composable
+private fun AssetIndicatorHistorySection(bundle: AssetChartBundle?) {
+    val history = remember(bundle) {
+        bundle?.indicatorHistory
+            ?.filterValues { points -> points.count { it.value.isFinite() } >= 2 }
+            ?.toList()
+            ?.sortedBy { it.first }
+            ?.take(8)
+            ?: emptyList()
+    }
+    if (history.isEmpty()) return
+    Surface(
+        color = DarkSurface,
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, BorderColor.copy(alpha = 0.10f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(
+                text = "HISTÓRICO DE INDICADORES FUNDAMENTALISTAS",
+                color = GoldPrimary,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Black,
+                letterSpacing = 0.8.sp
+            )
+            Text(
+                text = "Séries históricas reais retornadas pelo VALORAE Proxy/Investidor10. Indicadores sem pontos suficientes não são exibidos.",
+                color = TextSecondary,
+                fontSize = 11.sp,
+                lineHeight = 15.sp
+            )
+            history.forEach { (name, points) ->
+                val sorted = points.sortedBy { it.year.ifBlank { it.period.ifBlank { it.label } } }.takeLast(6)
+                val latest = sorted.lastOrNull()
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(name, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = sorted.joinToString(" • ") { it.year.ifBlank { it.period.ifBlank { it.label } } },
+                            color = TextSecondary,
+                            fontSize = 9.sp,
+                            maxLines = 1
+                        )
+                    }
+                    Text(
+                        text = latest?.display?.takeIf { it.isNotBlank() } ?: latest?.let { B3UIUtils.formatValue(it.value, suffix = it.unit.takeIf { u -> u == "%" }.orEmpty()) }.orEmpty(),
+                        color = GoldPrimary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                val max = sorted.maxOfOrNull { kotlin.math.abs(it.value) }?.takeIf { it > 0.0 } ?: 1.0
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.Bottom) {
+                    sorted.forEach { point ->
+                        val height = ((kotlin.math.abs(point.value) / max) * 34.0).coerceIn(4.0, 34.0).dp
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(height)
+                                .background(GoldPrimary.copy(alpha = 0.65f), RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

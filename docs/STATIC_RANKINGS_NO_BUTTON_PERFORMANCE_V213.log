@@ -1,0 +1,20 @@
+OK - Versão 2.0.13 aplicada
+OK - Botão Ver Ranking Completo removido do APK
+OK - Home mantém card compacto de altas/baixas
+OK - Home mantém retry sem botão de ranking completo
+OK - Home reduz recomposições nas listas do ranking
+OK - Home preserva estado amigável após falha
+OK - Parser aceita aliases Investidor10/AeroScrape de altas/baixas
+OK - Parser aceita campos alternativos essenciais
+OK - Modo completo e fallback leve do Proxy preservados
+OK - Enriquecimento preserva variação real do ranking
+OK - Enriquecimento não transforma preço em variação
+OK - ViewModel evita skeleton infinito e mantém fallback
+OK - ViewModel mantém timeouts delimitados
+OK - HTTP mantém concorrência controlada para responsividade
+OK - Bottom navigation Insights continua sendo o caminho de rankings avançados
+OK - Balanceamento estrutural leve app/src/main/java/com/example/network/B3NetworkService.kt
+OK - Balanceamento estrutural leve app/src/main/java/com/example/viewmodel/PortfolioViewModel.kt
+OK - Balanceamento estrutural leve app/src/main/java/com/example/ui/screens/DashboardScreen.kt
+OK - Balanceamento estrutural leve app/src/main/java/com/example/MainActivity.kt
+STATIC_RANKINGS_NO_BUTTON_PERFORMANCE_V213_OK

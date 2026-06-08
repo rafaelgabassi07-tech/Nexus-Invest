@@ -1,0 +1,16 @@
+OK versionName 2.0.27
+OK versionCode 37
+OK no duplicate apk directory
+OK no apk files in source package
+OK portfolio next-dividends GET
+OK portfolio dividends GET
+OK portfolio next-dividends POST
+OK portfolio dividends POST
+OK asset dividends POST fallback
+OK asset next-dividend POST fallback
+OK recursive dividend parser
+OK response wrapper alias
+OK agenda force refresh
+OK agenda proxy loading state
+OK historical fallback message
+SUMMARY: OK

@@ -10,6 +10,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -457,33 +458,6 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                                 proxyHealth.status.equals("Parcial", ignoreCase = true) -> WarningOrange
                                                 else -> DangerRed
                                             }
-                                            Surface(
-                                                modifier = Modifier
-                                                    .height(26.dp)
-                                                    .clickable { viewModel.refreshProxyHealth() },
-                                                color = proxyChipColor.copy(alpha = 0.12f),
-                                                shape = RoundedCornerShape(50),
-                                                border = BorderStroke(1.dp, proxyChipColor.copy(alpha = 0.35f))
-                                            ) {
-                                                Row(
-                                                    modifier = Modifier.padding(horizontal = 8.dp),
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                                ) {
-                                                    Box(Modifier.size(6.dp).background(proxyChipColor, CircleShape))
-                                                    Text(
-                                                        text = when {
-                                                            proxyHealth.isOnline -> "Dados"
-                                                            proxyHealth.isUsingCache -> "Cache"
-                                                            proxyHealth.status.equals("Parcial", true) -> "Parcial"
-                                                            else -> "Offline"
-                                                        },
-                                                        fontSize = 10.sp,
-                                                        fontWeight = FontWeight.Black,
-                                                        color = proxyChipColor
-                                                    )
-                                                }
-                                            }
                                             if (updateStatus is com.example.network.UpdateManager.UpdateStatus.UpdateAvailable) {
                                                 IconButton(
                                                     onClick = { showSystemUpdateCenter = true },
@@ -636,7 +610,10 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
                                     NavigationBarItem(
                                         selected = activePage == 3,
-                                        onClick = { activePage = 3 },
+                                        onClick = {
+                                            viewModel.refreshLiveMarketRankings(force = false, full = true)
+                                            activePage = 3
+                                        },
                                         icon = { 
                                             Icon(
                                                 imageVector = if (activePage == 3) Icons.AutoMirrored.Filled.TrendingUp else Icons.AutoMirrored.Outlined.TrendingUp, 
@@ -735,7 +712,6 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                             onPortfolioClick = { showingPortfolioDetail = true },
                                             updateStatus = updateStatus,
                                             analytics = portfolioAnalytics,
-                                            onOpenRankings = { activePage = 3 },
                                             onUpdateAvailable = { showStartupUpdateDialog = true },
                                             onRefreshRankings = { viewModel.refreshLiveMarketRankings(force = true, full = true) }
                                         )
@@ -818,7 +794,6 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                         onPortfolioClick = { showingPortfolioDetail = true },
                                         updateStatus = updateStatus,
                                         analytics = portfolioAnalytics,
-                                        onOpenRankings = { },
                                         onUpdateAvailable = { showStartupUpdateDialog = true }
                                     )
                                 }
@@ -909,11 +884,10 @@ private fun ValoraeBrandLockup(
                     .border(1.dp, GoldPrimary.copy(alpha = 0.22f), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    painter = androidx.compose.ui.res.painterResource(id = R.drawable.valorae_logo_vector),
+                Image(
+                    painter = androidx.compose.ui.res.painterResource(id = R.drawable.valorae_premium_logo_1779327613624),
                     contentDescription = "Logotipo Valorae",
-                    modifier = Modifier.size(logoSize * 0.66f),
-                    tint = Color.Unspecified
+                    modifier = Modifier.size(logoSize * 0.66f)
                 )
             }
         }

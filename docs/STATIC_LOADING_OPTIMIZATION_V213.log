@@ -1,0 +1,15 @@
+Valorae loading optimization audit OK
+OK - Abertura escalona notícias
+OK - Abertura escalona rankings
+OK - TTL para notícias
+OK - TTL para rankings de mercado
+OK - TTL para saúde do Proxy
+OK - TTL para cotações em lote
+OK - Insights não baixa rankings globais a cada atualização da carteira
+OK - Proxy+ não roda no refresh geral quando nunca aberto
+OK - Proxy+ tem trava contra chamadas concorrentes
+OK - OkHttp com concorrência moderada
+OK - Rankings ao vivo suportam modo completo com fallback
+OK - Batch de ativos não vira dezenas de chamadas individuais
+OK - Diagnóstico do Proxy tem cache
+OK - Proxy+ limita blocos avançados por abertura

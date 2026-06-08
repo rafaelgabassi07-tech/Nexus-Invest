@@ -1,0 +1,4 @@
+Tentativa de compilação: ./gradlew :app:compileDebugKotlin --offline
+Resultado: não finalizada neste ambiente.
+Motivo: o Gradle Wrapper tentou baixar https://services.gradle.org/distributions/gradle-9.3.1-bin.zip e o ambiente não resolveu services.gradle.org.
+As validações estáticas foram executadas sobre os arquivos Kotlin alterados.

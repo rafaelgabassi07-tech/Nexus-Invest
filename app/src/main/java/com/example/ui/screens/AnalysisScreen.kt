@@ -47,7 +47,6 @@ import com.example.network.B3AssetData
 import com.example.network.ChartPoint
 import com.example.network.NewsItem
 import com.example.ui.components.HistoricalPriceLineChart
-import com.example.ui.components.AssetChartBundlePanel
 import com.example.ui.components.AssetProxyIndicatorSection
 import com.example.ui.components.AssetProxyProfileSection
 import com.example.ui.components.CustomBarChart
@@ -453,7 +452,7 @@ fun AnalysisScreen(
                     }
 
                     var mainAnalysisTabIdx by remember { mutableStateOf(0) }
-                    val analysisTabs = listOf("Resumo & Gráficos", "Finanças & DRE", "Proventos & Dividendos", "Indicadores Gerais", "Perfil & Dados")
+                    val analysisTabs = listOf("Resumo", "Desempenho & Índices", "Finanças & Balanço", "Proventos & Payout", "Indicadores", "Perfil & Dados")
                     
                     LazyRow(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
@@ -606,8 +605,13 @@ fun AnalysisScreen(
                                 }
                             }
                         }
-                                                        // Pacote completo de gráficos do VALORAE Proxy.
-                        // A tela não escolhe manualmente poucos gráficos; o painel se adapta e distribui os gráficos nas abas de categoria.
+                    } // end tab 0
+
+                    if (mainAnalysisTabIdx == 1) {
+                        val tickerKey = asset.ticker.trim().uppercase()
+                        val bundle = assetChartBundles[tickerKey]
+
+                        // Aba própria para desempenho, rentabilidade e comparações. Nenhum painel genérico é usado aqui.
                         if (isLoadingChartBundle) {
                             Surface(
                                 color = DarkSurfaceElevated,
@@ -621,14 +625,14 @@ fun AnalysisScreen(
                                 ) {
                                     CircularProgressIndicator(color = GoldPrimary, strokeWidth = 3.dp)
                                     Spacer(modifier = Modifier.height(12.dp))
-                                    Text("Carregando pacote completo de gráficos do Proxy...", color = TextSecondary, fontSize = 12.sp)
+                                    Text("Carregando desempenho, rentabilidade e índices...", color = TextSecondary, fontSize = 12.sp)
                                 }
                             }
                         } else if (bundle != null) {
                             Spacer(modifier = Modifier.height(12.dp))
                             com.example.ui.components.ChartCategoryHeader(
                                 title = "Desempenho e Rentabilidade",
-                                subtitle = if (isFii) "Evolução do FII e histórico de retornos" else "Rentabilidade histórica comparando nominal vs real"
+                                subtitle = if (isFii) "Rentabilidade nominal e real do FII" else "Rentabilidade nominal vs real extraída do Investidor10"
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             if (isFii) {
@@ -641,7 +645,7 @@ fun AnalysisScreen(
 
                             com.example.ui.components.ChartCategoryHeader(
                                 title = "Comparação e Correlações",
-                                subtitle = if (isFii) "Retorno acumulado contra o IFIX e médias do segmento" else "Evolução comparativa contra índices e cotação de commodities"
+                                subtitle = if (isFii) "Comparação com IFIX, CDI, IPCA e pares quando disponível" else "Comparação com índices, CDI, IPCA, IBOV e commodities quando disponível"
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             if (isFii) {
@@ -650,16 +654,16 @@ fun AnalysisScreen(
                                 com.example.ui.components.StockComparisonTab(bundle)
                             }
                         } else {
-                            com.example.ui.components.ChartCardContainer(title = "Gráficos do Ativo") {
+                            com.example.ui.components.ChartCardContainer(title = "Desempenho e Índices") {
                                 com.example.ui.components.EmptyChartState(
                                     title = "Gráficos indisponíveis",
-                                    message = "O VALORAE Proxy não retornou bundle gráfico para este ativo no momento."
+                                    message = "O VALORAE Proxy não retornou séries reais de desempenho e comparação para este ativo no momento."
                                 )
                             }
                         }
-                    } // end tab 0
+                    } // end tab 1
                     
-                    if (mainAnalysisTabIdx == 1) {
+                    if (mainAnalysisTabIdx == 2) {
                         val bundleProfile = assetChartBundles[asset.ticker.trim().uppercase()]
                         if (isLoadingChartBundle) {
                             Surface(
@@ -688,8 +692,8 @@ fun AnalysisScreen(
                                 com.example.ui.components.FiiPatrimonialTab(bundleProfile)
                             } else {
                                 com.example.ui.components.ChartCategoryHeader(
-                                    title = "DRE, Saúde Financeira e Divisões de Receitas",
-                                    subtitle = "Faturamento, margens, balanço patrimonial, payout e faturamento por segmento/geografia"
+                                    title = "Finanças, Balanço e Payout",
+                                    subtitle = "Receitas, lucros, lucro x cotação, Ativo / PL / Passivo e payout histórico"
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
                                 com.example.ui.components.StockDreTab(bundleProfile)
@@ -705,9 +709,9 @@ fun AnalysisScreen(
                                 )
                             }
                         }
-                    } // end tab 1
+                    } // end tab 2
 
-                    if (mainAnalysisTabIdx == 2) {
+                    if (mainAnalysisTabIdx == 3) {
                         val bundleTab1 = assetChartBundles[asset.ticker.trim().uppercase()]
                         if (isLoadingChartBundle) {
                             Surface(
@@ -728,8 +732,8 @@ fun AnalysisScreen(
                         } else if (bundleTab1 != null) {
                             Spacer(modifier = Modifier.height(12.dp))
                             com.example.ui.components.ChartCategoryHeader(
-                                title = "Proventos e Dividendos",
-                                subtitle = if (isFii) "Histórico de rendimentos e distribuição mensal" else "Históricos anuais, dividend yield, sazonalidade e proventos pagos"
+                                title = "Proventos, Dividendos e Yield",
+                                subtitle = if (isFii) "Distribuições, dividend yield e histórico de rendimentos" else "Dividendos, dividend yield e eventos de distribuição"
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             if (isFii) {
@@ -746,9 +750,9 @@ fun AnalysisScreen(
                                 )
                             }
                         }
-                    } // end tab 2
+                    } // end tab 3
 
-                    if (mainAnalysisTabIdx == 3) {
+                    if (mainAnalysisTabIdx == 4) {
                         val bundleTab1ForIndicators = assetChartBundles[asset.ticker.trim().uppercase()]
                         AssetProxyIndicatorSection(
                             assetData = asset,
@@ -756,9 +760,9 @@ fun AnalysisScreen(
                             isFii = isFii,
                             modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
                         )
-                    } // end tab 3
+                    } // end tab 4
 
-                    if (mainAnalysisTabIdx == 4) {
+                    if (mainAnalysisTabIdx == 5) {
                         val bundleProfile = assetChartBundles[asset.ticker.trim().uppercase()]
                         AssetProxyProfileSection(
                             assetData = asset,
@@ -768,7 +772,7 @@ fun AnalysisScreen(
                             isLoadingNews = isSearching,
                             modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
                         )
-                    } // end tab 4
+                    } // end tab 5
 
                     Spacer(modifier = Modifier.height(8.dp))
                 }

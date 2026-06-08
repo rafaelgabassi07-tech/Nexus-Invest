@@ -48,6 +48,7 @@ data class PortfolioAnalyticsState(
     val liveMarketRanking: MarketRankingSnapshot? = null,
     val stockMarketRanking: MarketRankingSnapshot? = null,
     val fiiMarketRanking: MarketRankingSnapshot? = null,
+    val marketRankingsAttempted: Boolean = false,
     val source: String = "Aguardando carteira",
     val lastUpdated: Long = 0L
 )
@@ -266,13 +267,13 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
             val avgPrice = if (currentShares > 0.0 && remainingCostBasis > 0.0) remainingCostBasis / currentShares else 0.0
             val totalCostBasis = remainingCostBasis.coerceAtLeast(0.0)
 
-            val livePrice = liveInfo?.price?.takeIf { it.isFinite() && it > 0.0 } ?: 0.0
+            val livePrice = liveInfo?.price?.takeIf { it.isFinite() && it > 0.0 } ?: avgPrice
             val liveDY = liveInfo?.dy?.takeIf { it.isFinite() } ?: 0.0
             val liveChange = liveInfo?.changePercent?.takeIf { it.isFinite() } ?: 0.0
             val lastDiv = liveInfo?.lastDividend?.takeIf { it.isFinite() } ?: 0.0
             val nextEarningsDate = liveInfo?.nextEarningsDate ?: ""
 
-            val currentVal = (currentShares * livePrice).takeIf { it.isFinite() } ?: 0.0
+            val currentVal = (currentShares * (if (livePrice > 0.0) livePrice else avgPrice)).takeIf { it.isFinite() } ?: 0.0
             val retVal = currentVal - totalCostBasis
             val retPct = if (totalCostBasis > 0) (retVal / totalCostBasis) * 100.0 else 0.0
 
@@ -500,6 +501,15 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
         return lastUpdatedAt > 0L && System.currentTimeMillis() - lastUpdatedAt < ttlMs
     }
 
+    private fun unavailableLiveMarketRanking(reason: String = "Ranking temporariamente indisponível"): MarketRankingSnapshot {
+        return MarketRankingSnapshot(
+            type = "ACAO",
+            source = "VALORAE Proxy",
+            fallbackUsed = true,
+            warnings = listOf(reason)
+        )
+    }
+
     private fun normalizeAssetRange(range: String): String {
         return when (range.trim().lowercase(java.util.Locale.ROOT)) {
             "1d", "d1" -> "1D"
@@ -560,6 +570,7 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
                             liveMarketRanking = current.liveMarketRanking,
                             stockMarketRanking = current.stockMarketRanking,
                             fiiMarketRanking = current.fiiMarketRanking,
+                            marketRankingsAttempted = current.marketRankingsAttempted,
                             source = if (current.liveMarketRanking != null || current.stockMarketRanking != null || current.fiiMarketRanking != null) "Rankings de mercado" else "Aguardando carteira",
                             lastUpdated = current.lastUpdated
                         )
@@ -800,11 +811,15 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
                 }
                 lastMarketRankingsRefreshAt = System.currentTimeMillis()
                 val current = _portfolioAnalytics.value
+                val resolvedLive = live
+                    ?: current.liveMarketRanking
+                    ?: unavailableLiveMarketRanking("Não foi possível carregar as maiores altas/baixas agora. Use tentar novamente.")
                 _portfolioAnalytics.value = current.copy(
                     isLoading = false,
-                    liveMarketRanking = live ?: current.liveMarketRanking,
+                    liveMarketRanking = resolvedLive,
                     stockMarketRanking = stock ?: current.stockMarketRanking,
                     fiiMarketRanking = fii ?: current.fiiMarketRanking,
+                    marketRankingsAttempted = true,
                     source = if (current.analysis != null || current.portfolioRanking != null) current.source else "Rankings de mercado",
                     lastUpdated = System.currentTimeMillis()
                 )
@@ -812,7 +827,13 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
                 throw e
             } catch (e: Exception) {
                 android.util.Log.e("PortfolioViewModel", "Erro ao carregar rankings da Home", e)
-                _portfolioAnalytics.value = _portfolioAnalytics.value.copy(isLoading = false)
+                val current = _portfolioAnalytics.value
+                _portfolioAnalytics.value = current.copy(
+                    isLoading = false,
+                    liveMarketRanking = current.liveMarketRanking ?: unavailableLiveMarketRanking("Falha temporária ao carregar rankings. Verifique a conexão e tente novamente."),
+                    marketRankingsAttempted = true,
+                    lastUpdated = System.currentTimeMillis()
+                )
             }
         }
     }
@@ -866,9 +887,8 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
             _isLoadingNews.value = true
             try {
                 val news = withContext(Dispatchers.IO) {
-                    val userTicker = transactions.value.firstOrNull()?.ticker
                     withTimeoutOrNull(5_500) {
-                        runCatching { B3NetworkService.fetchNews(userTicker ?: "") }.getOrDefault(emptyList())
+                        runCatching { B3NetworkService.fetchNews("") }.getOrDefault(emptyList())
                     }.orEmpty()
                 }
                 _newsFeed.value = news
@@ -936,7 +956,7 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
             lastSearchTicker = clean
             try {
                 val info = withContext(Dispatchers.IO) {
-                    withTimeoutOrNull(6_500) { runCatching { B3NetworkService.fetchAssetData(clean) }.getOrNull() }
+                    withTimeoutOrNull(15_000) { runCatching { B3NetworkService.fetchAssetData(clean) }.getOrNull() }
                 }
                 if (!isActive || lastSearchTicker != clean) return@launch
                 _searchQueryResult.value = info
@@ -1048,11 +1068,11 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
         val result = try {
             withContext(Dispatchers.IO) {
                 coroutineScope {
-                    val analysisDeferred = async { withTimeoutOrNull(5_500) { runCatching { B3NetworkService.fetchPortfolioAnalysis(positions) }.getOrNull() } }
-                    val historyDeferred = async { withTimeoutOrNull(5_500) { runCatching { B3NetworkService.fetchPortfolioHistory(positions, "1Y") }.getOrDefault(emptyList()) }.orEmpty() }
-                    val ipcaDeferred = async { withTimeoutOrNull(4_000) { runCatching { B3NetworkService.fetchIpcaSeries(12) }.getOrDefault(emptyList()) }.orEmpty() }
-                    val dividendsDeferred = async { withTimeoutOrNull(5_500) { runCatching { B3NetworkService.fetchNextDividends(positions) }.getOrDefault(emptyList()) }.orEmpty() }
-                    val portfolioRankingDeferred = async { withTimeoutOrNull(5_000) { runCatching { B3NetworkService.fetchPortfolioRankings(positions) }.getOrNull() } }
+                    val analysisDeferred = async { withTimeoutOrNull(8_000) { runCatching { B3NetworkService.fetchPortfolioAnalysis(positions) }.getOrNull() } }
+                    val historyDeferred = async { withTimeoutOrNull(8_000) { runCatching { B3NetworkService.fetchPortfolioHistory(positions, "1Y") }.getOrDefault(emptyList()) }.orEmpty() }
+                    val ipcaDeferred = async { withTimeoutOrNull(4_500) { runCatching { B3NetworkService.fetchIpcaSeries(12) }.getOrDefault(emptyList()) }.orEmpty() }
+                    val dividendsDeferred = async { withTimeoutOrNull(20_000) { runCatching { B3NetworkService.fetchNextDividends(positions) }.getOrDefault(emptyList()) }.orEmpty() }
+                    val portfolioRankingDeferred = async { withTimeoutOrNull(6_000) { runCatching { B3NetworkService.fetchPortfolioRankings(positions) }.getOrNull() } }
 
                     val remoteAnalysis = analysisDeferred.await()
                     val remoteHistory = historyDeferred.await()
@@ -1082,6 +1102,7 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
                         liveMarketRanking = currentMarketState.liveMarketRanking,
                         stockMarketRanking = currentMarketState.stockMarketRanking,
                         fiiMarketRanking = currentMarketState.fiiMarketRanking,
+                        marketRankingsAttempted = currentMarketState.marketRankingsAttempted,
                         source = if (remoteAnalysis != null || remoteHistory.isNotEmpty() || remoteIpca.isNotEmpty() || remoteDividends.isNotEmpty() || remotePortfolioRanking != null) "Dados VALORAE + carteira local ajustada" else "Carteira local + indicadores disponíveis",
                         lastUpdated = System.currentTimeMillis()
                     )
@@ -1100,6 +1121,7 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
                 liveMarketRanking = currentMarketState.liveMarketRanking,
                 stockMarketRanking = currentMarketState.stockMarketRanking,
                 fiiMarketRanking = currentMarketState.fiiMarketRanking,
+                marketRankingsAttempted = currentMarketState.marketRankingsAttempted,
                 source = "Carteira local + fallback seguro",
                 lastUpdated = System.currentTimeMillis()
             )
@@ -1216,6 +1238,17 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
         return 0L
     }
 
+    private fun startOfDayMillis(millis: Long): Long {
+        if (millis <= 0L) return 0L
+        return java.util.Calendar.getInstance().apply {
+            timeInMillis = millis
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
+    }
+
     private fun endOfDayMillis(millis: Long): Long {
         if (millis <= 0L) return 0L
         return java.util.Calendar.getInstance().apply {
@@ -1242,31 +1275,45 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
         txs: List<Transaction>,
         summaries: List<AssetSummary>
     ): List<DividendEvent> {
-        if (events.isEmpty()) return emptyList()
         val currentQty = summaries.associateBy({ it.ticker.trim().uppercase(java.util.Locale.ROOT) }, { it.sharesCount })
+        val todayStart = startOfDayMillis(System.currentTimeMillis())
         return events.mapNotNull { event ->
             val ticker = event.ticker.trim().uppercase(java.util.Locale.ROOT)
             if (ticker.isBlank()) return@mapNotNull null
-            val rawDate = parsePortfolioDateMillis(event.dateCom).takeIf { it > 0L }
-                ?: parsePortfolioDateMillis(event.paymentDate).takeIf { it > 0L }
-            val eligibleShares = if (rawDate != null) {
-                sharesOwnedAt(txs, ticker, endOfDayMillis(rawDate))
-            } else {
-                currentQty[ticker] ?: event.quantity
+
+            val comDateMillis = parsePortfolioDateMillis(event.dateCom).takeIf { it > 0L }
+            val paymentDateMillis = parsePortfolioDateMillis(event.paymentDate).takeIf { it > 0L }
+            val eligibilityMillis = comDateMillis ?: paymentDateMillis
+            val relevantMillis = paymentDateMillis ?: comDateMillis
+            val isFutureOrProvisioned = relevantMillis == null || relevantMillis >= todayStart
+
+            val ownedAtEligibility = eligibilityMillis?.let { sharesOwnedAt(txs, ticker, endOfDayMillis(it)) } ?: 0.0
+            val currentShares = currentQty[ticker] ?: 0.0
+            val eligibleShares = when {
+                ownedAtEligibility > 0.0001 -> ownedAtEligibility
+                isFutureOrProvisioned && currentShares > 0.0001 -> currentShares
+                isFutureOrProvisioned && event.quantity > 0.0001 -> event.quantity
+                else -> 0.0
             }.coerceAtLeast(0.0)
-            if (rawDate != null && eligibleShares <= 0.0001) return@mapNotNull null
+
+            val hasRealEventMarker = event.dateCom.isNotBlank() || event.paymentDate.isNotBlank() || event.source.isNotBlank()
+            if (eligibleShares <= 0.0001 && !isFutureOrProvisioned) return@mapNotNull null
+            if (eligibleShares <= 0.0001 && !hasRealEventMarker) return@mapNotNull null
 
             val amountFromUnit = if (event.valuePerShare > 0.0 && eligibleShares > 0.0) event.valuePerShare * eligibleShares else 0.0
             val proratedAmount = if (amountFromUnit > 0.0) amountFromUnit
                 else if (event.estimatedAmount > 0.0 && event.quantity > 0.0 && eligibleShares > 0.0) event.estimatedAmount * (eligibleShares / event.quantity)
-                else event.estimatedAmount
-            if (proratedAmount <= 0.0 && event.valuePerShare <= 0.0) return@mapNotNull null
+                else if (isFutureOrProvisioned) event.estimatedAmount
+                else 0.0
+            if (proratedAmount <= 0.0 && event.valuePerShare <= 0.0 && !hasRealEventMarker) return@mapNotNull null
+
             event.copy(
+                ticker = ticker,
                 quantity = if (eligibleShares > 0.0) eligibleShares else event.quantity,
                 estimatedAmount = proratedAmount.coerceAtLeast(0.0),
-                status = event.status.ifBlank { if (rawDate == null) "Estimado" else "Elegível pela carteira" }
+                status = event.status.ifBlank { if (isFutureOrProvisioned) "Previsto" else "Recebido" }
             )
-        }.distinctBy { listOf(it.ticker, it.dateCom, it.paymentDate, it.valuePerShare).joinToString("|") }
+        }.distinctBy { listOf(it.ticker.trim().uppercase(java.util.Locale.ROOT), it.dateCom, it.paymentDate, it.valuePerShare).joinToString("|") }
     }
 
     private fun buildLocalPortfolioAnalysis(summaries: List<AssetSummary>): PortfolioProxyAnalysis {

@@ -2,5 +2,9 @@
   "name": "Valorae",
   "description": "Plataforma profissional de gestão de portfólio, análise de ativos e monitoramento de mercado financeiro.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ],
+  "versionName": "2.0.29",
+  "versionCode": 39
 }

@@ -218,6 +218,45 @@ fun AssetChartBundlePanel(
     }
 }
 
+
+@Composable
+private fun ChartQuickStatsRow(stats: List<Pair<String, String>>) {
+    val visible = stats.filter { it.second.isNotBlank() && it.second != "—" }.take(4)
+    if (visible.isEmpty()) return
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        items(visible.size) { idx ->
+            val item = visible[idx]
+            Surface(
+                color = DarkBackground,
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, BorderColor.copy(alpha = 0.12f))
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                    Text(item.first, color = TextSecondary, fontSize = 9.sp, maxLines = 1)
+                    Text(item.second, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Black, maxLines = 1)
+                }
+            }
+        }
+    }
+}
+
+private fun latestPercentLabel(value: Double?): String {
+    val v = value ?: return "—"
+    if (!v.isFinite()) return "—"
+    return String.format(Locale.ROOT, "%+.2f%%", v)
+}
+
+private fun latestMoneyLabel(value: Double?): String {
+    val v = value ?: return "—"
+    if (!v.isFinite() || v == 0.0) return "—"
+    val abs = kotlin.math.abs(v)
+    return when {
+        abs >= 1_000_000_000.0 -> String.format(Locale.ROOT, "R$ %.2f bi", v / 1_000_000_000.0)
+        abs >= 1_000_000.0 -> String.format(Locale.ROOT, "R$ %.2f mi", v / 1_000_000.0)
+        else -> String.format(Locale.ROOT, "R$ %.2f", v)
+    }
+}
+
 // ======================== TABS IMPLEMENTATIONS ========================
 
 @Composable
@@ -278,6 +317,19 @@ fun StockDividendTab(bundle: AssetChartBundle) {
                 )
             } else {
                 EmptyChartState("Sem distribuição mensal", "Distribuições mensais recentes indisponíveis.")
+            }
+        }
+
+        FilteredChartCard(title = "Payout Histórico (%)", filterOptions = listOf("3A", "5A", "10A", "MAX"), defaultFilter = "10A") { filter ->
+            val filterYears = filter.replace("A", "").toIntOrNull() ?: Int.MAX_VALUE
+            val filteredPoints = bundle.payoutHistory.takeLast(filterYears)
+            if (filteredPoints.size >= 2) {
+                AssetPayoutHistoryChart(
+                    points = filteredPoints,
+                    modifier = Modifier.height(150.dp)
+                )
+            } else {
+                EmptyChartState("Payout histórico indisponível", "O APK só exibe payout histórico quando o Proxy entrega série real do Investidor10.")
             }
         }
 
@@ -351,29 +403,35 @@ fun StockDreTab(bundle: AssetChartBundle) {
             }
         }
 
+        FilteredChartCard(title = "Evolução Patrimonial", filterOptions = listOf("3A", "5A", "8A", "MAX"), defaultFilter = "8A") { filter ->
+            val filterYears = filter.replace("A", "").toIntOrNull() ?: Int.MAX_VALUE
+            val filteredPoints = bundle.equityEvolution
+                .filter { it.totalAssets != 0.0 || it.netWorth != 0.0 }
+                .sortedBy { it.year }
+                .takeLast(filterYears)
+            if (filteredPoints.size >= 2) {
+                AssetPatrimonyEvolutionChart(
+                    points = filteredPoints,
+                    modifier = Modifier.height(160.dp)
+                )
+            } else {
+                EmptyChartState("Evolução patrimonial indisponível", "Série histórica de patrimônio/ativos não retornada pelo Proxy em quantidade suficiente.")
+            }
+        }
+
         FilteredChartCard(title = "Balanço Patrimonial: Ativo/PL/Passivo", filterOptions = listOf("3A", "5A", "8A", "MAX"), defaultFilter = "8A") { filter ->
             val filterYears = filter.replace("A", "").toIntOrNull() ?: Int.MAX_VALUE
-            val filteredPoints = bundle.equityEvolution.sortedBy { it.year }.takeLast(filterYears)
-            if (filteredPoints.isNotEmpty()) {
+            val filteredPoints = bundle.balanceSheet
+                .filter { it.totalAssets != 0.0 && it.netWorth != 0.0 && it.totalLiabilities != 0.0 }
+                .sortedBy { it.year }
+                .takeLast(filterYears)
+            if (filteredPoints.size >= 2) {
                 AssetEquityEvolutionChart(
                     points = filteredPoints,
                     modifier = Modifier.height(160.dp)
                 )
             } else {
-                EmptyChartState("Aguardando Ativos e Patrimônio", "Visão de evolução patrimonial indisponível.")
-            }
-        }
-
-        FilteredChartCard(title = "Payout Histórico (%)", filterOptions = listOf("3A", "5A", "10A", "MAX"), defaultFilter = "10A") { filter ->
-            val filterYears = filter.replace("A", "").toIntOrNull() ?: Int.MAX_VALUE
-            val filteredPoints = bundle.payoutHistory.takeLast(filterYears)
-            if (filteredPoints.isNotEmpty()) {
-                AssetPayoutHistoryChart(
-                    points = filteredPoints,
-                    modifier = Modifier.height(150.dp)
-                )
-            } else {
-                EmptyChartState("Indisponível", "Histórico de payout indisponível no momento.")
+                EmptyChartState("Balanço real indisponível", "O APK só monta Ativo / PL / Passivo quando o Proxy entrega as três séries históricas reais do Investidor10.")
             }
         }
     }
@@ -852,16 +910,28 @@ fun AssetProfitabilityChart(
     realProfitability: List<AssetPeriodReturn>,
     modifier: Modifier = Modifier
 ) {
-    val items = profitability.take(6)
-    if (items.isEmpty()) return
+    val orderedPeriods = (profitability.map { it.period } + realProfitability.map { it.period })
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .distinct()
+        .takeLast(8)
+    if (orderedPeriods.isEmpty()) return
+    val items = orderedPeriods.map { period ->
+        profitability.firstOrNull { it.period.equals(period, ignoreCase = true) }
+            ?: AssetPeriodReturn(period = period, valuePercent = 0.0, label = period, kind = "nominal")
+    }
+    val alignedReal = orderedPeriods.map { period ->
+        realProfitability.firstOrNull { it.period.equals(period, ignoreCase = true) }
+            ?: AssetPeriodReturn(period = period, valuePercent = 0.0, label = period, kind = "real")
+    }
 
     val maxVal = maxOf(
         items.maxOf { it.valuePercent },
-        realProfitability.take(6).maxOfOrNull { it.valuePercent } ?: 0.0
+        alignedReal.maxOfOrNull { it.valuePercent } ?: 0.0
     ).coerceAtLeast(1.0).toFloat()
     val minVal = minOf(
         items.minOf { it.valuePercent },
-        realProfitability.take(6).minOfOrNull { it.valuePercent } ?: 0.0
+        alignedReal.minOfOrNull { it.valuePercent } ?: 0.0
     ).coerceAtMost(0.0).toFloat()
     val range = maxVal - minVal
     
@@ -939,7 +1009,7 @@ fun AssetProfitabilityChart(
                     val nY = h - nHeight
 
                     // Real bar (SuccessGreen)
-                    val realItem = realProfitability.firstOrNull { it.period == nom.period }
+                    val realItem = alignedReal.getOrNull(idx)
                     val rVal = realItem?.valuePercent?.toFloat() ?: 0f
                     val rNorm = (rVal - minVal) / range
                     val rHeight = (rNorm * h).coerceIn(0f, h)
@@ -988,7 +1058,7 @@ fun AssetProfitabilityChart(
             // Tooltip Overlay
             activeIndex?.let { idx ->
                 val nom = items[idx]
-                val realItem = realProfitability.firstOrNull { it.period == nom.period }
+                val realItem = alignedReal.getOrNull(idx)
                 Box(
                     modifier = Modifier.fillMaxSize().padding(bottom = 28.dp),
                     contentAlignment = Alignment.TopCenter
@@ -1509,115 +1579,235 @@ fun AssetProfitVsQuoteChart(points: List<AssetComparisonPoint>, modifier: Modifi
 }
 
 @Composable
-fun AssetEquityEvolutionChart(points: List<FinancialStatementPoint>, modifier: Modifier = Modifier) {
+fun AssetPatrimonyEvolutionChart(points: List<FinancialStatementPoint>, modifier: Modifier = Modifier) {
     val items = sanitizeFinancialPoints(points)
         .filter { it.totalAssets > 0.0 || it.netWorth > 0.0 }
         .sortedBy { it.year }
     if (items.isEmpty()) return
 
-    val maxVal = items.maxOf { kotlin.math.max(it.totalAssets, it.netWorth) }.let { if (!it.isFinite() || it <= 0) 1.0 else it }.toFloat()
-    val minVal = 0f
-    val range = (maxVal - minVal).takeIf { it.isFinite() && it > 0.0001f } ?: 1f
-    
+    val maxVal = items.maxOf { maxOf(it.totalAssets, it.netWorth) }
+        .let { if (!it.isFinite() || it <= 0) 1.0 else it }
+        .toFloat()
+    val range = maxVal.takeIf { it.isFinite() && it > 0.0001f } ?: 1f
     var activeIndex by remember(items) { mutableStateOf<Int?>(null) }
-    var touchX by remember { mutableFloatStateOf(0f) }
 
-    Box(modifier = modifier) {
-        Canvas(modifier = Modifier
-            .fillMaxSize()
-            .pointerInput(items) {
-                detectDragGestures(
-                    onDragStart = { offset ->
-                        val space = size.width.toFloat() / items.size
-                        activeIndex = (offset.x / space).toInt().coerceIn(0, items.size - 1)
-                    },
-                    onDrag = { change, _ ->
-                        val space = size.width.toFloat() / items.size
-                        activeIndex = (change.position.x / space).toInt().coerceIn(0, items.size - 1)
-                    },
-                    onDragEnd = { activeIndex = null },
-                    onDragCancel = { activeIndex = null }
-                )
-            }
-            .pointerInput(items, "tap") {
-                detectTapGestures(
-                    onPress = { offset ->
-                        val space = size.width.toFloat() / items.size
-                        activeIndex = (offset.x / space).toInt().coerceIn(0, items.size - 1)
-                        tryAwaitRelease()
-                        activeIndex = null
-                    }
-                )
-            }
+    Column(modifier = modifier) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            val w = size.width
-            val h = size.height - 16.dp.toPx()
-            val space = w / items.size
-            val barW = (space * 0.25f).coerceAtLeast(3.dp.toPx())
-
-            items.forEachIndexed { i, pt ->
-                val cx = i * space + space / 2
-                
-                val isSelected = activeIndex == i
-                val alpha = if (activeIndex == null || isSelected) 1f else 0.4f
-
-                // Assets (Blue/GoldPale)
-                val hAssets = (pt.totalAssets.toFloat() / range) * h
-                drawRoundRect(
-                    color = GoldPale.copy(alpha = alpha),
-                    topLeft = Offset(cx - barW, h - hAssets),
-                    size = Size(barW, hAssets),
-                    cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx())
-                )
-
-                // Equity/Worth (GoldPrimary)
-                val hNetWorth = (pt.netWorth.toFloat() / range) * h
-                drawRoundRect(
-                    color = GoldPrimary.copy(alpha = alpha),
-                    topLeft = Offset(cx, h - hNetWorth),
-                    size = Size(barW, hNetWorth),
-                    cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx())
-                )
+            listOf("Ativo" to GoldPale, "Patrimônio Líquido" to GoldPrimary).forEach { (label, color) ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(modifier = Modifier.size(8.dp).background(color, CircleShape))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(label, color = TextSecondary, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                }
             }
         }
-
-        Row(modifier = Modifier.fillMaxWidth().align(Alignment.BottomStart)) {
-            items.forEach { pt ->
-                Text(
-                    text = pt.label,
-                    color = TextSecondary,
-                    fontSize = 8.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-        
-        // Tooltip Overlay
-        activeIndex?.let { idx ->
-            val pt = items[idx]
-            Box(
-                modifier = Modifier.fillMaxSize().padding(bottom = 24.dp),
-                contentAlignment = Alignment.TopCenter
-            ) {
-                Box(
-                    modifier = Modifier
-                        .background(DarkSurfaceElevated, RoundedCornerShape(8.dp))
-                        .border(1.dp, BorderColor.copy(alpha=0.2f), RoundedCornerShape(8.dp))
-                        .padding(8.dp)
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = pt.label, color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(modifier = Modifier.size(6.dp).background(GoldPale, CircleShape))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(text = "Ativos: R$ ${String.format("%,.0f", pt.totalAssets)}", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Spacer(modifier = Modifier.height(8.dp))
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            Canvas(modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(items) {
+                    detectDragGestures(
+                        onDragStart = { offset ->
+                            val space = size.width.toFloat() / items.size
+                            activeIndex = (offset.x / space).toInt().coerceIn(0, items.size - 1)
+                        },
+                        onDrag = { change, _ ->
+                            val space = size.width.toFloat() / items.size
+                            activeIndex = (change.position.x / space).toInt().coerceIn(0, items.size - 1)
+                        },
+                        onDragEnd = { activeIndex = null },
+                        onDragCancel = { activeIndex = null }
+                    )
+                }
+                .pointerInput(items, "tap-patrimony") {
+                    detectTapGestures(
+                        onPress = { offset ->
+                            val space = size.width.toFloat() / items.size
+                            activeIndex = (offset.x / space).toInt().coerceIn(0, items.size - 1)
+                            tryAwaitRelease()
+                            activeIndex = null
                         }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(modifier = Modifier.size(6.dp).background(GoldPrimary, CircleShape))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(text = "PL: R$ ${String.format("%,.0f", pt.netWorth)}", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    )
+                }
+            ) {
+                val w = size.width
+                val h = size.height - 18.dp.toPx()
+                val space = w / items.size
+                val pathAssets = Path()
+                val pathEquity = Path()
+                for (g in 0..3) {
+                    val y = h * g / 3f
+                    drawLine(color = BorderColor.copy(alpha = 0.12f), start = Offset(0f, y), end = Offset(w, y))
+                }
+                items.forEachIndexed { i, pt ->
+                    val x = i * space + space / 2
+                    val yAssets = h - ((pt.totalAssets.toFloat() / range) * h).coerceIn(0f, h)
+                    val yEquity = h - ((pt.netWorth.toFloat() / range) * h).coerceIn(0f, h)
+                    if (i == 0) {
+                        pathAssets.moveTo(x, yAssets)
+                        pathEquity.moveTo(x, yEquity)
+                    } else {
+                        pathAssets.lineTo(x, yAssets)
+                        pathEquity.lineTo(x, yEquity)
+                    }
+                    drawCircle(color = GoldPale, radius = 2.dp.toPx(), center = Offset(x, yAssets))
+                    drawCircle(color = GoldPrimary, radius = 2.dp.toPx(), center = Offset(x, yEquity))
+                }
+                drawPath(pathAssets, color = GoldPale, style = Stroke(width = 2.dp.toPx()))
+                drawPath(pathEquity, color = GoldPrimary, style = Stroke(width = 2.dp.toPx()))
+            }
+
+            Row(modifier = Modifier.fillMaxWidth().align(Alignment.BottomStart)) {
+                items.forEach { pt ->
+                    Text(
+                        text = pt.label,
+                        color = TextSecondary,
+                        fontSize = 8.sp,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            activeIndex?.let { idx ->
+                val pt = items[idx]
+                Box(modifier = Modifier.fillMaxSize().padding(bottom = 30.dp), contentAlignment = Alignment.TopCenter) {
+                    Box(
+                        modifier = Modifier
+                            .background(DarkSurfaceElevated, RoundedCornerShape(8.dp))
+                            .border(1.dp, BorderColor.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                            .padding(8.dp)
+                    ) {
+                        Column(horizontalAlignment = Alignment.Start, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(text = pt.label, color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            Text(text = "Ativo: ${latestMoneyLabel(pt.totalAssets)}", color = GoldPale, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text(text = "PL: ${latestMoneyLabel(pt.netWorth)}", color = GoldPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AssetEquityEvolutionChart(points: List<FinancialStatementPoint>, modifier: Modifier = Modifier) {
+    val items = sanitizeFinancialPoints(points)
+        .filter { it.totalAssets > 0.0 || it.netWorth > 0.0 || it.totalLiabilities > 0.0 }
+        .sortedBy { it.year }
+    if (items.isEmpty()) return
+
+    val maxVal = items.maxOf {
+        maxOf(it.totalAssets, it.netWorth, it.totalLiabilities)
+    }.let { if (!it.isFinite() || it <= 0) 1.0 else it }.toFloat()
+    val range = maxVal.takeIf { it.isFinite() && it > 0.0001f } ?: 1f
+    var activeIndex by remember(items) { mutableStateOf<Int?>(null) }
+
+    Column(modifier = modifier) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            listOf("Ativo" to GoldPale, "PL" to GoldPrimary, "Passivo" to DangerRed).forEach { (label, color) ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(modifier = Modifier.size(8.dp).background(color, CircleShape))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(label, color = TextSecondary, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            Canvas(modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(items) {
+                    detectDragGestures(
+                        onDragStart = { offset ->
+                            val space = size.width.toFloat() / items.size
+                            activeIndex = (offset.x / space).toInt().coerceIn(0, items.size - 1)
+                        },
+                        onDrag = { change, _ ->
+                            val space = size.width.toFloat() / items.size
+                            activeIndex = (change.position.x / space).toInt().coerceIn(0, items.size - 1)
+                        },
+                        onDragEnd = { activeIndex = null },
+                        onDragCancel = { activeIndex = null }
+                    )
+                }
+                .pointerInput(items, "tap") {
+                    detectTapGestures(
+                        onPress = { offset ->
+                            val space = size.width.toFloat() / items.size
+                            activeIndex = (offset.x / space).toInt().coerceIn(0, items.size - 1)
+                            tryAwaitRelease()
+                            activeIndex = null
+                        }
+                    )
+                }
+            ) {
+                val w = size.width
+                val h = size.height - 18.dp.toPx()
+                val space = w / items.size
+                val barW = (space * 0.18f).coerceAtLeast(3.dp.toPx())
+                for (g in 0..3) {
+                    val y = h * g / 3f
+                    drawLine(color = BorderColor.copy(alpha = 0.12f), start = Offset(0f, y), end = Offset(w, y))
+                }
+                items.forEachIndexed { i, pt ->
+                    val cx = i * space + space / 2
+                    val alpha = if (activeIndex == null || activeIndex == i) 1f else 0.4f
+                    val bars = listOf(
+                        Triple(pt.totalAssets, GoldPale, -barW * 1.2f),
+                        Triple(pt.netWorth, GoldPrimary, 0f),
+                        Triple(pt.totalLiabilities, DangerRed, barW * 1.2f)
+                    )
+                    bars.forEach { (value, color, dx) ->
+                        val barH = ((value.toFloat() / range) * h).coerceIn(0f, h)
+                        drawRoundRect(
+                            color = color.copy(alpha = alpha),
+                            topLeft = Offset(cx + dx, h - barH),
+                            size = Size(barW, barH),
+                            cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx())
+                        )
+                    }
+                }
+            }
+
+            Row(modifier = Modifier.fillMaxWidth().align(Alignment.BottomStart)) {
+                items.forEach { pt ->
+                    Text(
+                        text = pt.label,
+                        color = TextSecondary,
+                        fontSize = 8.sp,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            activeIndex?.let { idx ->
+                val pt = items[idx]
+                Box(modifier = Modifier.fillMaxSize().padding(bottom = 30.dp), contentAlignment = Alignment.TopCenter) {
+                    Box(
+                        modifier = Modifier
+                            .background(DarkSurfaceElevated, RoundedCornerShape(8.dp))
+                            .border(1.dp, BorderColor.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                            .padding(8.dp)
+                    ) {
+                        Column(horizontalAlignment = Alignment.Start, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(text = pt.label, color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            Text(text = "Ativo: ${latestMoneyLabel(pt.totalAssets)}", color = GoldPale, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text(text = "PL: ${latestMoneyLabel(pt.netWorth)}", color = GoldPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text(text = "Passivo: ${latestMoneyLabel(pt.totalLiabilities)}", color = DangerRed, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -1628,10 +1818,98 @@ fun AssetEquityEvolutionChart(points: List<FinancialStatementPoint>, modifier: M
 
 @Composable
 fun AssetPayoutHistoryChart(points: List<AssetIndicatorPoint>, modifier: Modifier = Modifier) {
-    val chartPoints = points.mapIndexed { idx, pt ->
-        ChartPoint(idx.toLong(), pt.year, pt.value)
+    val items = points
+        .filter { it.value.isFinite() && it.value != 0.0 }
+        .sortedWith(compareBy<AssetIndicatorPoint> { it.year.ifBlank { it.period.ifBlank { it.label } } })
+    if (items.isEmpty()) return
+    val maxVal = items.maxOf { it.value }.coerceAtLeast(1.0).toFloat()
+    val minVal = items.minOf { it.value }.coerceAtMost(0.0).toFloat()
+    val range = (maxVal - minVal).takeIf { it.isFinite() && it > 0.0001f } ?: 1f
+    var activeIndex by remember(items) { mutableStateOf<Int?>(null) }
+
+    Column(modifier = modifier) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Distribuição do lucro (%)", color = TextSecondary, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            Text("Média ${latestPercentLabel(items.map { it.value }.average().takeIf { it.isFinite() })}", color = TextSecondary, fontSize = 9.sp)
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            Column(modifier = Modifier.fillMaxHeight().padding(end = 6.dp), verticalArrangement = Arrangement.SpaceBetween) {
+                Text(String.format(Locale.ROOT, "%.0f%%", maxVal), color = TextSecondary, fontSize = 8.sp)
+                Text("0%", color = TextSecondary, fontSize = 8.sp)
+                Text(String.format(Locale.ROOT, "%.0f%%", minVal), color = TextSecondary, fontSize = 8.sp)
+            }
+            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                Canvas(modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(items) {
+                        detectDragGestures(
+                            onDragStart = { offset ->
+                                val space = size.width.toFloat() / items.size
+                                activeIndex = (offset.x / space).toInt().coerceIn(0, items.size - 1)
+                            },
+                            onDrag = { change, _ ->
+                                val space = size.width.toFloat() / items.size
+                                activeIndex = (change.position.x / space).toInt().coerceIn(0, items.size - 1)
+                            },
+                            onDragEnd = { activeIndex = null },
+                            onDragCancel = { activeIndex = null }
+                        )
+                    }
+                ) {
+                    val w = size.width
+                    val h = size.height - 18.dp.toPx()
+                    val space = w / items.size
+                    val barW = (space * 0.55f).coerceAtLeast(4.dp.toPx())
+                    val zeroY = h - (((0f - minVal) / range) * h).coerceIn(0f, h)
+                    drawLine(color = BorderColor.copy(alpha = 0.25f), start = Offset(0f, zeroY), end = Offset(w, zeroY))
+                    items.forEachIndexed { i, pt ->
+                        val cx = i * space + space / 2
+                        val norm = (pt.value.toFloat() - minVal) / range
+                        val barH = (norm * h).coerceIn(0f, h)
+                        val alpha = if (activeIndex == null || activeIndex == i) 1f else 0.45f
+                        drawRoundRect(
+                            color = if (pt.value >= 0) SuccessGreen.copy(alpha = alpha) else DangerRed.copy(alpha = alpha),
+                            topLeft = Offset(cx - barW / 2, h - barH),
+                            size = Size(barW, barH),
+                            cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx())
+                        )
+                    }
+                }
+                Row(modifier = Modifier.fillMaxWidth().align(Alignment.BottomStart)) {
+                    items.forEach { pt ->
+                        Text(
+                            text = pt.year.ifBlank { pt.period.ifBlank { pt.label } },
+                            color = TextSecondary,
+                            fontSize = 8.sp,
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+                activeIndex?.let { idx ->
+                    val pt = items[idx]
+                    Box(modifier = Modifier.fillMaxSize().padding(bottom = 24.dp), contentAlignment = Alignment.TopCenter) {
+                        Box(
+                            modifier = Modifier
+                                .background(DarkSurfaceElevated, RoundedCornerShape(8.dp))
+                                .border(1.dp, BorderColor.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                                .padding(8.dp)
+                        ) {
+                            Text(
+                                text = "${pt.year.ifBlank { pt.period.ifBlank { pt.label } }}: ${latestPercentLabel(pt.value)}",
+                                color = TextPrimary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
-    HistoricalPriceLineChart(points = chartPoints, modifier = modifier, lineColor = SuccessGreen)
 }
 
 @Composable

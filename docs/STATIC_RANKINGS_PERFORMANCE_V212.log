@@ -1,0 +1,20 @@
+OK - Versão 2.0.12 aplicada
+OK - Parser aceita aliases camelCase e snake_case de altas/baixas
+OK - Parser aceita campos alternativos de ticker/preço/variação/fonte
+OK - Modo completo usa contrato Proxy adequado
+OK - Fallback leve de rankings preservado
+OK - Enriquecimento não zera variação real do ranking
+OK - Home não fica em skeleton infinito após falha
+OK - Home mostra skeleton antes da primeira tentativa
+OK - Home tem retry conectado a busca completa
+OK - Abrir ranking completo força atualização ampla
+OK - Aba Insights solicita rankings completos sem bloquear
+OK - Timeouts de performance delimitados no ViewModel
+OK - OkHttp limitado para responsividade
+OK - LazyColumn principal usa chaves estáveis
+OK - Redução de recomposições preservada
+OK - Balanceamento estrutural leve app/src/main/java/com/example/network/B3NetworkService.kt
+OK - Balanceamento estrutural leve app/src/main/java/com/example/viewmodel/PortfolioViewModel.kt
+OK - Balanceamento estrutural leve app/src/main/java/com/example/ui/screens/DashboardScreen.kt
+OK - Balanceamento estrutural leve app/src/main/java/com/example/MainActivity.kt
+STATIC_RANKINGS_PERFORMANCE_V212_OK

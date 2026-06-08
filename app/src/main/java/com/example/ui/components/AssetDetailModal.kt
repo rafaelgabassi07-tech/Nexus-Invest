@@ -248,7 +248,7 @@ fun AssetDetailModal(
                     val realData = assetData
 
                     var mainTabIdx by remember { mutableStateOf(0) }
-                    val mainTabs = listOf("Resumo & Gráficos", "Finanças & DRE", "Proventos & Dividendos", "Indicadores Gerais", "Perfil & Dados", "Minha Custódia", "Transações")
+                    val mainTabs = listOf("Resumo", "Desempenho & Índices", "Finanças & Balanço", "Proventos & Payout", "Indicadores", "Perfil & Dados", "Minha Custódia", "Transações")
                     
                     LazyRow(
                         modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
@@ -390,7 +390,7 @@ fun AssetDetailModal(
                         }
 
                         // Finanças & DRE: dados do VALORAE Proxy para DRE, Patrimônio, etc.
-                        if (mainTabIdx == 1) {
+                        if (mainTabIdx == 2) {
                             val bundleProfile = chartBundle
                             if (bundleProfile != null) {
                                 item {
@@ -404,8 +404,8 @@ fun AssetDetailModal(
                                         FiiPatrimonialTab(bundleProfile)
                                     } else {
                                         ChartCategoryHeader(
-                                            title = "DRE, Saúde Financeira e Divisões de Receitas",
-                                            subtitle = "Faturamento, margens, balanço patrimonial, payout e faturamento por segmento/geografia"
+                                            title = "Finanças, Balanço e Payout",
+                                            subtitle = "Receitas, lucros, lucro x cotação, Ativo / PL / Passivo e payout histórico"
                                         )
                                         Spacer(modifier = Modifier.height(8.dp))
                                         StockDreTab(bundleProfile)
@@ -427,14 +427,14 @@ fun AssetDetailModal(
                         } // End Finanças & DRE
 
                         // Proventos & Dividendos
-                        if (mainTabIdx == 2) {
+                        if (mainTabIdx == 3) {
                             val currentBundle = chartBundle
                             if (currentBundle != null) {
                                 item {
                                     Spacer(modifier = Modifier.height(12.dp))
                                     ChartCategoryHeader(
-                                        title = "Proventos e Dividendos",
-                                        subtitle = if (isFii) "Histórico de rendimentos e distribuição mensal" else "Históricos anuais, dividend yield, sazonalidade e proventos pagos"
+                                        title = "Proventos, Dividendos e Yield",
+                                        subtitle = if (isFii) "Distribuições, dividend yield e histórico de rendimentos" else "Dividendos, dividend yield e eventos de distribuição"
                                     )
                                     Spacer(modifier = Modifier.height(8.dp))
                                     if (isFii) {
@@ -525,7 +525,7 @@ fun AssetDetailModal(
                         } // End Tab 0
 
                         // Indicadores Gerais: todos os indicadores vêm do VALORAE Proxy ou do bundle oficial.
-                        if (mainTabIdx == 3) {
+                        if (mainTabIdx == 4) {
                             item {
                                 AssetProxyIndicatorSection(
                                     assetData = realData,
@@ -537,7 +537,7 @@ fun AssetDetailModal(
                         } // End Indicadores Gerais
 
                         // Perfil & Dados
-                        if (mainTabIdx == 4) {
+                        if (mainTabIdx == 5) {
                             item {
                                 AssetProxyProfileSection(
                                     assetData = realData,
@@ -640,8 +640,8 @@ fun AssetDetailModal(
 
                         } // end of Interactive Chart constraint
 
-                        // 1.5 Investidor10 Chart Bundle panel
-                        if (mainTabIdx == 0) { // Gráficos Avançados
+                        // Desempenho, rentabilidade e comparação ficam na aba própria.
+                        if (mainTabIdx == 1) { // Desempenho & Índices
                         item {
                             val bundle = chartBundle
                             if (isLoadingChartBundle) {
@@ -657,7 +657,7 @@ fun AssetDetailModal(
                                     ) {
                                         CircularProgressIndicator(color = GoldPrimary, strokeWidth = 3.dp)
                                         Spacer(modifier = Modifier.height(12.dp))
-                                        Text("Carregando gráficos de análise...", color = TextSecondary, fontSize = 12.sp)
+                                        Text("Carregando desempenho, rentabilidade e índices...", color = TextSecondary, fontSize = 12.sp)
                                     }
                                 }
                             } else if (bundle != null) {
@@ -708,7 +708,7 @@ fun AssetDetailModal(
 
                         } // end of mainTabIdx == 0
 
-                        if (mainTabIdx == 5) { // Detalhes da Posição
+                        if (mainTabIdx == 6) { // Detalhes da Posição
                         // 2. Personal Holdings Dashboard summary
                         item {
                             Text(
@@ -854,9 +854,9 @@ fun AssetDetailModal(
                             }
                         }
 
-                        } // end of mainTabIdx == 5
+                        } // end of mainTabIdx == 6
 
-                        if (mainTabIdx == 6) { // Transações
+                        if (mainTabIdx == 7) { // Transações
                         // 4. Detailed Purchase Logs
                         item {
                             Spacer(modifier = Modifier.height(8.dp))
@@ -1042,7 +1042,7 @@ fun AssetDetailModal(
                                 }
                             }
                         }
-                        } // end mainTabIdx == 6
+                        } // end mainTabIdx == 7
 
                         item {
                             Spacer(modifier = Modifier.navigationBarsPadding().height(56.dp))

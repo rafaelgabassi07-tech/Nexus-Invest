@@ -1,0 +1,39 @@
+STATIC_RANKINGS_REVIEW_V214_OK
+OK - Botão Ver Ranking Completo continua removido do código principal
+OK - Home continua com card compacto de altas/baixas
+OK - Parser aceita aliases camelCase/snake_case de altas
+OK - Parser aceita aliases camelCase/snake_case de baixas
+OK - Parser separa listas genéricas de movers
+OK - Parser normaliza direction/tipo/movement
+OK - Parser normaliza percentual sem símbolo %
+OK - Preço não é mais usado como value de variação
+OK - Enriquecimento não sobrescreve variação real com preço/cotação auxiliar indevida
+OK - Home mostra erro/tentar novamente após tentativa falha
+OK - Home força símbolo % se display legado vier numérico
+OK - ViewModel mantém fallback sem skeleton infinito
+OK - Versão do APK incrementada para 2.0.14
+OK - Teste cobre generic items em altas/baixas
+Valorae loading optimization audit OK
+OK - Abertura escalona notícias
+OK - Abertura escalona rankings
+OK - TTL para notícias
+OK - TTL para rankings de mercado
+OK - TTL para saúde do Proxy
+OK - TTL para cotações em lote
+OK - Insights não baixa rankings globais a cada atualização da carteira
+OK - Proxy+ não roda no refresh geral quando nunca aberto
+OK - Proxy+ tem trava contra chamadas concorrentes
+OK - OkHttp com concorrência moderada
+OK - Rankings ao vivo suportam modo completo com fallback
+OK - Batch de ativos não vira dezenas de chamadas individuais
+OK - Diagnóstico do Proxy tem cache
+OK - Proxy+ limita blocos avançados por abertura
+OK - Batch aceita objeto indexado por ticker sem perder ticker
+OK - Batch não sobrescreve snapshot bom com parcial ruim
+OK - Analytics preserva ranking da carteira quando endpoint remoto falha
+OK - Analytics preserva rankings de mercado em fallback local
+OK - Documentação oficial usa contratos /api/v1
+OK - Documentação não mantém rotas legadas principais
+OK - Build exige HTTPS na URL do Proxy
+OK - Fallback direto permanece bloqueado por política
+Valorae deep final audit OK

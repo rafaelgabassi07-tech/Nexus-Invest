@@ -674,4 +674,45 @@ class B3NetworkServiceParserTest {
         assertEquals("Exploração", petr?.segmento)
     }
 
+
+    @Test
+    fun testGenericMarketMoversAreSplitIntoHighsAndLows() {
+        val jsonString = """
+            {
+                "status": "OK",
+                "rankingSource": "investidor10-generic-live",
+                "data": {
+                    "items": [
+                        {
+                            "codigo": "ALTA3",
+                            "nome": "Empresa em Alta",
+                            "preco": "R$ 12,30",
+                            "variacaoPercentual": "5,25",
+                            "direction": "gainer"
+                        },
+                        {
+                            "codigo": "BAIX4",
+                            "nome": "Empresa em Baixa",
+                            "preco": "R$ 8,10",
+                            "variacaoPercentual": "-4,75",
+                            "tipo": "loser"
+                        }
+                    ]
+                }
+            }
+        """.trimIndent()
+
+        val snapshot = B3NetworkService.parseMarketRankingSnapshot(JSONObject(jsonString), "ACAO")
+
+        org.junit.Assert.assertNotNull(snapshot)
+        assertEquals(1, snapshot?.highs?.size)
+        assertEquals(1, snapshot?.lows?.size)
+        assertEquals("ALTA3", snapshot?.highs?.firstOrNull()?.ticker)
+        assertEquals("BAIX4", snapshot?.lows?.firstOrNull()?.ticker)
+        assertEquals("+5,25%", snapshot?.highs?.firstOrNull()?.changeDisplay)
+        assertEquals("-4,75%", snapshot?.lows?.firstOrNull()?.changeDisplay)
+        assertEquals("alta", snapshot?.highs?.firstOrNull()?.direction)
+        assertEquals("baixa", snapshot?.lows?.firstOrNull()?.direction)
+    }
+
 }

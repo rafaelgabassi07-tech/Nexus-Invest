@@ -1,0 +1,17 @@
+OK B3NetworkService.kt: exists
+OK PortfolioViewModel.kt: exists
+OK ChartsScreen.kt: exists
+OK build.gradle.kts: exists
+OK update.json: exists
+OK B3NetworkService.kt: dividendPayloadCandidates
+OK B3NetworkService.kt: appendDividendAliasesFromRoot
+OK B3NetworkService.kt: asset next-dividend fallback
+OK B3NetworkService.kt: valueFormatted aliases
+OK B3NetworkService.kt: includeUpcoming
+OK PortfolioViewModel.kt: does not drop real events
+OK ChartsScreen.kt: agendaDividendEvents
+OK ChartsScreen.kt: historical fallback text
+OK ChartsScreen.kt: valor/cota confirmar
+OK build.gradle.kts: v2.0.25
+OK build.gradle.kts: code35
+SUMMARY: ALL_OK

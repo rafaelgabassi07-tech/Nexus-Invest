@@ -1,19 +1,20 @@
 {
-  "latestVersionCode": 20,
-  "versionName": "2.0.11",
-  "downloadUrl": "https://github.com/rafaelgabassi07-tech/app-atualizacoes/releases/download/v1.1.8/VALORAE-11.apk",
-  "releaseDate": "2026-06-05",
+  "latestVersionCode": 37,
+  "versionName": "2.0.27",
+  "downloadUrl": "",
+  "releaseDate": "2026-06-06",
   "isMandatory": false,
   "minRequiredVersionCode": 1,
-  "fileSize": "24.2 MB",
+  "fileSize": "Projeto-fonte Android; APK final deve ser compilado no Android Studio/Gradle",
   "changelog": [
-    "Correção do ranking da tela inicial: busca completa, fallback, cache de preço e renderização de altas/baixas",
-    "Auditoria e correção dos 7 gráficos críticos: DRE, lucro x cotação, balanço, payout, negócios, regiões e rentabilidade nominal vs real",
-    "Correção do gráfico Negócios para aceitar revenueSegment, revenueByBusiness e negóciosReceita em objetos, arrays e formatos de bibliotecas de gráfico",
-    "Lucro x Cotação e Evolução Patrimonial agora aceitam múltiplos contratos reais do Proxy sem simulação local",
-    "Mantida política Proxy-only: quando o Proxy não retorna gráfico, a UI mostra indisponibilidade controlada",
-    "Página Análise reestruturada para renderizar o pacote completo de gráficos retornado pelo VALORAE Proxy",
-    "Modal Detalhes do Ativo alinhado ao mesmo contrato de dados e gráficos da página Análise",
-    "Indicadores Gerais agora são construídos dinamicamente a partir de B3AssetData + AssetChartBundle, sem campos hardcoded"
-  ]
+    "Agenda de Dividendos força sincronização ao abrir as páginas Proventos/Agenda.",
+    "APK tenta GET e POST nos endpoints portfolio/dividends e portfolio/next-dividends.",
+    "Fallback por ativo reforçado para asset/dividends e asset/next-dividend.",
+    "Parser de dividendos aceita wrappers e mapas por ticker de forma recursiva.",
+    "Eventos reais do Proxy continuam visíveis mesmo sem valor estimado da carteira.",
+    "Removidos pacotes duplicados/antigos para evitar compilação da versão errada."
+  ],
+  "versionCode": 37,
+  "apkUrl": "",
+  "releaseNotes": "Correção profunda da integração Agenda de Dividendos ↔ VALORAE Proxy: POST/GET, aliases recursivos, fallback por ativo, refresh ao abrir Agenda/Proventos e limpeza de pacote duplicado."
 }

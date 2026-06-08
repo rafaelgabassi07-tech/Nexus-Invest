@@ -1,0 +1,9 @@
+OK - Batch aceita objeto indexado por ticker sem perder ticker
+OK - Batch não sobrescreve snapshot bom com parcial ruim
+OK - Analytics preserva ranking da carteira quando endpoint remoto falha
+OK - Analytics preserva rankings de mercado em fallback local
+OK - Documentação oficial usa contratos /api/v1
+OK - Documentação não mantém rotas legadas principais
+OK - Build exige HTTPS na URL do Proxy
+OK - Fallback direto permanece bloqueado por política
+Valorae deep final audit OK

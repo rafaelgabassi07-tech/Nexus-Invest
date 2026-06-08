@@ -1,0 +1,25 @@
+OK: sem pasta duplicada apk/
+OK: sem APK vazio
+OK: settings include app
+OK: version 2.0.23/33
+OK: update.json 2.0.23/33
+OK: aba Ativos na barra inferior
+OK: Meus Ativos preservado
+OK: Histórico de Compras preservado
+OK: Nova Transação preservada
+OK: Edição/exclusão de transações preservadas
+OK: ranking Home compacto preservado
+OK: sem botão Ver Ranking Completo
+OK: Proxy URL público mantido
+OK: compatibilidade assetChartsCanonical
+OK: compatibilidade assetChartsCoverage
+OK: compatibilidade balanceSheet
+OK: compatibilidade equityEvolution
+OK: compatibilidade payoutHistory
+OK: compatibilidade profitVsQuote
+OK: compatibilidade includeBenchmark
+OK: compatibilidade benchmark", "IPCA"
+OK: compatibilidade firstPurchaseAt
+OK: compatibilidade rebalanceActions
+OK: sem build.gradle antigo v2.0.19
+SUMMARY: ALL_OK
