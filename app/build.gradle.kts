@@ -76,8 +76,8 @@ android {
     applicationId = "com.aistudio.valorae.nbqpyl"
     minSdk = 24
     targetSdk = 36
-    versionCode = 52
-    versionName = "2.0.42"
+    versionCode = 55
+    versionName = "2.0.45"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -97,11 +97,33 @@ android {
     val valoraeClientId = valoraeConfigValue("VALORAE_PROXY_CLIENT_ID", "valorae-investidor-android")
     val valoraeFallbackEnabled = valoraeConfigValue("VALORAE_DIRECT_FALLBACK_ENABLED", "false")
 
+    // Supabase é opcional. O APK continua funcionando sem credenciais.
+    // Use publishable/anon key no app. Nunca embuta service_role no APK.
+    val supabaseUrl = valoraeConfigValue("SUPABASE_URL", "")
+    val supabasePublishableKey = valoraeConfigValue(
+      "SUPABASE_PUBLISHABLE_KEY",
+      valoraeConfigValue("SUPABASE_ANON_KEY", "")
+    )
+    val supabaseLegacyAnonKey = valoraeConfigValue("SUPABASE_ANON_KEY", supabasePublishableKey)
+    val supabaseSyncEnabled = valoraeConfigValue("SUPABASE_SYNC_ENABLED", "true")
+    val supabaseProxySyncEnabled = valoraeConfigValue("VALORAE_SUPABASE_PROXY_SYNC_ENABLED", "true")
+    val supabaseSyncToken = valoraeConfigValue("VALORAE_SUPABASE_SYNC_TOKEN", "")
+    val supabaseAutoBackupEnabled = valoraeConfigValue("VALORAE_SUPABASE_AUTO_BACKUP_ENABLED", "false")
+    val supabaseAutoEncryptionSecret = valoraeConfigValue("VALORAE_SUPABASE_AUTO_ENCRYPTION_SECRET", "")
+
     buildConfigField("String", "VALORAE_API_BASE_URL", "\"$valoraeUrl\"")
     buildConfigField("String", "VALORAE_PROXY_BASE_URL", "\"$valoraeUrl\"")
     buildConfigField("String", "VALORAE_PUBLIC_BASE_URL", "\"$valoraeUrl\"")
     buildConfigField("String", "VALORAE_PROXY_CLIENT_ID", "\"$valoraeClientId\"")
     buildConfigField("String", "VALORAE_DIRECT_FALLBACK_ENABLED", "\"$valoraeFallbackEnabled\"")
+    buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
+    buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", "\"$supabasePublishableKey\"")
+    buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseLegacyAnonKey\"")
+    buildConfigField("String", "SUPABASE_SYNC_ENABLED", "\"$supabaseSyncEnabled\"")
+    buildConfigField("String", "VALORAE_SUPABASE_PROXY_SYNC_ENABLED", "\"$supabaseProxySyncEnabled\"")
+    buildConfigField("String", "VALORAE_SUPABASE_SYNC_TOKEN", "\"$supabaseSyncToken\"")
+    buildConfigField("String", "VALORAE_SUPABASE_AUTO_BACKUP_ENABLED", "\"$supabaseAutoBackupEnabled\"")
+    buildConfigField("String", "VALORAE_SUPABASE_AUTO_ENCRYPTION_SECRET", "\"$supabaseAutoEncryptionSecret\"")
     buildConfigField("String", "VALORAE_UPDATE_MANIFEST_URL", "\"https://app-atualizacoes.vercel.app/update.json\"")
   }
 

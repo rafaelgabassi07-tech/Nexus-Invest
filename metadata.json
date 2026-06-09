@@ -5,10 +5,10 @@
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ],
-  "appVersionName": "2.0.42",
-  "appVersionCode": 52,
+  "appVersionName": "2.0.44",
+  "appVersionCode": 54,
   "updateManifestUrl": "https://app-atualizacoes.vercel.app/update.json",
   "releaseDate": "2026-06-09",
-  "releaseTitle": "Auditoria geral de boot, UI e cache resiliente",
-  "notes": "Segunda rodada de auditoria: APK passa a consumir /api/v1/mobile/bootstrap, persiste cache de notícias, reduz telas vazias, separa loading de rankings do loading de analytics/agenda, aplica timeout curto à checagem automática de atualização e preserva snapshots locais antes de qualquer rede."
+  "releaseTitle": "Correção de Proventos, IPCA+ e Agenda para carteiras grandes",
+  "notes": "Reduz bloqueios em carteiras com muitos ativos: limita chamadas remotas a lote móvel balanceado entre ações/FIIs, aplica timeout real por requisição em rotas críticas, elimina fallback sequencial por ativo para carteiras grandes e melhora fallback visual em Evolução de Proventos e Rentabilidade vs IPCA+."
 }

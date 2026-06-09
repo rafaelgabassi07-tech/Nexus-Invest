@@ -498,6 +498,7 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
     private var lastProxyHealthRefreshAt = 0L
     private var lastPortfolioAnalyticsRefreshAt = 0L
     private var lastPortfolioAnalyticsSignature = ""
+    @Volatile private var portfolioAnalyticsRemoteInFlight = false
     private var lastPriceFetchSignature = ""
     private var lastPriceFetchAt = 0L
     private var inFlightPriceFetchSignature = ""
@@ -1378,8 +1379,7 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
         txs: List<Transaction>,
         force: Boolean = false
     ) {
-        if (!force && _portfolioAnalytics.value.isLoading) return
-        _portfolioAnalytics.value = _portfolioAnalytics.value.copy(isLoading = true)
+        _portfolioAnalytics.value = _portfolioAnalytics.value.copy(isLoading = false)
         val firstPurchaseByTicker = txs
             .filter { !it.isSell && it.quantity > 0.0 }
             .groupBy { it.ticker.trim().uppercase(java.util.Locale.ROOT) }
@@ -1417,7 +1417,7 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
         // antes das chamadas remotas do Proxy terminarem. Isso evita a sensação de página travada
         // quando há ativos locais, mas agenda/rankings/histórico ainda estão em trânsito.
         _portfolioAnalytics.value = PortfolioAnalyticsState(
-            isLoading = true,
+            isLoading = false,
             analysis = localAnalysis,
             portfolioHistory = localHistory,
             ipcaSeries = localIpcaFallback,
@@ -1433,6 +1433,8 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
 
         lastPortfolioAnalyticsSignature = analyticsSignature
         lastPortfolioAnalyticsRefreshAt = System.currentTimeMillis()
+        if (!force && portfolioAnalyticsRemoteInFlight) return
+        portfolioAnalyticsRemoteInFlight = true
 
         val result = try {
             withContext(Dispatchers.IO) {
@@ -1498,6 +1500,8 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
                 source = "Carteira local + fallback seguro",
                 lastUpdated = System.currentTimeMillis()
             )
+        } finally {
+            portfolioAnalyticsRemoteInFlight = false
         }
         _portfolioAnalytics.value = result
     }
@@ -2231,6 +2235,242 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
             }
         }
     }
+
+
+    // --- SUPABASE OPTIONAL SYNC / SNAPSHOTS ---
+
+    fun testSupabaseSync(context: android.content.Context, onComplete: (Boolean, String) -> Unit = { _, _ -> }) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { CloudSyncManager.testSupabaseConnection() }
+            onComplete(
+                result.isSuccess,
+                result.fold(onSuccess = { it }, onFailure = { it.message ?: "Falha ao testar Supabase" })
+            )
+        }
+    }
+
+    fun syncSupabaseSnapshot(context: android.content.Context, onComplete: (Boolean, String) -> Unit = { _, _ -> }) {
+        viewModelScope.launch {
+            val userId = CloudSyncManager.getOrCreateInstallUserId(context)
+            val snapshots = withContext(Dispatchers.Default) { buildSupabaseSnapshotPayloads() }
+            val result = withContext(Dispatchers.IO) {
+                CloudSyncManager.upsertManySnapshots(
+                    userId = userId,
+                    snapshots = snapshots,
+                    context = context.applicationContext,
+                    source = "apk-v${com.example.BuildConfig.VERSION_NAME}"
+                )
+            }
+            if (result.isSuccess) {
+                repository.insertNotification(
+                    DbNotification(
+                        title = "Supabase sincronizado",
+                        description = "${snapshots.size} blocos de dados da carteira foram preparados como snapshots para continuidade e desempenho.",
+                        category = "SISTEMA",
+                        date = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.getDefault()).format(java.util.Date()),
+                        iconName = "CLOUD",
+                        isRead = false
+                    )
+                )
+            }
+            onComplete(result.isSuccess, result.fold(onSuccess = { it }, onFailure = { it.message ?: "Erro na sincronização" }))
+        }
+    }
+
+    fun restoreTransactionsFromSupabase(
+        context: android.content.Context,
+        clearExisting: Boolean = false,
+        onComplete: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        viewModelScope.launch {
+            val userId = CloudSyncManager.getOrCreateInstallUserId(context)
+            val result = withContext(Dispatchers.IO) { CloudSyncManager.restoreData(userId) }
+            if (result.isSuccess) {
+                val restored = result.getOrThrow()
+                withContext(Dispatchers.IO) {
+                    if (clearExisting) repository.deleteAllTransactions()
+                    repository.insertAll(restored)
+                    repository.insertNotification(
+                        DbNotification(
+                            title = "Carteira restaurada do Supabase",
+                            description = "${restored.size} movimentações foram restauradas da camada de snapshot.",
+                            category = "SISTEMA",
+                            date = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.getDefault()).format(java.util.Date()),
+                            iconName = "CLOUD",
+                            isRead = false
+                        )
+                    )
+                }
+                onComplete(true, "${restored.size} movimentações restauradas do Supabase.")
+            } else {
+                onComplete(false, result.exceptionOrNull()?.message ?: "Nenhum backup Supabase encontrado.")
+            }
+        }
+    }
+
+    private fun buildSupabaseSnapshotPayloads(): List<Pair<Pair<String, String>, JSONObject>> {
+        val txs = transactions.value
+        val summaries = assetSummaries.value
+        val analytics = portfolioAnalytics.value
+        val cached = cachedAssetData.value
+        val news = newsFeed.value
+        val now = System.currentTimeMillis()
+        val meta = JSONObject()
+            .put("appVersion", com.example.BuildConfig.VERSION_NAME)
+            .put("generatedAt", now)
+            .put("source", "VALORAE APK")
+            .put("schema", "valorae_supabase_snapshot_v1")
+
+        val portfolioSummaryPayload = JSONObject()
+            .put("meta", meta)
+            .put("summary", JSONObject()
+                .put("totalInvested", portfolioSummary.value.totalInvested)
+                .put("totalCurrentValue", portfolioSummary.value.totalCurrentValue)
+                .put("totalReturn", portfolioSummary.value.totalReturn)
+                .put("returnPercent", portfolioSummary.value.returnPercent)
+                .put("sharesRatioStock", portfolioSummary.value.sharesRatioStock)
+                .put("sharesRatioFii", portfolioSummary.value.sharesRatioFii)
+                .put("totalStocksInvested", portfolioSummary.value.totalStocksInvested)
+                .put("totalFiisInvested", portfolioSummary.value.totalFiisInvested)
+                .put("totalStocksCurrent", portfolioSummary.value.totalStocksCurrent)
+                .put("totalFiisCurrent", portfolioSummary.value.totalFiisCurrent)
+            )
+            .put("positions", JSONArray().apply { summaries.forEach { put(assetSummaryToJson(it)) } })
+            .put("transactionCount", txs.size)
+
+        val transactionsPayload = JSONObject()
+            .put("meta", meta)
+            .put("transactions", CloudSyncManager.transactionsToJsonArray(txs))
+            .put("count", txs.size)
+
+        val assetSnapshotsPayload = JSONObject()
+            .put("meta", meta)
+            .put("assets", JSONArray().apply { cached.values.forEach { put(b3AssetToJson(it)) } })
+            .put("count", cached.size)
+
+        val analyticsPayload = JSONObject()
+            .put("meta", meta)
+            .put("source", analytics.source)
+            .put("lastUpdated", analytics.lastUpdated)
+            .put("portfolioHistory", JSONArray().apply { analytics.portfolioHistory.forEach { put(portfolioHistoryToJson(it)) } })
+            .put("ipcaSeries", JSONArray().apply { analytics.ipcaSeries.forEach { put(ipcaPointToJson(it)) } })
+            .put("dividendEvents", JSONArray().apply { analytics.dividendEvents.forEach { put(dividendEventToJson(it)) } })
+            .put("marketRankingsAttempted", analytics.marketRankingsAttempted)
+
+        val newsPayload = JSONObject()
+            .put("meta", meta)
+            .put("news", JSONArray().apply { news.forEach { put(newsToJson(it)) } })
+            .put("count", news.size)
+
+        val localSystemPayload = JSONObject()
+            .put("meta", meta)
+            .put("bootState", JSONObject()
+                .put("localPortfolioLoaded", appBootState.value.localPortfolioLoaded)
+                .put("snapshotsLoaded", appBootState.value.snapshotsLoaded)
+                .put("livePricesLoaded", appBootState.value.livePricesLoaded)
+                .put("usingStaleData", appBootState.value.usingStaleData)
+                .put("bootCompleted", appBootState.value.bootCompleted)
+                .put("lastMessage", appBootState.value.lastMessage)
+            )
+            .put("proxyHealth", JSONObject()
+                .put("status", proxyHealth.value.status)
+                .put("isOnline", proxyHealth.value.isOnline)
+                .put("isUsingCache", proxyHealth.value.isUsingCache)
+                .put("lastCheckedAt", proxyHealth.value.lastCheckedAt)
+            )
+            .put("notifications", JSONArray().apply { notifications.value.take(80).forEach { put(JSONObject().put("title", it.title).put("description", it.description).put("category", it.category).put("date", it.date).put("isRead", it.isRead).put("iconName", it.iconName)) } })
+            .put("changelogs", JSONArray().apply { changelogs.value.take(50).forEach { put(JSONObject().put("versionName", it.versionName).put("releaseNotes", it.releaseNotes).put("date", it.date)) } })
+
+        return listOf(
+            ("portfolio" to "summary") to portfolioSummaryPayload,
+            ("portfolio" to "transactions_backup") to transactionsPayload,
+            ("portfolio" to "analytics") to analyticsPayload,
+            ("market" to "asset_snapshots") to assetSnapshotsPayload,
+            ("market" to "news") to newsPayload,
+            ("system" to "local_state") to localSystemPayload
+        )
+    }
+
+    private fun assetSummaryToJson(s: AssetSummary) = JSONObject()
+        .put("ticker", s.ticker)
+        .put("type", s.type)
+        .put("sharesCount", s.sharesCount)
+        .put("averageCost", s.averageCost)
+        .put("totalInvested", s.totalInvested)
+        .put("currentPrice", s.currentPrice)
+        .put("totalCurrentValue", s.totalCurrentValue)
+        .put("totalReturn", s.totalReturn)
+        .put("returnPercent", s.returnPercent)
+        .put("dailyChangePercent", s.dailyChangePercent)
+        .put("dividendYield", s.dividendYield)
+        .put("lastDividend", s.lastDividend)
+        .put("nextEarningsDate", s.nextEarningsDate)
+
+    private fun b3AssetToJson(a: B3AssetData) = JSONObject()
+        .put("ticker", a.ticker)
+        .put("name", a.name)
+        .put("price", a.price)
+        .put("changePercent", a.changePercent)
+        .put("dy", a.dy)
+        .put("pl", a.pl)
+        .put("pvp", a.pvp)
+        .put("vpa", a.vpa)
+        .put("lpa", a.lpa)
+        .put("marketCap", a.marketCap)
+        .put("roe", a.roe)
+        .put("margins", a.margins)
+        .put("lastDividend", a.lastDividend)
+        .put("dailyLiquidity", a.dailyLiquidity)
+        .put("high52", a.high52)
+        .put("low52", a.low52)
+        .put("isFii", a.isFii)
+        .put("source", a.source)
+        .put("payout", a.payout)
+        .put("cagrRevenue5y", a.cagrRevenue5y)
+        .put("cagrProfit5y", a.cagrProfit5y)
+        .put("roic", a.roic)
+        .put("roa", a.roa)
+        .put("fiiVacancy", a.fiiVacancy)
+        .put("fiiSegment", a.fiiSegment)
+        .put("assetDescription", a.assetDescription)
+        .put("subSector", a.subSector)
+        .put("magicNumber", a.magicNumber)
+        .put("cacheStatus", a.cacheStatus)
+        .put("lastUpdatedAt", a.lastUpdatedAt)
+        .put("fromLocalSnapshot", a.fromLocalSnapshot)
+
+    private fun portfolioHistoryToJson(p: PortfolioHistoryPoint) = JSONObject()
+        .put("timestamp", p.timestamp)
+        .put("dateLabel", p.dateLabel)
+        .put("totalValue", p.totalValue)
+        .put("investedValue", p.investedValue)
+        .put("returnPercent", p.returnPercent)
+        .put("source", p.source)
+
+    private fun ipcaPointToJson(p: IpcaPoint) = JSONObject()
+        .put("timestamp", p.timestamp)
+        .put("dateLabel", p.dateLabel)
+        .put("accumulatedPercent", p.accumulatedPercent)
+        .put("monthlyPercent", p.monthlyPercent)
+        .put("source", p.source)
+
+    private fun dividendEventToJson(e: DividendEvent) = JSONObject()
+        .put("ticker", e.ticker)
+        .put("dateCom", e.dateCom)
+        .put("paymentDate", e.paymentDate)
+        .put("valuePerShare", e.valuePerShare)
+        .put("quantity", e.quantity)
+        .put("estimatedAmount", e.estimatedAmount)
+        .put("status", e.status)
+        .put("source", e.source)
+
+    private fun newsToJson(n: NewsItem) = JSONObject()
+        .put("title", n.title)
+        .put("link", n.link)
+        .put("pubDate", n.pubDate)
+        .put("source", n.source)
+        .put("description", n.description)
+        .put("timestamp", n.timestamp)
 
     fun clearAllTransactions() {
         viewModelScope.launch(Dispatchers.IO) {

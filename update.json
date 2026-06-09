@@ -1,15 +1,14 @@
 {
-  "latestVersionCode": 50,
-  "versionName": "2.0.40",
-  "downloadUrl": "https://github.com/rafaelgabassi07-tech/app-atualizacoes/releases/download/v2.0.40/APK_VALORAE_v2.0.40.apk",
+  "latestVersionCode": 54,
+  "versionName": "2.0.44",
+  "downloadUrl": "https://github.com/rafaelgabassi07-tech/app-atualizacoes/releases/download/v2.0.44/APK_VALORAE_v2.0.44.apk",
   "releaseDate": "2026-06-09",
   "isMandatory": false,
-  "minRequiredVersionCode": 49,
-  "fileSize": "45 MB",
+  "minRequiredVersionCode": 53,
   "changelog": [
-    "Instalador nativo com aparência mais profissional usando PackageInstaller.Session.",
-    "Fallback seguro para FileProvider caso o instalador nativo não esteja disponível.",
-    "Correção na atualização da página Insights quando há ativos na carteira.",
-    "Manifesto simples para atualização manual via Vercel + GitHub Releases."
+    "Correção de performance na montagem de Proventos, IPCA+ e Agenda para carteiras com muitos ativos.",
+    "Agenda de dividendos agora preserva ações e FIIs no lote móvel, incluindo proventos pagos por ações quando disponíveis.",
+    "O APK evita chamadas sequenciais por ativo em carteiras grandes e usa timeouts reais por requisição nas rotas críticas.",
+    "Evolução de proventos e Rentabilidade vs IPCA+ passam a renderizar fallback local enquanto o Proxy sincroniza."
   ]
 }

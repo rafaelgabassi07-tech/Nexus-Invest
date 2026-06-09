@@ -355,6 +355,48 @@ object B3NetworkService {
     private const val PROXY_PLUS_FII_LIMIT = 4
     private const val PROXY_PLUS_PORTFOLIO_LIMIT = 5
     private const val PROXY_PLUS_DIAGNOSTIC_LIMIT = 4
+    private const val REMOTE_PORTFOLIO_MAX_POSITIONS = 30
+    private const val REMOTE_DIVIDEND_STOCK_BUCKET = 15
+    private const val REMOTE_DIVIDEND_FII_BUCKET = 15
+    private const val ASSET_DIVIDEND_FALLBACK_MAX_TICKERS = 4
+    private const val DEFAULT_PROXY_CALL_TIMEOUT_MS = 24_000L
+
+    private fun safeProxyCallTimeout(timeoutMs: Long?): Long = (timeoutMs ?: DEFAULT_PROXY_CALL_TIMEOUT_MS).coerceIn(800L, 24_000L)
+
+    private fun portfolioPositionWeight(position: PortfolioProxyPosition): Double {
+        val marked = position.currentPrice.takeIf { it.isFinite() && it > 0.0 }?.let { it * position.quantity.coerceAtLeast(0.0) } ?: 0.0
+        return marked.takeIf { it > 0.0 } ?: position.totalInvested.takeIf { it.isFinite() && it > 0.0 } ?: (position.averagePrice.coerceAtLeast(0.0) * position.quantity.coerceAtLeast(0.0))
+    }
+
+    private fun remotePortfolioPositions(positions: List<PortfolioProxyPosition>, limit: Int = REMOTE_PORTFOLIO_MAX_POSITIONS): List<PortfolioProxyPosition> {
+        return positions
+            .asSequence()
+            .filter { it.ticker.isNotBlank() && it.quantity > 0.0 }
+            .distinctBy { it.ticker.trim().uppercase(Locale.ROOT) }
+            .sortedByDescending { portfolioPositionWeight(it) }
+            .take(limit.coerceAtLeast(1))
+            .toList()
+    }
+
+    private fun balancedDividendPositions(positions: List<PortfolioProxyPosition>): List<PortfolioProxyPosition> {
+        val unique = positions
+            .asSequence()
+            .filter { it.ticker.isNotBlank() && it.quantity > 0.0 }
+            .distinctBy { it.ticker.trim().uppercase(Locale.ROOT) }
+            .toList()
+        val stocks = unique.filter { !it.type.equals("FII", true) && !inferIsFii(it.ticker) }.sortedByDescending { portfolioPositionWeight(it) }
+        val fiis = unique.filter { it.type.equals("FII", true) || inferIsFii(it.ticker) }.sortedByDescending { portfolioPositionWeight(it) }
+        val picked = linkedMapOf<String, PortfolioProxyPosition>()
+        fun add(list: List<PortfolioProxyPosition>, max: Int) {
+            list.take(max).forEach { picked[it.ticker.trim().uppercase(Locale.ROOT)] = it }
+        }
+        add(stocks, REMOTE_DIVIDEND_STOCK_BUCKET)
+        add(fiis, REMOTE_DIVIDEND_FII_BUCKET)
+        (stocks + fiis).sortedByDescending { portfolioPositionWeight(it) }.forEach {
+            if (picked.size < REMOTE_PORTFOLIO_MAX_POSITIONS) picked.putIfAbsent(it.ticker.trim().uppercase(Locale.ROOT), it)
+        }
+        return picked.values.toList()
+    }
 
     fun initialize(context: Context) {
         appContext = context.applicationContext
@@ -852,11 +894,13 @@ object B3NetworkService {
         )
     }
 
-    private fun getProxyJson(path: String, params: Map<String, String?> = emptyMap()): JSONObject? {
+    private fun getProxyJson(path: String, params: Map<String, String?> = emptyMap(), callTimeoutMs: Long? = null): JSONObject? {
         val url = proxyUrl(path, params) ?: return null
         val startedAt = System.currentTimeMillis()
         return try {
-            client.newCall(proxyRequest(url).get().build()).execute().use { response ->
+            val call = client.newCall(proxyRequest(url).get().build())
+            call.timeout().timeout(safeProxyCallTimeout(callTimeoutMs), TimeUnit.MILLISECONDS)
+            call.execute().use { response ->
                 recordResponseTime(System.currentTimeMillis() - startedAt)
                 val responseString = response.body?.string().orEmpty()
                 if (responseString.isBlank()) {
@@ -896,17 +940,19 @@ object B3NetworkService {
         }
     }
 
-    private fun postProxyJson(path: String, payload: JSONObject): JSONObject? {
+    private fun postProxyJson(path: String, payload: JSONObject, callTimeoutMs: Long? = null): JSONObject? {
         val url = proxyUrl(path) ?: return null
         val body = payload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
         val startedAt = System.currentTimeMillis()
         return try {
-            client.newCall(
+            val call = client.newCall(
                 proxyRequest(url)
                     .post(body)
                     .addHeader("Content-Type", "application/json")
                     .build()
-            ).execute().use { response ->
+            )
+            call.timeout().timeout(safeProxyCallTimeout(callTimeoutMs), TimeUnit.MILLISECONDS)
+            call.execute().use { response ->
                 recordResponseTime(System.currentTimeMillis() - startedAt)
                 val raw = response.body?.string().orEmpty()
                 if (raw.isBlank()) {
@@ -2621,7 +2667,7 @@ object B3NetworkService {
         appendDividendEventsFromMappedObject(defaultTicker, root, out, defaultStatus)
     }
 
-    private fun fetchAssetDividendEvents(ticker: String): List<DividendEvent> {
+    private fun fetchAssetDividendEvents(ticker: String, fastMode: Boolean = false): List<DividendEvent> {
         val clean = ticker.trim().uppercase(Locale.ROOT)
         if (clean.isBlank()) return emptyList()
         val cacheKey = "asset_dividend_events_$clean"
@@ -2631,30 +2677,39 @@ object B3NetworkService {
             "ticker" to clean,
             "type" to assetType,
             "assetType" to assetType,
-            "limit" to "250",
-            "mode" to "complete",
-            "complete" to "1",
+            "limit" to if (fastMode) "80" else "250",
+            "mode" to if (fastMode) "mobile" else "complete",
+            "profile" to if (fastMode) "mobile" else "portfolio",
+            "complete" to if (fastMode) "0" else "1",
             "includeHistory" to "1",
-            "includeUpcoming" to "1"
+            "includeUpcoming" to "1",
+            "timeoutMs" to if (fastMode) "1800" else "6500",
+            "agendaTimeoutMs" to if (fastMode) "1800" else "6500",
+            "routeDeadlineMs" to if (fastMode) "2200" else "7200"
         )
         val payload = JSONObject()
             .put("ticker", clean)
             .put("type", assetType)
             .put("assetType", assetType)
-            .put("limit", 500)
-            .put("timeoutMs", 6_500)
-            .put("agendaTimeoutMs", 6_500)
-            .put("routeDeadlineMs", 7_200)
-            .put("mode", "complete")
-            .put("complete", true)
+            .put("limit", if (fastMode) 80 else 500)
+            .put("timeoutMs", if (fastMode) 1_800 else 6_500)
+            .put("agendaTimeoutMs", if (fastMode) 1_800 else 6_500)
+            .put("routeDeadlineMs", if (fastMode) 2_200 else 7_200)
+            .put("mode", if (fastMode) "mobile" else "complete")
+            .put("profile", if (fastMode) "mobile" else "portfolio")
+            .put("complete", !fastMode)
             .put("includeHistory", true)
             .put("includeUpcoming", true)
-        val jsons = listOfNotNull(
-            getProxyJson("/api/v1/asset/dividends", params),
-            postProxyJson("/api/v1/asset/dividends", payload),
-            getProxyJson("/api/v1/asset/next-dividend", params),
-            postProxyJson("/api/v1/asset/next-dividend", payload)
-        )
+        val jsons = if (fastMode) {
+            listOfNotNull(getProxyJson("/api/v1/asset/dividends", params, callTimeoutMs = 2_600L))
+        } else {
+            listOfNotNull(
+                getProxyJson("/api/v1/asset/dividends", params, callTimeoutMs = 7_800L),
+                postProxyJson("/api/v1/asset/dividends", payload, callTimeoutMs = 7_800L),
+                getProxyJson("/api/v1/asset/next-dividend", params, callTimeoutMs = 7_800L),
+                postProxyJson("/api/v1/asset/next-dividend", payload, callTimeoutMs = 7_800L)
+            )
+        }
         val out = mutableListOf<DividendEvent>()
         jsons.flatMap { dividendPayloadCandidates(it) }.forEach { root ->
             appendDividendAliasesFromRoot(clean, root, out)
@@ -4210,14 +4265,21 @@ object B3NetworkService {
         if (positions.isEmpty()) return null
         val cacheKey = "portfolio_analysis_${positionsCacheSignature(positions)}"
         getFromCache<PortfolioProxyAnalysis>(cacheKey)?.let { return it }
+        val networkPositions = remotePortfolioPositions(positions)
+        if (networkPositions.isEmpty()) return null
         val payload = JSONObject()
-            .put("positions", positionArray(positions))
-            .put("mode", "complete")
-            .put("complete", true)
+            .put("positions", positionArray(networkPositions))
+            .put("mode", "mobile")
+            .put("profile", "mobile")
+            .put("complete", false)
             .put("view", "standard")
             .put("includeAssets", false)
-            .put("include", JSONArray(listOf("allocation", "risk", "income", "events", "dividends", "ipca", "rebalance", "quality", "warnings", "intelligence")))
-        val json = postProxyJson("/api/v1/portfolio/analyze", payload) ?: return null
+            .put("timeoutMs", 3_500)
+            .put("routeDeadlineMs", 4_200)
+            .put("totalPositions", positions.size)
+            .put("truncatedPositions", (positions.size - networkPositions.size).coerceAtLeast(0))
+            .put("include", JSONArray(listOf("allocation", "risk", "income", "events", "dividends", "ipca", "quality", "warnings", "intelligence")))
+        val json = postProxyJson("/api/v1/portfolio/analyze", payload, callTimeoutMs = 4_800L) ?: return null
         val root = unwrapValoraePayload(json) ?: return null
         val summary = root.optJSONObject("summary") ?: root
         val portfolioScore = root.optJSONObject("portfolioScore")
@@ -4419,16 +4481,24 @@ object B3NetworkService {
         val normalizedRange = normalizeProxyRange(range)
         val cacheKey = "portfolio_history_${normalizedRange}_${positionsCacheSignature(positions)}"
         getFromCache<List<PortfolioHistoryPoint>>(cacheKey)?.let { return it }
+        val networkPositions = remotePortfolioPositions(positions)
+        if (networkPositions.isEmpty()) return emptyList()
         val payload = JSONObject()
-            .put("positions", positionArray(positions))
+            .put("positions", positionArray(networkPositions))
             .put("range", normalizedRange)
-            .put("mode", "complete")
-            .put("complete", true)
-            .put("includeDividends", true)
+            .put("mode", "mobile")
+            .put("profile", "mobile")
+            .put("complete", false)
+            .put("includeDividends", false)
             .put("includeBenchmark", true)
             .put("benchmark", "IPCA")
+            .put("timeoutMs", 3_800)
+            .put("routeDeadlineMs", 4_500)
+            .put("maxConcurrency", 3)
+            .put("totalPositions", positions.size)
+            .put("truncatedPositions", (positions.size - networkPositions.size).coerceAtLeast(0))
             .put("limit", historyLimitForRange(normalizedRange).toIntOrNull() ?: 370)
-        val json = postProxyJson("/api/v1/portfolio/history", payload) ?: return emptyList()
+        val json = postProxyJson("/api/v1/portfolio/history", payload, callTimeoutMs = 5_000L) ?: return emptyList()
         val root = unwrapValoraePayload(json) ?: return emptyList()
         val points = firstArray(
             root.optJSONArray("points"),
@@ -4479,9 +4549,12 @@ object B3NetworkService {
             "last" to safeMonths.toString(),
             "months" to safeMonths.toString(),
             "range" to "${safeMonths}M",
-            "mode" to "complete",
-            "complete" to "1"
-        )) ?: return emptyList()
+            "mode" to "mobile",
+            "profile" to "mobile",
+            "timeoutMs" to "2800",
+            "routeDeadlineMs" to "3200",
+            "complete" to "0"
+        ), callTimeoutMs = 3_500L) ?: return emptyList()
         val root = unwrapValoraePayload(json) ?: return emptyList()
         val points = firstArray(
             root.optJSONArray("points"),
@@ -4535,62 +4608,73 @@ object B3NetworkService {
         if (positions.isEmpty()) return emptyList()
         val cacheKey = "next_dividends_${positionsCacheSignature(positions)}"
         getFromCache<List<DividendEvent>>(cacheKey)?.let { return it }
-        val tickers = positions.map { it.ticker.trim().uppercase(Locale.ROOT) }.filter { it.isNotBlank() }.distinct()
-        val payload = JSONObject()
-            .put("positions", positionArray(positions))
-            .put("tickers", JSONArray(tickers))
-            .put("mode", "complete")
-            .put("complete", true)
-            .put("includeHistory", true)
-            .put("includeUpcoming", true)
-            .put("limit", 500)
-        val roots = mutableListOf<JSONObject>()
+
+        // A carteira pode ter dezenas de ativos. O Proxy aceita até 30 tickers por rota de
+        // dividendos; enviar mais que isso fazia a chamada retornar 400 e o APK caía em
+        // fallback por ativo, executando várias requisições sequenciais e podendo passar de
+        // minutos. Aqui escolhemos um lote balanceado entre ações e FIIs para preservar os
+        // dois tipos de agenda sem bloquear a UI.
+        val networkPositions = balancedDividendPositions(positions)
+        if (networkPositions.isEmpty()) return emptyList()
+        val tickers = networkPositions.map { it.ticker.trim().uppercase(Locale.ROOT) }.filter { it.isNotBlank() }.distinct()
         val firstPortfolioMillis = positions.mapNotNull { it.firstPurchaseAt.takeIf { ts -> ts > 0L } }.minOrNull() ?: 0L
         val historyMonths = if (firstPortfolioMillis > 0L) {
             val start = Calendar.getInstance().apply { timeInMillis = firstPortfolioMillis }
             val now = Calendar.getInstance()
-            ((now.get(Calendar.YEAR) - start.get(Calendar.YEAR)) * 12 + (now.get(Calendar.MONTH) - start.get(Calendar.MONTH)) + 2).coerceIn(12, 72)
-        } else 36
+            ((now.get(Calendar.YEAR) - start.get(Calendar.YEAR)) * 12 + (now.get(Calendar.MONTH) - start.get(Calendar.MONTH)) + 2).coerceIn(6, 24)
+        } else 12
         val startDate = if (firstPortfolioMillis > 0L) SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(firstPortfolioMillis)) else ""
-        val params = mapOf(
-            "tickers" to tickers.joinToString(","),
-            "limit" to "500",
-            "mode" to "complete",
-            "complete" to "1",
-            "includeUpcoming" to "1",
-            "includeHistory" to "1",
-            "futureMonths" to "24",
-            "historyMonths" to historyMonths.toString(),
-            "monthsForward" to "24",
-            "monthsBack" to historyMonths.toString(),
-            "startDate" to startDate,
-            "agendaConcurrency" to "4",
-            "timeoutMs" to "6500",
-            "agendaTimeoutMs" to "6500",
-            "routeDeadlineMs" to "7200"
-        )
-        payload
-            .put("futureMonths", 24)
+
+        val payload = JSONObject()
+            .put("positions", positionArray(networkPositions))
+            .put("tickers", JSONArray(tickers))
+            .put("mode", "mobile")
+            .put("profile", "mobile")
+            .put("complete", false)
+            .put("includeHistory", true)
+            .put("includeUpcoming", true)
+            .put("limit", 240)
+            .put("futureMonths", 12)
             .put("historyMonths", historyMonths)
-            .put("monthsForward", 24)
+            .put("monthsForward", 12)
             .put("monthsBack", historyMonths)
             .put("startDate", startDate)
             .put("agendaConcurrency", 4)
-            .put("timeoutMs", 6_500)
-            .put("agendaTimeoutMs", 6_500)
-            .put("routeDeadlineMs", 7_200)
-        // Chamada principal consolidada: a versão nova do Proxy já devolve agenda futura e histórico
-        // no mesmo contrato. Evita até quatro varreduras mensais completas no Investidor10.
-        val primaryJson = postProxyJson("/api/v1/portfolio/dividends", payload)
-            ?: getProxyJson("/api/v1/portfolio/dividends", params)
+            .put("timeoutMs", 3_800)
+            .put("agendaTimeoutMs", 3_800)
+            .put("routeDeadlineMs", 5_200)
+            .put("totalPositions", positions.size)
+            .put("truncatedPositions", (positions.size - networkPositions.size).coerceAtLeast(0))
+        val params = mapOf(
+            "tickers" to tickers.joinToString(","),
+            "limit" to "240",
+            "mode" to "mobile",
+            "profile" to "mobile",
+            "complete" to "0",
+            "includeUpcoming" to "1",
+            "includeHistory" to "1",
+            "futureMonths" to "12",
+            "historyMonths" to historyMonths.toString(),
+            "monthsForward" to "12",
+            "monthsBack" to historyMonths.toString(),
+            "startDate" to startDate,
+            "agendaConcurrency" to "4",
+            "timeoutMs" to "3800",
+            "agendaTimeoutMs" to "3800",
+            "routeDeadlineMs" to "5200"
+        )
+
+        val roots = mutableListOf<JSONObject>()
+        val primaryJson = postProxyJson("/api/v1/portfolio/dividends", payload, callTimeoutMs = 5_800L)
+            ?: getProxyJson("/api/v1/portfolio/dividends", params, callTimeoutMs = 5_800L)
         listOfNotNull(primaryJson)
             .flatMap { dividendPayloadCandidates(it) }
             .forEach { candidate -> if (roots.none { it.toString() == candidate.toString() }) roots.add(candidate) }
 
-        // Fallback leve para compatibilidade com proxies antigos ou respostas vazias.
+        // Fallback consolidado antigo, mas ainda sem varrer ativo por ativo quando a carteira é grande.
         if (roots.isEmpty()) {
-            val fallbackJson = postProxyJson("/api/v1/portfolio/next-dividends", payload)
-                ?: getProxyJson("/api/v1/portfolio/next-dividends", params)
+            val fallbackJson = postProxyJson("/api/v1/portfolio/next-dividends", payload, callTimeoutMs = 5_800L)
+                ?: getProxyJson("/api/v1/portfolio/next-dividends", params, callTimeoutMs = 5_800L)
             listOfNotNull(fallbackJson)
                 .flatMap { dividendPayloadCandidates(it) }
                 .forEach { candidate -> if (roots.none { it.toString() == candidate.toString() }) roots.add(candidate) }
@@ -4715,11 +4799,10 @@ object B3NetworkService {
         }
 
         val parsedTickers = out.map { it.ticker.trim().uppercase(Locale.ROOT) }.filter { it.isNotBlank() }.toSet()
-        val needsAssetFallback = out.isEmpty() || tickers.any { it !in parsedTickers }
-        if (needsAssetFallback) {
-            tickers.filter { it !in parsedTickers || out.none { ev -> ev.ticker.equals(it, ignoreCase = true) && (ev.paymentDate.isNotBlank() || ev.dateCom.isNotBlank()) } }
-                .forEach { ticker -> out.addAll(fetchAssetDividendEvents(ticker)) }
-        }
+        val fallbackTickers = if (tickers.size <= 8 && out.size < tickers.size) {
+            tickers.filter { it !in parsedTickers }.take(ASSET_DIVIDEND_FALLBACK_MAX_TICKERS)
+        } else emptyList()
+        fallbackTickers.forEach { ticker -> out.addAll(fetchAssetDividendEvents(ticker, fastMode = true)) }
 
         val sorted = out
             .filter { it.ticker.isNotBlank() && (it.valuePerShare > 0.0 || it.estimatedAmount > 0.0 || it.dateCom.isNotBlank() || it.paymentDate.isNotBlank()) }

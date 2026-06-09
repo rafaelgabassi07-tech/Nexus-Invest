@@ -468,9 +468,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                             Image(
                                                 painter = androidx.compose.ui.res.painterResource(id = R.drawable.valorae_logo_vector),
                                                 contentDescription = null,
-                                                modifier = Modifier
-                                                    .size(26.dp)
-                                                    .clip(CircleShape)
+                                                modifier = Modifier.size(30.dp)
                                             )
                                             Spacer(modifier = Modifier.width(8.dp))
                                             Text(
@@ -880,19 +878,19 @@ private fun ValoraeBrandLockup(
 ) {
     val transition = rememberInfiniteTransition(label = "valoraeBrandPulse")
     val pulse by transition.animateFloat(
-        initialValue = 0.96f,
-        targetValue = 1.04f,
+        initialValue = 0.985f,
+        targetValue = 1.035f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1400, easing = FastOutSlowInEasing),
+            animation = tween(durationMillis = 1600, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "valoraeLogoPulse"
     )
     val glowAlpha by transition.animateFloat(
-        initialValue = 0.14f,
-        targetValue = 0.30f,
+        initialValue = 0.16f,
+        targetValue = 0.36f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1600, easing = FastOutSlowInEasing),
+            animation = tween(durationMillis = 1800, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "valoraeGlowAlpha"
@@ -904,33 +902,51 @@ private fun ValoraeBrandLockup(
     ) {
         Box(
             modifier = Modifier
-                .size(logoSize + 26.dp)
+                .size(logoSize + 38.dp)
                 .background(
                     brush = Brush.radialGradient(
                         colors = listOf(
-                            GoldPrimary.copy(alpha = glowAlpha),
-                            GoldPrimary.copy(alpha = 0.04f),
+                            Color(0xFFE7C980).copy(alpha = glowAlpha),
+                            Color(0xFF073A2E).copy(alpha = 0.18f),
                             Color.Transparent
                         )
                     ),
-                    shape = CircleShape
+                    shape = RoundedCornerShape(34.dp)
                 ),
             contentAlignment = Alignment.Center
         ) {
             Box(
                 modifier = Modifier
-                    .size(logoSize)
+                    .size(logoSize + 8.dp)
                     .scale(if (animated) pulse else 1f)
-                    .background(Color.White.copy(alpha = 0.055f), CircleShape)
-                    .border(1.dp, GoldPrimary.copy(alpha = 0.22f), CircleShape),
+                    .clip(RoundedCornerShape(28.dp))
+                    .background(
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                Color(0xFF073A2E),
+                                Color(0xFF051612),
+                                Color(0xFF0E2620)
+                            )
+                        )
+                    )
+                    .border(
+                        width = 1.dp,
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                Color(0xFFE7C980).copy(alpha = 0.92f),
+                                Color(0xFFB08B43).copy(alpha = 0.55f),
+                                Color.White.copy(alpha = 0.18f)
+                            )
+                        ),
+                        shape = RoundedCornerShape(28.dp)
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 Image(
                     painter = androidx.compose.ui.res.painterResource(id = R.drawable.valorae_logo_vector),
                     contentDescription = "Logotipo Valorae",
-                    modifier = Modifier
-                        .size(logoSize)
-                        .clip(CircleShape)
+                    modifier = Modifier.size(logoSize * 0.78f),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Fit
                 )
             }
         }
@@ -941,25 +957,25 @@ private fun ValoraeBrandLockup(
             text = "VALORAE",
             style = MaterialTheme.typography.headlineMedium.copy(
                 fontSize = titleSize,
-                letterSpacing = 0.5.sp,
+                letterSpacing = 4.0.sp,
                 fontWeight = FontWeight.Black
             ),
-            color = GoldPrimary,
+            color = Color(0xFFE7C980),
             textAlign = TextAlign.Center
         )
 
-        if (!subtitle.isNullOrBlank()) {
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.labelMedium.copy(
-                    letterSpacing = 1.8.sp,
-                    fontWeight = FontWeight.Bold
-                ),
-                color = Color.White.copy(alpha = 0.48f),
-                textAlign = TextAlign.Center
-            )
-        }
+        Spacer(modifier = Modifier.height(7.dp))
+
+        Text(
+            text = subtitle ?: "INVESTIR É DAR DIREÇÃO AO QUE IMPORTA",
+            style = MaterialTheme.typography.labelMedium.copy(
+                letterSpacing = 1.8.sp,
+                fontWeight = FontWeight.Bold
+            ),
+            color = Color.White.copy(alpha = 0.58f),
+            textAlign = TextAlign.Center,
+            lineHeight = 18.sp
+        )
     }
 }
 
@@ -978,9 +994,9 @@ private fun BrandedLoadingScreen(
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
-                            Color(0xFF040404),
-                            Color(0xFF0F1115),
-                            Color(0xFF070707)
+                            Color(0xFF03110E),
+                            Color(0xFF071512),
+                            Color(0xFF050707)
                         )
                     )
                 )
@@ -992,9 +1008,9 @@ private fun BrandedLoadingScreen(
                 verticalArrangement = Arrangement.Center
             ) {
                 ValoraeBrandLockup(
-                    logoSize = 108.dp,
+                    logoSize = 112.dp,
                     titleSize = 32.sp,
-                    subtitle = "CARTEIRA DE INVESTIMENTOS",
+                    subtitle = "DIREÇÃO, ESTRATÉGIA E VALOR",
                     animated = true
                 )
 
@@ -1005,7 +1021,7 @@ private fun BrandedLoadingScreen(
                         .fillMaxWidth(0.68f)
                         .height(4.dp)
                         .clip(RoundedCornerShape(99.dp)),
-                    color = GoldPrimary,
+                    color = Color(0xFFE7C980),
                     trackColor = Color.White.copy(alpha = 0.10f)
                 )
 
@@ -1127,7 +1143,7 @@ fun LockScreen(
 
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = Color(0xFF050505)
+        color = Color(0xFF03110E)
     ) {
         Column(
             modifier = Modifier.fillMaxSize().padding(horizontal = 40.dp),
@@ -1137,7 +1153,7 @@ fun LockScreen(
             ValoraeBrandLockup(
                 logoSize = 104.dp,
                 titleSize = 31.sp,
-                subtitle = "ACESSO SEGURO",
+                subtitle = "SEGURANÇA E DIREÇÃO",
                 animated = !isPromptRunning
             )
 

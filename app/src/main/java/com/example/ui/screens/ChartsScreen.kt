@@ -713,9 +713,13 @@ fun DividendEventsList(
             .sortedWith(
                 compareBy<Pair<DividendEvent, Double>> {
                     val ts = eventRelevantMillis(it.first)
-                    if (!isPaidDividendEvent(it.first, now) && ts > 0L) 0 else 1
-                }.thenBy { eventRelevantMillis(it.first).takeIf { ts -> ts > 0L } ?: Long.MAX_VALUE }
-                    .thenBy { it.first.ticker }
+                    val todayStart = startOfInsightDayMillis(now)
+                    if (!isPaidDividendEvent(it.first, now) && ts >= todayStart && ts > 0L) 0 else 1
+                }.thenBy {
+                    val ts = eventRelevantMillis(it.first)
+                    val todayStart = startOfInsightDayMillis(now)
+                    if (!isPaidDividendEvent(it.first, now) && ts >= todayStart && ts > 0L) ts else Long.MAX_VALUE - (ts.takeIf { value -> value > 0L } ?: 0L)
+                }.thenBy { it.first.ticker }
             ).take(limit).groupBy {
                val ts = eventRelevantMillis(it.first)
                if (ts <= 0L) "A confirmar" else {
@@ -2798,6 +2802,15 @@ private fun agendaDividendEvents(
     nowMillis: Long = System.currentTimeMillis()
 ): List<DividendEvent> {
     val todayStart = startOfInsightDayMillis(nowMillis)
+    val historyStart = java.util.Calendar.getInstance().apply {
+        timeInMillis = nowMillis
+        add(java.util.Calendar.MONTH, -18)
+        set(java.util.Calendar.DAY_OF_MONTH, 1)
+        set(java.util.Calendar.HOUR_OF_DAY, 0)
+        set(java.util.Calendar.MINUTE, 0)
+        set(java.util.Calendar.SECOND, 0)
+        set(java.util.Calendar.MILLISECOND, 0)
+    }.timeInMillis
     return events
         .asSequence()
         .filter { event ->
@@ -2806,14 +2819,20 @@ private fun agendaDividendEvents(
             val isFutureLike = status.contains("prev") || status.contains("futur") || status.contains("agenda") ||
                 status.contains("confirm") || status.contains("jscp") || status.contains("jcp") ||
                 status.contains("dividend") || status.contains("rendimento")
+            val isPaid = isPaidDividendEvent(event, nowMillis)
             val hasRealMarker = event.ticker.isNotBlank() && (event.dateCom.isNotBlank() || event.paymentDate.isNotBlank() || event.valuePerShare > 0.0 || event.estimatedAmount > 0.0)
             hasRealMarker && (
-                (relevant > 0L && relevant >= todayStart && !isPaidDividendEvent(event, nowMillis)) ||
+                (relevant > 0L && relevant >= todayStart && !isPaid) ||
+                (relevant > 0L && relevant >= historyStart && isPaid) ||
                 (relevant <= 0L && isFutureLike)
             )
         }
-        .sortedWith(compareBy<DividendEvent> {
-            eventRelevantMillis(it).let { ts -> if (ts > 0L) ts else Long.MAX_VALUE }
+        .sortedWith(compareBy<DividendEvent> { event ->
+            val ts = eventRelevantMillis(event)
+            if (ts > 0L && ts >= todayStart && !isPaidDividendEvent(event, nowMillis)) 0 else 1
+        }.thenBy { event ->
+            val ts = eventRelevantMillis(event)
+            if (ts > 0L && ts >= todayStart && !isPaidDividendEvent(event, nowMillis)) ts else Long.MAX_VALUE - (ts.takeIf { it > 0L } ?: 0L)
         }.thenBy { it.ticker })
         .toList()
 }
@@ -2853,15 +2872,24 @@ private fun buildDividendEvolutionData(
         }
         .groupBy { (event, _) -> eventMonthLabel(event) }
 
-    return List(safeMonths) { i ->
+    val bars = List(safeMonths) { i ->
         val cal = start.clone() as java.util.Calendar
         cal.add(java.util.Calendar.MONTH, i)
         val monthLabel = String.format("%02d/%d", cal.get(java.util.Calendar.MONTH) + 1, cal.get(java.util.Calendar.YEAR))
         val bucket = eventsByMonth[monthLabel].orEmpty()
-        var received = bucket.filter { isPaidDividendEvent(it.first) }.sumOf { it.second }.toFloat()
-        var projected = bucket.filter { !isPaidDividendEvent(it.first) }.sumOf { it.second }.toFloat()
-        
+        val received = bucket.filter { isPaidDividendEvent(it.first) }.sumOf { it.second }.toFloat()
+        val projected = bucket.filter { !isPaidDividendEvent(it.first) }.sumOf { it.second }.toFloat()
+
         com.example.ui.components.StackedBarData(received = received, projected = projected, label = monthLabel)
+    }
+
+    // Se o Proxy ainda não devolveu eventos reais, usa a estimativa mensal local já calculada
+    // pela carteira para evitar gráfico vazio. Mantém como "projetado", não como recebido.
+    val fallback = fallbackMonthly.takeIf { it.isFinite() && it > 0.0 }?.toFloat() ?: 0f
+    if (bars.any { it.received > 0f || it.projected > 0f } || fallback <= 0f) return bars
+    val projectedWindow = 6.coerceAtMost(safeMonths)
+    return bars.mapIndexed { index, item ->
+        if (index >= safeMonths - projectedWindow) item.copy(projected = fallback) else item
     }
 }
 

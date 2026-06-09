@@ -29,6 +29,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -1112,17 +1113,36 @@ private fun AboutSettingsPage() {
             .padding(20.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Surface(
+        Box(
             modifier = Modifier
-                .size(90.dp)
-                .clip(CircleShape),
-            color = Color.Transparent,
-            shadowElevation = 4.dp
+                .size(104.dp)
+                .clip(RoundedCornerShape(30.dp))
+                .background(
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            Color(0xFF073A2E),
+                            Color(0xFF051612),
+                            Color(0xFF0E2620)
+                        )
+                    )
+                )
+                .border(
+                    width = 1.dp,
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            Color(0xFFE7C980).copy(alpha = 0.92f),
+                            Color(0xFFB08B43).copy(alpha = 0.54f),
+                            Color.White.copy(alpha = 0.18f)
+                        )
+                    ),
+                    shape = RoundedCornerShape(30.dp)
+                ),
+            contentAlignment = Alignment.Center
         ) {
             Image(
                 painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.valorae_logo_vector),
                 contentDescription = "VALORAE Logo",
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.size(78.dp),
                 contentScale = androidx.compose.ui.layout.ContentScale.Fit
             )
         }
@@ -1141,7 +1161,7 @@ private fun AboutSettingsPage() {
         )
         
         Text(
-            text = "ECOSSISTEMA INTEGRADO DE COMPOSIÇÃO DE RIQUEZA",
+            text = "INVESTIR É DAR DIREÇÃO AO QUE IMPORTA",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.primary,
             fontWeight = FontWeight.Bold,
@@ -2310,6 +2330,8 @@ private fun DataBackupPage(viewModel: com.example.viewmodel.PortfolioViewModel) 
     var clearOnImport by remember { mutableStateOf(false) }
     var showConfirmDeleteDialog by remember { mutableStateOf(false) }
     var showPasteImportDialog by remember { mutableStateOf(false) }
+    var isSupabaseSyncRunning by remember { mutableStateOf(false) }
+    var clearOnSupabaseRestore by remember { mutableStateOf(false) }
 
     // Backup Save Launchers
     val exportJsonLauncher = rememberLauncherForActivityResult(
@@ -2928,8 +2950,7 @@ private fun DataBackupPage(viewModel: com.example.viewmodel.PortfolioViewModel) 
             )
         }
 
-        // Card: Política de backup local. Sincronização externa direta foi removida da UI
-        // para manter o APK leve, privado e sem dependência de banco/serviço pago.
+        // Card: Supabase opcional para sincronização/snapshot
         Surface(
             color = MaterialTheme.colorScheme.surface,
             shape = RoundedCornerShape(24.dp),
@@ -2941,21 +2962,28 @@ private fun DataBackupPage(viewModel: com.example.viewmodel.PortfolioViewModel) 
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        imageVector = Icons.Outlined.CloudUpload,
+                        imageVector = Icons.Outlined.CloudDone,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(24.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        text = "Backup local seguro",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Supabase opcional",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = com.example.network.CloudSyncManager.configurationLabel(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
 
                 Text(
-                    text = "A carteira permanece local no aparelho. Para evitar serviços pagos, banco externo ou sincronização direta fora do serviço de dados VALORAE, a sincronização em nuvem foi ocultada. Use Exportar JSON/CSV para backup manual e Importar Arquivo para restaurar.",
+                    text = "Quando você configurar seu projeto Supabase, o VALORAE poderá salvar snapshots de transações, carteira, posições, preços, analytics, IPCA, proventos, notícias e estado local. A integração é opcional: sem credenciais, o app continua 100% local.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 18.sp
@@ -2968,11 +2996,78 @@ private fun DataBackupPage(viewModel: com.example.viewmodel.PortfolioViewModel) 
                         .padding(12.dp)
                 ) {
                     Text(
-                        text = "Nenhuma chamada a Supabase, Firebase, banco externo ou serviço pago é feita por esta tela. O serviço de dados VALORAE continua sendo o backend/API central para dados financeiros.",
+                        text = "Segurança: use SUPABASE_PUBLISHABLE_KEY/ANON_KEY no APK com RLS. Nunca coloque service_role no aplicativo. Para service_role, use apenas a ponte segura do VALORAE Proxy.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                         lineHeight = 15.sp
                     )
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = clearOnSupabaseRestore,
+                        onCheckedChange = { clearOnSupabaseRestore = it }
+                    )
+                    Text(
+                        text = "Sobrescrever carteira local ao restaurar do Supabase",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.clickable { clearOnSupabaseRestore = !clearOnSupabaseRestore }
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            isSupabaseSyncRunning = true
+                            viewModel.testSupabaseSync(context) { ok, msg ->
+                                isSupabaseSyncRunning = false
+                                if (ok) { successMsg = msg; showSuccessBanner = true } else { errorMsg = msg; showErrorBanner = true }
+                            }
+                        },
+                        enabled = !isSupabaseSyncRunning,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Testar")
+                    }
+                    Button(
+                        onClick = {
+                            isSupabaseSyncRunning = true
+                            viewModel.syncSupabaseSnapshot(context) { ok, msg ->
+                                isSupabaseSyncRunning = false
+                                if (ok) { successMsg = msg; showSuccessBanner = true } else { errorMsg = msg; showErrorBanner = true }
+                            }
+                        },
+                        enabled = !isSupabaseSyncRunning,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        if (isSupabaseSyncRunning) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        } else {
+                            Text("Sincronizar")
+                        }
+                    }
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        isSupabaseSyncRunning = true
+                        viewModel.restoreTransactionsFromSupabase(context, clearExisting = clearOnSupabaseRestore) { ok, msg ->
+                            isSupabaseSyncRunning = false
+                            if (ok) { successMsg = msg; showSuccessBanner = true } else { errorMsg = msg; showErrorBanner = true }
+                        }
+                    },
+                    enabled = !isSupabaseSyncRunning,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Outlined.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Restaurar transações do Supabase")
                 }
             }
         }
