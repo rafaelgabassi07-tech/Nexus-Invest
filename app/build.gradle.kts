@@ -76,8 +76,8 @@ android {
     applicationId = "com.aistudio.valorae.nbqpyl"
     minSdk = 24
     targetSdk = 36
-    versionCode = 46
-    versionName = "2.0.36"
+    versionCode = 50
+    versionName = "2.0.40"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -102,6 +102,7 @@ android {
     buildConfigField("String", "VALORAE_PUBLIC_BASE_URL", "\"$valoraeUrl\"")
     buildConfigField("String", "VALORAE_PROXY_CLIENT_ID", "\"$valoraeClientId\"")
     buildConfigField("String", "VALORAE_DIRECT_FALLBACK_ENABLED", "\"$valoraeFallbackEnabled\"")
+    buildConfigField("String", "VALORAE_UPDATE_MANIFEST_URL", "\"https://app-atualizacoes.vercel.app/update.json\"")
   }
 
   signingConfigs {

@@ -214,6 +214,24 @@ fun ChartsScreen(viewModel: PortfolioViewModel, modifier: Modifier = Modifier) {
         }
     }
 
+    // A página Insights é composta apenas quando a aba é aberta. Por isso ela precisa
+    // disparar uma sincronização própria, além do pré-aquecimento do ViewModel. Sem isso,
+    // uma carteira recém-importada/adicionada podia aparecer no Dashboard enquanto os cards
+    // de Insights continuavam com estado anterior ou apenas rankings de mercado.
+    val insightsPortfolioSignature = remember(summaries, allTransactions) {
+        val assets = summaries.joinToString("|") { item ->
+            "${item.ticker}:${item.sharesCount}:${item.averageCost}:${item.currentPrice}:${item.totalInvested}"
+        }
+        val txs = allTransactions.maxOfOrNull { it.date } ?: 0L
+        "$assets#tx=${allTransactions.size}#max=$txs"
+    }
+    LaunchedEffect(insightsPortfolioSignature) {
+        if (summaries.isNotEmpty()) {
+            val needsHardRefresh = analytics.analysis == null || analytics.lastUpdated == 0L
+            viewModel.refreshPortfolioAnalytics(force = needsHardRefresh)
+        }
+    }
+
     Box(
         modifier = modifier.fillMaxSize().background(DarkBackground)
     ) {

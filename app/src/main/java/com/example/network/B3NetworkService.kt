@@ -3597,7 +3597,14 @@ object B3NetworkService {
 
     private fun normalizeRankingPercentDisplay(raw: String, numeric: Double): String {
         val text = raw.trim()
-        if (text.isBlank()) return ""
+        // Evita poluir a Home com placeholders quebrados como "+, %", "-, %", ",%" ou apenas "%".
+        if (text.isBlank() || !text.any { it.isDigit() }) {
+            val fallback = numeric.takeIf { it != 0.0 && it.isFinite() && kotlin.math.abs(it) <= 100.0 } ?: 0.0
+            return if (fallback != 0.0) {
+                val prefix = if (fallback > 0.0) "+" else ""
+                String.format(Locale("pt", "BR"), "%s%.2f%%", prefix, fallback)
+            } else ""
+        }
         if (text.contains("%")) return text
         val parsed = parseLocaleFinancialNumber(text)
         val value = when {
@@ -3609,7 +3616,7 @@ object B3NetworkService {
             val prefix = if (value > 0.0) "+" else ""
             String.format(Locale("pt", "BR"), "%s%.2f%%", prefix, value)
         } else {
-            text
+            ""
         }
     }
 
@@ -4175,7 +4182,7 @@ object B3NetworkService {
                 "type" to normalizedType,
                 "profile" to "portfolio",
                 "timeoutMs" to when {
-                    live -> "9000"
+                    live -> "5500"
                     else -> "6000"
                 },
                 "source" to if (live && cleanTickers.isEmpty()) "home" else "compare",

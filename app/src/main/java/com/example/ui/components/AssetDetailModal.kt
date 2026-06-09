@@ -108,7 +108,9 @@ fun AssetDetailModal(
 
     LaunchedEffect(tickerKey, initialAssetData) {
         assetData = initialAssetData ?: assetData.takeIf { it.hasUsefulProxyData() } ?: fallbackAssetData
-        isLoadingData = initialAssetData == null && !assetData.hasUsefulProxyData()
+        // Dados leves de cotação/cache local não bastam para a tela Detalhes.
+        // Mesmo quando existe preço em cache, busque o snapshot rico do Proxy para Perfil, Indicadores e gráficos.
+        isLoadingData = !assetData.hasRichProxyData()
     }
 
     LaunchedEffect(tickerKey, initialChartBundle) {
@@ -141,7 +143,7 @@ fun AssetDetailModal(
 
     LaunchedEffect(tickerKey, localChartRange) {
         val chartRangeChanged = lastResolvedChartRange.isBlank() || !lastResolvedChartRange.equals(localChartRange, ignoreCase = true)
-        val needsAssetRefresh = !assetData.hasUsefulProxyData()
+        val needsAssetRefresh = !assetData.hasRichProxyData()
         val needsHistoryRefresh = localChartPoints.isEmpty() || chartRangeChanged
         val needsBundleRefresh = chartBundle == null || chartRangeChanged
 
@@ -160,7 +162,7 @@ fun AssetDetailModal(
 
         val result = withContext(Dispatchers.IO) {
             val fetchedAsset = if (needsAssetRefresh) {
-                withTimeoutOrNull(3_500) { runCatching { B3NetworkService.fetchAssetData(tickerKey) }.getOrNull() }
+                withTimeoutOrNull(6_500) { runCatching { B3NetworkService.fetchAssetData(tickerKey) }.getOrNull() }
             } else null
             val fetchedHistory = if (needsHistoryRefresh) {
                 withTimeoutOrNull(4_500) { runCatching { B3NetworkService.fetchHistoricalChart(tickerKey, localChartRange) }.getOrDefault(emptyList()) }.orEmpty()
@@ -1113,6 +1115,19 @@ private fun AssetSummary.toFallbackB3AssetData(): B3AssetData {
 private fun B3AssetData.hasUsefulProxyData(): Boolean {
     return price > 0.0 || dy > 0.0 || pvp > 0.0 || pl > 0.0 || marketCap > 0.0 ||
         assetDescription.isNotBlank() || cnpj.isNotBlank() || extractionCompleteness > 0.0
+}
+
+private fun B3AssetData.hasRichProxyData(): Boolean {
+    if (source.contains("carteira local", ignoreCase = true) || fromLocalSnapshot) return false
+    val richNumeric = listOf(
+        dy, pvp, pl, roe, roic, margins, marketCap, dailyLiquidity, high52, low52,
+        totalAssets, netWorth, grossDebt, netDebt, payout, lastDividend
+    ).count { it.isFinite() && it != 0.0 }
+    val richText = listOf(
+        name.takeIf { it.isNotBlank() && !it.equals(ticker, ignoreCase = true) }.orEmpty(),
+        cnpj, assetDescription, subSector, fiiSegment, fiiTotalHolders, fiiIssuedShares
+    ).count { it.isNotBlank() }
+    return extractionCompleteness >= 35.0 || richNumeric >= 3 || richText >= 2
 }
 
 private fun B3AssetData.mergeWithFallback(fallback: B3AssetData): B3AssetData {

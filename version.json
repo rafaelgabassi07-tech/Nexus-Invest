@@ -1,11 +1,11 @@
 {
-  "latestVersionCode": 50,
-  "versionName": "2.0.40",
-  "downloadUrl": "https://github.com/rafaelgabassi07-tech/app-atualizacoes/releases/download/v2.0.40/APK_VALORAE_v2.0.40.apk",
-  "releaseDate": "2026-06-09",
-  "isMandatory": false,
-  "minRequiredVersionCode": 49,
-  "fileSize": "45 MB",
+  "latest_version": "2.0.40",
+  "version_code": 50,
+  "apk_url": "https://github.com/rafaelgabassi07-tech/app-atualizacoes/releases/download/v2.0.40/APK_VALORAE_v2.0.40.apk",
+  "release_date": "2026-06-09",
+  "mandatory": false,
+  "min_required_version_code": 49,
+  "file_size": "45 MB",
   "changelog": [
     "Instalador nativo com aparência mais profissional usando PackageInstaller.Session.",
     "Fallback seguro para FileProvider caso o instalador nativo não esteja disponível.",

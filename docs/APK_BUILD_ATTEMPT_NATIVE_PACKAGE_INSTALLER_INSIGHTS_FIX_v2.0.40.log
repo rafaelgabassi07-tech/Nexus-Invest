@@ -1,0 +1,16 @@
+Comando executado:
+./gradlew --no-daemon assembleDebug
+
+Resultado:
+Falha antes da compilação Kotlin/Android por indisponibilidade de rede no ambiente de execução.
+
+Erro principal:
+UnknownHostException: services.gradle.org
+
+Impacto:
+O Gradle Wrapper tentou baixar a distribuição gradle-9.3.1-bin.zip de https://services.gradle.org/distributions/gradle-9.3.1-bin.zip, mas o ambiente não conseguiu resolver o host. Nenhum erro de Kotlin/Compose/Android foi alcançado nesta tentativa.
+
+Validações alternativas concluídas:
+- JSON válido em update.json e version.json.
+- Rota Vercel api/update.js validada com node -c.
+- Verificações estáticas de presença dos ajustes v2.0.40 aprovadas.

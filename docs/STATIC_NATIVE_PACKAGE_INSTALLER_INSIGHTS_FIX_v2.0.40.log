@@ -1,0 +1,15 @@
+OK - versionName 2.0.40
+OK - versionCode 50
+OK - Vercel endpoint
+OK - PackageInstaller.Session
+OK - FileProvider fallback
+OK - SHA-256 validation
+OK - APK package metadata validation
+OK - UpdateInstallReceiver registered
+OK - Manifest fallback api/update
+OK - Insights click forces portfolio analytics
+OK - ChartsScreen portfolio signature refresh
+OK - Optimistic local analytics state
+OK - Native installer UI states
+OK - update.json v2.0.40
+OK - version.json v2.0.40

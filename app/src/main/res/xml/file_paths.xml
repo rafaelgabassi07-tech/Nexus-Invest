@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<paths>
-    <root-path name="root" path="/" />
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- APKs baixados pelo atualizador in-app ficam aqui: Context.getExternalCacheDir()/valorae_updates/ -->
+    <external-cache-path
+        name="valorae_update_external_cache"
+        path="valorae_updates/" />
+
+    <!-- Fallback para aparelhos sem externalCacheDir disponível. -->
+    <cache-path
+        name="valorae_update_internal_cache"
+        path="valorae_updates/" />
 </paths>

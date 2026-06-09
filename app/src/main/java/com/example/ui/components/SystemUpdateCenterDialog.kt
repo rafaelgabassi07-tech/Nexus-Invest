@@ -162,6 +162,10 @@ fun SystemUpdateCenterDialog(
                                     when (activeStatus) {
                                         is UpdateManager.UpdateStatus.UpdateAvailable -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
                                         is UpdateManager.UpdateStatus.ReadyToInstall -> SuccessGreen.copy(alpha = 0.18f)
+                                        is UpdateManager.UpdateStatus.PreparingNativeInstaller,
+                                        is UpdateManager.UpdateStatus.NativeInstallStarted,
+                                        is UpdateManager.UpdateStatus.Validating -> MaterialTheme.colorScheme.tertiary.copy(alpha = 0.14f)
+                                        is UpdateManager.UpdateStatus.InstallPermissionRequired -> MaterialTheme.colorScheme.error.copy(alpha = 0.12f)
                                         is UpdateManager.UpdateStatus.Downloading -> Color(0xFF3B82F6).copy(alpha = 0.15f)
                                         is UpdateManager.UpdateStatus.Checking -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
                                         else -> SuccessGreen.copy(alpha = 0.12f)
@@ -178,6 +182,10 @@ fun SystemUpdateCenterDialog(
                                             when (activeStatus) {
                                                 is UpdateManager.UpdateStatus.UpdateAvailable -> MaterialTheme.colorScheme.primary
                                                 is UpdateManager.UpdateStatus.ReadyToInstall -> SuccessGreen
+                                                is UpdateManager.UpdateStatus.PreparingNativeInstaller,
+                                                is UpdateManager.UpdateStatus.NativeInstallStarted,
+                                                is UpdateManager.UpdateStatus.Validating -> MaterialTheme.colorScheme.tertiary
+                                                is UpdateManager.UpdateStatus.InstallPermissionRequired -> MaterialTheme.colorScheme.error
                                                 is UpdateManager.UpdateStatus.Downloading -> Color(0xFF3B82F6)
                                                 is UpdateManager.UpdateStatus.Checking -> MaterialTheme.colorScheme.onSurface
                                                 else -> SuccessGreen
@@ -190,6 +198,10 @@ fun SystemUpdateCenterDialog(
                                     text = when (activeStatus) {
                                         is UpdateManager.UpdateStatus.UpdateAvailable -> "Pendente"
                                         is UpdateManager.UpdateStatus.ReadyToInstall -> "Pronto"
+                                        is UpdateManager.UpdateStatus.Validating -> "Validando"
+                                        is UpdateManager.UpdateStatus.PreparingNativeInstaller -> "Nativo"
+                                        is UpdateManager.UpdateStatus.NativeInstallStarted -> "Instalador"
+                                        is UpdateManager.UpdateStatus.InstallPermissionRequired -> "Permissão"
                                         is UpdateManager.UpdateStatus.Downloading -> "Baixando"
                                         is UpdateManager.UpdateStatus.Checking -> "Checando..."
                                         else -> "Atualizado"
@@ -197,6 +209,10 @@ fun SystemUpdateCenterDialog(
                                     color = when (activeStatus) {
                                         is UpdateManager.UpdateStatus.UpdateAvailable -> MaterialTheme.colorScheme.primary
                                         is UpdateManager.UpdateStatus.ReadyToInstall -> SuccessGreen
+                                        is UpdateManager.UpdateStatus.PreparingNativeInstaller,
+                                        is UpdateManager.UpdateStatus.NativeInstallStarted,
+                                        is UpdateManager.UpdateStatus.Validating -> MaterialTheme.colorScheme.tertiary
+                                        is UpdateManager.UpdateStatus.InstallPermissionRequired -> MaterialTheme.colorScheme.error
                                         is UpdateManager.UpdateStatus.Downloading -> Color(0xFF3B82F6)
                                         is UpdateManager.UpdateStatus.Checking -> MaterialTheme.colorScheme.onSurface
                                         else -> SuccessGreen
@@ -254,6 +270,9 @@ fun SystemUpdateCenterDialog(
 
                         is UpdateManager.UpdateStatus.Downloading -> {
                             val info = status.info
+                            val progress = status.progressPercent
+                            val downloadedMb = status.downloadedBytes / (1024.0 * 1024.0)
+                            val totalMb = status.totalBytes?.let { it / (1024.0 * 1024.0) }
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -268,51 +287,86 @@ fun SystemUpdateCenterDialog(
                                 ) {
                                     Column {
                                         Text(
-                                            text = "Baixando Arquivo APK",
+                                            text = "Baixando APK em cache interno",
                                             color = MaterialTheme.colorScheme.onSurface,
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 15.sp
                                         )
                                         Text(
-                                            text = "Versão de Destino: ${info.versionName}",
+                                            text = "Versão de destino: ${info.versionName}",
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             fontSize = 11.sp
                                         )
                                     }
                                     Text(
-                                        text = "Baixando...",
+                                        text = progress?.let { "$it%" } ?: "Baixando...",
                                         color = MaterialTheme.colorScheme.primary,
                                         fontWeight = FontWeight.Black,
                                         fontSize = 16.sp
                                     )
                                 }
                                 Spacer(modifier = Modifier.height(14.dp))
-                                LinearProgressIndicator(
-
-                                    color = MaterialTheme.colorScheme.primary,
-                                    trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(8.dp)
-                                        .clip(RoundedCornerShape(4.dp))
-                                )
+                                if (progress != null) {
+                                    LinearProgressIndicator(
+                                        progress = { progress / 100f },
+                                        color = MaterialTheme.colorScheme.primary,
+                                        trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(8.dp)
+                                            .clip(RoundedCornerShape(4.dp))
+                                    )
+                                } else {
+                                    LinearProgressIndicator(
+                                        color = MaterialTheme.colorScheme.primary,
+                                        trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(8.dp)
+                                            .clip(RoundedCornerShape(4.dp))
+                                    )
+                                }
                                 Spacer(modifier = Modifier.height(12.dp))
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Text(
-                                        text = "Tamanho: ${if (!info.fileSize.isNullOrEmpty()) info.fileSize else "N/A"}",
+                                        text = if (totalMb != null) "${"%.1f".format(downloadedMb)} / ${"%.1f".format(totalMb)} MB" else "${"%.1f".format(downloadedMb)} MB baixados",
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         fontSize = 11.sp
                                     )
                                     Text(
-                                        text = "Velocidade: ~4.5 MB/s",
+                                        text = "Sem salvar na pasta Downloads",
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         fontSize = 11.sp
                                     )
                                 }
                             }
+                        }
+
+                        is UpdateManager.UpdateStatus.Validating -> {
+                            NativeInstallStageCard(
+                                title = "Validando pacote de atualização",
+                                subtitle = "Conferindo formato APK, pacote do VALORAE, versionCode e SHA-256 quando informado pelo Vercel.",
+                                icon = Icons.Default.Verified
+                            )
+                        }
+
+                        is UpdateManager.UpdateStatus.PreparingNativeInstaller -> {
+                            NativeInstallStageCard(
+                                title = "Preparando instalador nativo",
+                                subtitle = "O Android está recebendo o APK via PackageInstaller.Session. Se necessário, a confirmação oficial do sistema será aberta em seguida.",
+                                icon = Icons.Default.SystemUpdate
+                            )
+                        }
+
+                        is UpdateManager.UpdateStatus.NativeInstallStarted -> {
+                            NativeInstallStageCard(
+                                title = "Instalador nativo iniciado",
+                                subtitle = "Confirme a atualização na tela oficial do Android. A substituição só acontece se o APK estiver assinado com a mesma chave do VALORAE instalado.",
+                                icon = Icons.Default.InstallMobile
+                            )
                         }
 
                         is UpdateManager.UpdateStatus.ReadyToInstall -> {
@@ -339,14 +393,14 @@ fun SystemUpdateCenterDialog(
                                 }
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Text(
-                                    text = "Pacote de Atualização Pronto!",
+                                    text = "Pacote de atualização pronto",
                                     color = MaterialTheme.colorScheme.onSurface,
                                     fontWeight = FontWeight.Black,
                                     fontSize = 16.sp
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "O download foi concluído com sucesso e o instalador está pronto para substituir o aplicativo antigo.",
+                                    text = "O APK foi salvo no cache do app, validado e preparado para instalação nativa. Ele não foi enviado para a pasta pública Downloads.",
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 12.sp,
                                     textAlign = TextAlign.Center
@@ -355,18 +409,7 @@ fun SystemUpdateCenterDialog(
                                 Spacer(modifier = Modifier.height(20.dp))
 
                                 Button(
-                                    onClick = {
-                                        onDismiss()
-                                        if (false) {
-                                            // Reset simulation or state
-                                            // No simulation
-                                            onDismiss()
-                                        } else {
-                                            // Let update manager invoke installation API
-                                            // Trigger installation trigger manually
-                                            updateManager.startDownload(AppUpdateInfo(2, "v1.1.0", ""))
-                                        }
-                                    },
+                                    onClick = { updateManager.installDownloadedApk() },
                                     modifier = Modifier.fillMaxWidth(),
                                     colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen, contentColor = Color.White),
                                     shape = RoundedCornerShape(12.dp),
@@ -374,7 +417,57 @@ fun SystemUpdateCenterDialog(
                                 ) {
                                     Icon(Icons.Default.Build, contentDescription = null, modifier = Modifier.size(18.dp))
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Instalar Atualização Agora", fontWeight = FontWeight.Bold)
+                                    Text("Abrir instalador nativo do Android", fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+
+                        is UpdateManager.UpdateStatus.InstallPermissionRequired -> {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.error.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
+                                    .border(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+                                    .padding(20.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Warning,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(40.dp)
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    text = "Permissão de instalação necessária",
+                                    color = MaterialTheme.colorScheme.error,
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 16.sp,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "O Android exige que você autorize este app como fonte confiável antes de instalar APKs fora da Play Store.",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 12.sp,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(18.dp))
+                                Button(
+                                    onClick = { updateManager.openInstallPermissionSettings() },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = Color.White),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("Autorizar instalação deste app", fontWeight = FontWeight.Bold)
+                                }
+                                Spacer(modifier = Modifier.height(10.dp))
+                                OutlinedButton(
+                                    onClick = { updateManager.installDownloadedApk() },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("Já autorizei, tentar instalar novamente", fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -462,7 +555,7 @@ fun SystemUpdateCenterDialog(
 
                                         coroutineScope.launch {
 
-                                            updateManager.checkForUpdate("https://raw.githubusercontent.com/rafaelgabassi07-tech/app-atualizacoes/refs/heads/main/update.json", force = true)
+                                            updateManager.checkForUpdate(BuildConfig.VALORAE_UPDATE_MANIFEST_URL, force = true)
                                         }
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.primary),
@@ -479,6 +572,62 @@ fun SystemUpdateCenterDialog(
                 Spacer(modifier = Modifier.height(32.dp))
             }
         }
+    }
+}
+
+
+@Composable
+private fun NativeInstallStageCard(
+    title: String,
+    subtitle: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp))
+            .border(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.18f), RoundedCornerShape(16.dp))
+            .padding(20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(64.dp)
+                .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.14f), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.tertiary,
+                modifier = Modifier.size(34.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = title,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.Black,
+            fontSize = 16.sp,
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = subtitle,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 12.sp,
+            textAlign = TextAlign.Center,
+            lineHeight = 17.sp
+        )
+        Spacer(modifier = Modifier.height(18.dp))
+        LinearProgressIndicator(
+            color = MaterialTheme.colorScheme.tertiary,
+            trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.16f),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(7.dp)
+                .clip(RoundedCornerShape(4.dp))
+        )
     }
 }
 
@@ -523,9 +672,9 @@ fun UpdateDetailsCard(
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp
                 )
-                if (!info.releaseDate.isNullOrEmpty()) {
+                if (!info.normalizedReleaseDate.isNullOrEmpty()) {
                     Text(
-                        text = "Data: ${info.releaseDate.take(10)}", // Just show YYYY-MM-DD
+                        text = "Data: ${info.normalizedReleaseDate.take(10)}", // Just show YYYY-MM-DD
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 11.sp
                     )
@@ -614,7 +763,7 @@ fun UpdateDetailsCard(
                         }
                     }
                     else -> {
-                        val notes = info.releaseNotes?.split("\n") ?: listOf("Melhorias cosméticas e correções gerais do app")
+                        val notes = info.normalizedReleaseNotes?.split("\n") ?: listOf("Melhorias cosméticas e correções gerais do app")
                         notes.filter { it.isNotBlank() }.forEach { note ->
                             Row(verticalAlignment = Alignment.Top) {
                                 Box(
@@ -648,7 +797,7 @@ fun UpdateDetailsCard(
         ) {
             Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Baixar e Atualizar Agora ${if (!info.fileSize.isNullOrEmpty()) "(${info.fileSize})" else ""}", fontWeight = FontWeight.Bold)
+            Text("Baixar e Atualizar Agora ${if (!info.normalizedFileSize.isNullOrEmpty()) "(${info.normalizedFileSize})" else ""}", fontWeight = FontWeight.Bold)
         }
     }
 }

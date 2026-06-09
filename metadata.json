@@ -1,12 +1,14 @@
 {
   "name": "Valorae",
-  "description": "Plataforma profissional de gestão de portfólio, análise de ativos e monitoramento de mercado financeiro.",
+  "description": "Projeto Android VALORAE compatível com atualização simples via Vercel + GitHub Releases.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ],
-  "versionName": "2.0.36",
-  "versionCode": 46,
-  "generatedAt": "2026-06-08T23:05:00.000-03:00",
-  "notes": "Baseline/ProfileInstaller aplicado de forma conservadora: perfis manuais para startup, dashboard, detalhes do ativo, gráficos, análise e ViewModel, sem geração automática pesada no build; reportFullyDrawn/ReportDrawnWhen preparado para métricas e primeira tela utilizável."
+  "appVersionName": "2.0.40",
+  "appVersionCode": 50,
+  "updateManifestUrl": "https://app-atualizacoes.vercel.app/update.json",
+  "releaseDate": "2026-06-09",
+  "releaseTitle": "Compatibilidade com atualização simples",
+  "notes": "Mantida a estrutura original do projeto. Alterados apenas os manifestos locais para o modelo manual simples: versionCode, versionName, downloadUrl, fileSize e changelog."
 }

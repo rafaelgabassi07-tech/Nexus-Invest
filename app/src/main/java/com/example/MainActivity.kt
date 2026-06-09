@@ -105,6 +105,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             val hideValues by themePreferences.hideValues.collectAsStateWithLifecycle(initialValue = false)
 
             var isAppUnlocked by rememberSaveable { mutableStateOf(false) }
+            var lastBackgroundAt by rememberSaveable { mutableLongStateOf(0L) }
 
             LaunchedEffect(biometricEnabledState.value) {
                 if (biometricEnabledState.value == false) isAppUnlocked = true
@@ -115,8 +116,25 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
             DisposableEffect(lifecycleOwner, biometricEnabled, isAppUnlocked) {
                 val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-                    if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP && biometricEnabled && isAppUnlocked) {
-                        isAppUnlocked = false
+                    when (event) {
+                        androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> {
+                            if (biometricEnabled && isAppUnlocked) lastBackgroundAt = System.currentTimeMillis()
+                        }
+                        androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
+                            if (biometricEnabled && isAppUnlocked) {
+                                lastBackgroundAt = System.currentTimeMillis()
+                                isAppUnlocked = false
+                            }
+                        }
+                        androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
+                            // Alguns aparelhos/launchers não entregam ON_STOP de forma previsível ao voltar do Recentes.
+                            // Se o app saiu de foco e voltou depois de um curto intervalo, reative o bloqueio.
+                            val elapsed = if (lastBackgroundAt > 0L) System.currentTimeMillis() - lastBackgroundAt else 0L
+                            if (biometricEnabled && isAppUnlocked && elapsed > 650L) {
+                                isAppUnlocked = false
+                            }
+                        }
+                        else -> Unit
                     }
                 }
                 lifecycleOwner.lifecycle.addObserver(observer)
@@ -223,7 +241,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         // Verificação de atualização não deve competir com carteira, rankings e cache no boot.
                         // O UpdateManager também aplica TTL de 12h; a checagem manual em Configurações força refresh.
                         kotlinx.coroutines.delay(4_500)
-                        updateManager.checkForUpdate("https://raw.githubusercontent.com/rafaelgabassi07-tech/app-atualizacoes/refs/heads/main/update.json")
+                        updateManager.checkForUpdate(BuildConfig.VALORAE_UPDATE_MANIFEST_URL)
                     }
 
                     LaunchedEffect(updateStatus) {
@@ -616,6 +634,10 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                     NavigationBarItem(
                                         selected = activePage == 3,
                                         onClick = {
+                                            // Insights precisa reagir imediatamente à carteira local.
+                                            // O clique força a reconstrução da análise da carteira, enquanto
+                                            // os rankings continuam usando TTL para não sobrecarregar o Proxy/Vercel Free.
+                                            viewModel.refreshPortfolioAnalytics(force = true)
                                             viewModel.refreshLiveMarketRankings(force = false, full = true)
                                             activePage = 3
                                         },

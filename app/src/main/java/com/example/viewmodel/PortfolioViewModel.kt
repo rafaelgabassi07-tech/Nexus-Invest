@@ -549,7 +549,7 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
             fetchGlobalNews(force = false)
         }
         viewModelScope.launch {
-            delay(1200)
+            delay(350)
             refreshLiveMarketRankings(force = false)
         }
 
@@ -796,8 +796,8 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
                         // A Home sempre usa o modo completo do Proxy para maiores altas/baixas.
                         // O próprio serviço cai para modo leve caso o endpoint completo demore ou volte vazio.
                         val liveDeferred = async {
-                            withTimeoutOrNull(if (full) 18_000 else 14_000) {
-                                runCatching { B3NetworkService.fetchLiveStockRankings(complete = true) }.getOrNull()
+                            withTimeoutOrNull(if (full) 18_000 else 6_500) {
+                                runCatching { B3NetworkService.fetchLiveStockRankings(complete = full) }.getOrNull()
                             }
                         }
                         if (full) {
@@ -1229,6 +1229,32 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
             _portfolioAnalytics.value = _portfolioAnalytics.value.copy(isLoading = false)
             return
         }
+
+        val firstPortfolioMillis = firstPortfolioPurchaseMillis(txs)
+        val localHistory = buildLocalPortfolioHistory(txs, summaries)
+        val localAgeMonths = portfolioAgeMonths(firstPortfolioMillis).coerceIn(1, 120)
+        val localIpcaFallback = buildIpcaFallbackSeries(localAgeMonths)
+        val localAnalysis = buildLocalPortfolioAnalysis(summaries)
+        val currentBeforeRemote = _portfolioAnalytics.value
+
+        // Atualização otimista/local: os Insights passam a refletir a carteira imediatamente,
+        // antes das chamadas remotas do Proxy terminarem. Isso evita a sensação de página travada
+        // quando há ativos locais, mas agenda/rankings/histórico ainda estão em trânsito.
+        _portfolioAnalytics.value = PortfolioAnalyticsState(
+            isLoading = true,
+            analysis = localAnalysis,
+            portfolioHistory = localHistory,
+            ipcaSeries = localIpcaFallback,
+            dividendEvents = currentBeforeRemote.dividendEvents,
+            portfolioRanking = currentBeforeRemote.portfolioRanking,
+            liveMarketRanking = currentBeforeRemote.liveMarketRanking,
+            stockMarketRanking = currentBeforeRemote.stockMarketRanking,
+            fiiMarketRanking = currentBeforeRemote.fiiMarketRanking,
+            marketRankingsAttempted = currentBeforeRemote.marketRankingsAttempted,
+            source = "Carteira local recalculada; sincronizando VALORAE Proxy",
+            lastUpdated = System.currentTimeMillis()
+        )
+
         lastPortfolioAnalyticsSignature = analyticsSignature
         lastPortfolioAnalyticsRefreshAt = System.currentTimeMillis()
 
@@ -1247,10 +1273,8 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
                     val remoteDividends = dividendsDeferred.await()
                     val remotePortfolioRanking = portfolioRankingDeferred.await()
 
-                    val firstPortfolioMillis = firstPortfolioPurchaseMillis(txs)
-                    val localHistory = buildLocalPortfolioHistory(txs, summaries)
                     val ageAdjustedHistory = normalizePortfolioHistoryForAge(remoteHistory, firstPortfolioMillis).ifEmpty { localHistory }
-                    val ageMonths = portfolioAgeMonths(firstPortfolioMillis).coerceIn(1, 120)
+                    val ageMonths = localAgeMonths
                     val ageAdjustedIpca = normalizeIpcaForPortfolioAge(
                         points = remoteIpca,
                         firstPortfolioMillis = firstPortfolioMillis,
@@ -1280,9 +1304,9 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
             val currentMarketState = _portfolioAnalytics.value
             PortfolioAnalyticsState(
                 isLoading = false,
-                analysis = buildLocalPortfolioAnalysis(summaries),
-                portfolioHistory = buildLocalPortfolioHistory(txs, summaries),
-                ipcaSeries = buildIpcaFallbackSeries(portfolioAgeMonths(firstPortfolioPurchaseMillis(txs))),
+                analysis = localAnalysis,
+                portfolioHistory = localHistory,
+                ipcaSeries = localIpcaFallback,
                 dividendEvents = emptyList(),
                 portfolioRanking = currentMarketState.portfolioRanking,
                 liveMarketRanking = currentMarketState.liveMarketRanking,

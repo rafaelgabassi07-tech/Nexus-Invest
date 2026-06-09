@@ -1572,16 +1572,26 @@ private fun homeMarketMoverChangeText(
     val rawDisplay = item.changeDisplay.ifBlank {
         if (item.displayValue.contains("%")) item.displayValue else ""
     }.trim()
-    val display = rawDisplay.replace("+", "").replace("-", "")
-    if (display.isNotBlank()) {
-        val normalized = if (display.contains("%")) display else "$display%"
-        return "$arrow $normalized"
+    // Não renderize placeholders quebrados vindos do parser/proxy, como "+, %", "-, %" ou apenas "%".
+    val hasDigit = rawDisplay.any { it.isDigit() }
+    if (hasDigit) {
+        val display = rawDisplay
+            .replace("▲", "")
+            .replace("▼", "")
+            .replace("+", "")
+            .replace("-", "")
+            .replace(Regex("\s+"), "")
+            .trim()
+        if (display.any { it.isDigit() }) {
+            val normalized = if (display.contains("%")) display else "$display%"
+            return "$arrow $normalized"
+        }
     }
     val magnitude = homeMarketMoverChangeMagnitude(item, asset)
     return if (magnitude > 0.0) {
         "$arrow ${String.format(java.util.Locale("pt", "BR"), "%.2f%%", magnitude)}"
     } else {
-        "$arrow —"
+        ""
     }
 }
 
@@ -1745,7 +1755,17 @@ fun HomeMarketMoversPreview(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                if (name.isNotBlank()) {
+                                val changeLine = homeMarketMoverChangeText(item, asset, isPositive)
+                                if (changeLine.isNotBlank()) {
+                                    Text(
+                                        text = changeLine,
+                                        color = accentColor,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                } else if (name.isNotBlank() && !name.contains("%") && !name.contains("+,") && !name.contains("-,")) {
                                     Text(
                                         text = name,
                                         color = TextSecondary,

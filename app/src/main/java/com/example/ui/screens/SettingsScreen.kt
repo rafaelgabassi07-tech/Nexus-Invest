@@ -1,5 +1,10 @@
 package com.example.ui.screens
 
+import androidx.core.content.ContextCompat
+import android.os.Build
+import android.content.pm.PackageManager
+import android.app.Activity
+import android.Manifest
 import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
@@ -2283,140 +2288,116 @@ private fun DataBackupPage(viewModel: com.example.viewmodel.PortfolioViewModel) 
             "application/csv",
             "application/vnd.ms-excel",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "application/zip",
-            "*/*"
+            "application/zip"
         )
     }
 
-    // Comprehensive multi-format File Picker Launcher (XLSX, JSON, CSV)
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        uri?.let { selectedUri ->
-            scope.launch {
-                try {
-                    val fileName = com.example.utils.DataImportExportUtils.getFileName(context, selectedUri)
-                    val fileNameLower = fileName.lowercase()
-                    var countImported = 0
-                    var isJson = false
+    fun processSelectedImportUri(selectedUri: Uri) {
+        scope.launch {
+            try {
+                val fileName = com.example.utils.DataImportExportUtils.getFileName(context, selectedUri)
+                val fileNameLower = fileName.lowercase()
+                var countImported = 0
+                var isJson = false
 
-                    withContext(Dispatchers.IO) {
-                        val inputStream = context.contentResolver.openInputStream(selectedUri)
-                            ?: throw Exception("Não foi possível carregar o arquivo anexado.")
-
-                        if (fileNameLower.endsWith(".xlsx")) {
-                            val sheetText = com.example.utils.DataImportExportUtils.parseXlsx(inputStream)
-                            if (sheetText.isNotBlank()) {
-                                viewModel.importFromB3Spreadsheet(sheetText) { count ->
-                                    countImported = count
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(selectedUri)?.use { inputStream ->
+                        when {
+                            fileNameLower.endsWith(".xlsx") -> {
+                                val sheetText = com.example.utils.DataImportExportUtils.parseXlsx(inputStream)
+                                if (sheetText.isNotBlank()) {
+                                    viewModel.importFromB3Spreadsheet(sheetText) { count -> countImported = count }
+                                } else {
+                                    throw Exception("Planilha Excel está vazia ou corrompida.")
                                 }
-                            } else {
-                                throw Exception("Planilha Excel está vazia ou corrompida.")
                             }
-                        } else if (fileNameLower.endsWith(".json")) {
-                            isJson = true
-                            val jsonText = inputStream.reader().readText()
-                            viewModel.importTransactionsFromJson(jsonText, clearOnImport)
-                        } else {
-                            // Supposed CSV or Text format
-                            val textContent = inputStream.reader().readText()
-                            if (textContent.isNotBlank()) {
-                                viewModel.importFromB3Spreadsheet(textContent) { count ->
-                                    countImported = count
+                            fileNameLower.endsWith(".json") -> {
+                                isJson = true
+                                val jsonText = inputStream.reader().readText()
+                                viewModel.importTransactionsFromJson(jsonText, clearOnImport)
+                            }
+                            else -> {
+                                val textContent = inputStream.reader().readText()
+                                if (textContent.isNotBlank()) {
+                                    viewModel.importFromB3Spreadsheet(textContent) { count -> countImported = count }
+                                } else {
+                                    throw Exception("O arquivo de texto/CSV selecionado está vazio.")
                                 }
-                            } else {
-                                throw Exception("O arquivo de texto/CSV selecionado está vazio.")
                             }
                         }
-                        inputStream.close()
-                    }
-
-                    // A brief pause for background db processing
-                    kotlinx.coroutines.delay(1000)
-
-                    if (isJson) {
-                        successMsg = "Corte de backup JSON em execução! Os ativos serão carregados em breve."
-                    } else {
-                        if (countImported > 0) {
-                            successMsg = "Importado com sucesso! $countImported transações adicionadas de '$fileName'."
-                        } else {
-                            successMsg = "Arquivo '$fileName' anexado! Verifique a aba de Notificações para detalhes."
-                        }
-                    }
-                    showSuccessBanner = true
-                } catch (e: Exception) {
-                    errorMsg = "Falha ao ler arquivo: ${e.localizedMessage ?: "formato incorreto"}"
-                    showErrorBanner = true
+                    } ?: throw Exception("Não foi possível carregar o arquivo anexado.")
                 }
+
+                kotlinx.coroutines.delay(650)
+                successMsg = if (isJson) {
+                    "Backup JSON importado! Os ativos serão atualizados em instantes."
+                } else if (countImported > 0) {
+                    "Importado com sucesso! $countImported transações adicionadas de '$fileName'."
+                } else {
+                    "Arquivo '$fileName' anexado! Verifique notificações/dados importados."
+                }
+                showSuccessBanner = true
+            } catch (e: Exception) {
+                errorMsg = "Falha ao ler arquivo: ${e.localizedMessage ?: "formato incorreto"}"
+                showErrorBanner = true
             }
         }
     }
 
-
-val openDocumentLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
     ) { uri ->
-        uri?.let { selectedUri ->
-            runCatching {
-                context.contentResolver.takePersistableUriPermission(selectedUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            scope.launch {
-                try {
-                    val fileName = com.example.utils.DataImportExportUtils.getFileName(context, selectedUri)
-                    val fileNameLower = fileName.lowercase()
-                    var countImported = 0
-                    var isJson = false
+        if (uri != null) processSelectedImportUri(uri)
+    }
 
-                    withContext(Dispatchers.IO) {
-                        val inputStream = context.contentResolver.openInputStream(selectedUri)
-                            ?: throw Exception("Não foi possível carregar o arquivo anexado.")
-
-                        if (fileNameLower.endsWith(".xlsx")) {
-                            val sheetText = com.example.utils.DataImportExportUtils.parseXlsx(inputStream)
-                            if (sheetText.isNotBlank()) {
-                                viewModel.importFromB3Spreadsheet(sheetText) { count ->
-                                    countImported = count
-                                }
-                            } else {
-                                throw Exception("Planilha Excel está vazia ou corrompida.")
-                            }
-                        } else if (fileNameLower.endsWith(".json")) {
-                            isJson = true
-                            val jsonText = inputStream.reader().readText()
-                            viewModel.importTransactionsFromJson(jsonText, clearOnImport)
-                        } else {
-                            // Supposed CSV or Text format
-                            val textContent = inputStream.reader().readText()
-                            if (textContent.isNotBlank()) {
-                                viewModel.importFromB3Spreadsheet(textContent) { count ->
-                                    countImported = count
-                                }
-                            } else {
-                                throw Exception("O arquivo de texto/CSV selecionado está vazio.")
-                            }
-                        }
-                        inputStream.close()
+    val openDocumentIntentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val selectedUri = result.data?.data
+            if (selectedUri != null) {
+                runCatching {
+                    val flags = (result.data?.flags ?: 0) and
+                        (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                    if (flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0) {
+                        context.contentResolver.takePersistableUriPermission(selectedUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
-
-                    // A brief pause for background db processing
-                    kotlinx.coroutines.delay(1000)
-
-                    if (isJson) {
-                        successMsg = "Corte de backup JSON em execução! Os ativos serão carregados em breve."
-                    } else {
-                        if (countImported > 0) {
-                            successMsg = "Importado com sucesso! $countImported transações adicionadas de '$fileName'."
-                        } else {
-                            successMsg = "Arquivo '$fileName' anexado! Verifique a aba de Notificações para detalhes."
-                        }
-                    }
-                    showSuccessBanner = true
-                } catch (e: Exception) {
-                    errorMsg = "Falha ao ler arquivo: ${e.localizedMessage ?: "formato incorreto"}"
-                    showErrorBanner = true
                 }
+                processSelectedImportUri(selectedUri)
+            } else {
+                errorMsg = "Nenhum arquivo foi retornado pelo seletor. Tente novamente ou escolha outro gerenciador."
+                showErrorBanner = true
             }
         }
+    }
+
+    fun buildOpenDocumentIntent(): Intent {
+        return Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_MIME_TYPES, importMimeTypes)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+    }
+
+    fun launchImportPicker() {
+        try {
+            openDocumentIntentLauncher.launch(Intent.createChooser(buildOpenDocumentIntent(), "Selecionar arquivo VALORAE"))
+        } catch (primary: Exception) {
+            try {
+                filePickerLauncher.launch("*/*")
+            } catch (fallback: Exception) {
+                errorMsg = "Erro ao abrir o seletor de arquivos. No Android moderno, o acesso ao arquivo é concedido quando você escolhe o documento pelo seletor do sistema. Verifique se o app Arquivos/Files está habilitado."
+                showErrorBanner = true
+            }
+        }
+    }
+
+    val legacyStoragePermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) {
+        launchImportPicker()
     }
 
     LaunchedEffect(showSuccessBanner) {
@@ -2589,15 +2570,12 @@ val openDocumentLauncher = rememberLauncherForActivityResult(
                 // High fidelity interactive attachment box
                 OutlinedCard(
                     onClick = {
-                        try {
-                            openDocumentLauncher.launch(importMimeTypes)
-                        } catch (primary: Exception) {
-                            try {
-                                filePickerLauncher.launch("*/*")
-                            } catch (fallback: Exception) {
-                                errorMsg = "Erro: nenhum seletor de arquivos respondeu. O Android usa o Storage Access Framework; tente habilitar o app Arquivos/Files do sistema ou escolha outro gerenciador."
-                                showErrorBanner = true
-                            }
+                        val needsLegacyReadPermission = Build.VERSION.SDK_INT <= 32 &&
+                            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
+                        if (needsLegacyReadPermission) {
+                            legacyStoragePermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+                        } else {
+                            launchImportPicker()
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
