@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -71,7 +72,7 @@ fun AssetsScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 8.dp)
+                        .padding(bottom = 4.dp)
                 ) {
                     Text(
                         text = "Meus Ativos",
@@ -87,25 +88,127 @@ fun AssetsScreen(
                 }
             }
 
+            // Assets screen overview card (to enrich the space)
+            item {
+                if (assets.isNotEmpty() && activeTab == 0) {
+                    val totalInvested = assets.sumOf { it.totalInvested }
+                    val totalCurrent = assets.sumOf { it.totalCurrentValue }
+                    val totalDelta = totalCurrent - totalInvested
+                    val returnPct = if (totalInvested > 0) (totalDelta / totalInvested) * 100 else 0.0
+                    val isPos = totalDelta >= 0
+
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, BorderColor.copy(alpha = 0.1f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 6.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(
+                                    text = "VALOR DOS ATIVOS",
+                                    color = TextSecondary,
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.5.sp
+                                )
+                                Text(
+                                    text = if (hideValues) "R$ •••••" else "R$ ${String.format("%,.2f", totalCurrent)}",
+                                    color = TextPrimary,
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Black
+                                )
+                            }
+
+                            // Growth Indicator
+                            Surface(
+                                color = if (isPos) SuccessGreen.copy(alpha = 0.08f) else DangerRed.copy(alpha = 0.08f),
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, (if (isPos) SuccessGreen else DangerRed).copy(alpha = 0.15f))
+                            ) {
+                                Text(
+                                    text = if (hideValues) "••%" else String.format("%+.2f%%", returnPct),
+                                    color = if (isPos) SuccessGreen else DangerRed,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Black,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             // Tabs Selector: Holdings vs raw transactional logs
             item {
-                Row(
+                Surface(
+                    color = Color.White.copy(alpha = 0.03f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, BorderColor.copy(alpha = 0.08f)),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 4.dp)
                 ) {
-                    TabButton(
-                        text = "Ativos (${assets.size})",
-                        selected = activeTab == 0,
-                        onClick = { activeTab = 0 },
-                        modifier = Modifier.weight(1f)
-                    )
-                    TabButton(
-                        text = "Histórico de Compras",
-                        selected = activeTab == 1,
-                        onClick = { activeTab = 1 },
-                        modifier = Modifier.weight(1f)
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        // Ativos Tab
+                        val activeBg0 = if (activeTab == 0) GoldPrimary.copy(alpha = 0.12f) else Color.Transparent
+                        val activeBorder0 = if (activeTab == 0) BorderStroke(1.dp, GoldPrimary.copy(alpha = 0.25f)) else null
+                        Surface(
+                            onClick = { activeTab = 0 },
+                            color = activeBg0,
+                            shape = RoundedCornerShape(8.dp),
+                            border = activeBorder0,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier.padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "Ativos (${assets.size})",
+                                    color = if (activeTab == 0) GoldPrimary else TextSecondary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+
+                        // Histórico Tab
+                        val activeBg1 = if (activeTab == 1) GoldPrimary.copy(alpha = 0.12f) else Color.Transparent
+                        val activeBorder1 = if (activeTab == 1) BorderStroke(1.dp, GoldPrimary.copy(alpha = 0.25f)) else null
+                        Surface(
+                            onClick = { activeTab = 1 },
+                            color = activeBg1,
+                            shape = RoundedCornerShape(8.dp),
+                            border = activeBorder1,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier.padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "Histórico de Compras",
+                                    color = if (activeTab == 1) GoldPrimary else TextSecondary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    }
                 }
             }
 

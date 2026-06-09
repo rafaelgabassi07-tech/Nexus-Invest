@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
@@ -89,7 +90,18 @@ class UpdateManager(context: Context) {
 
             _updateStatus.value = UpdateStatus.Checking
 
-            val updateInfo = fetchUpdateInfoWithFallback(manifestUrl)
+            val updateInfo = if (force) {
+                fetchUpdateInfoWithFallback(manifestUrl)
+            } else {
+                // Checagem automática de abertura não pode competir com boot da carteira.
+                // Se o manifesto não responder rapidamente, preserva o app fluido e deixa
+                // a tentativa manual em Configurações usar o caminho completo.
+                withTimeoutOrNull(6_000L) { fetchUpdateInfoWithFallback(manifestUrl) }
+                    ?: run {
+                        _updateStatus.value = UpdateStatus.UpToDate
+                        return
+                    }
+            }
             android.util.Log.d("UpdateManager", "Update info received from $manifestUrl: $updateInfo")
 
             prefs.edit().putLong(LAST_UPDATE_CHECK_AT, now).apply()
@@ -338,7 +350,7 @@ class UpdateManager(context: Context) {
             setAppPackageName(context.packageName)
             setSize(apkFile.length())
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                setInstallReason(PackageInstaller.INSTALL_REASON_USER)
+                setInstallReason(android.content.pm.PackageManager.INSTALL_REASON_USER)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_REQUIRED)

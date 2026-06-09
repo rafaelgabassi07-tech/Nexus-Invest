@@ -3,6 +3,7 @@ package com.example
 import android.os.Bundle
 import android.view.WindowManager
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.animation.togetherWith
@@ -239,8 +240,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
                     LaunchedEffect(Unit) {
                         // Verificação de atualização não deve competir com carteira, rankings e cache no boot.
-                        // O UpdateManager também aplica TTL de 12h; a checagem manual em Configurações força refresh.
-                        kotlinx.coroutines.delay(4_500)
+                        // O UpdateManager também aplica TTL de 3h; a checagem manual em Configurações força refresh.
+                        delay(4_500)
                         updateManager.checkForUpdate(BuildConfig.VALORAE_UPDATE_MANIFEST_URL)
                     }
 
@@ -460,14 +461,27 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                             Column {
                                 CenterAlignedTopAppBar(
                                     title = {
-                                        Text(
-                                            text = "VALORAE",
-                                            style = MaterialTheme.typography.titleLarge.copy(
-                                                color = MaterialTheme.colorScheme.primary,
-                                                fontWeight = FontWeight.ExtraBold,
-                                                letterSpacing = 2.sp
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.Center
+                                        ) {
+                                            Image(
+                                                painter = androidx.compose.ui.res.painterResource(id = R.drawable.valorae_logo_vector),
+                                                contentDescription = null,
+                                                modifier = Modifier
+                                                    .size(26.dp)
+                                                    .clip(CircleShape)
                                             )
-                                        )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = "VALORAE",
+                                                style = MaterialTheme.typography.titleMedium.copy(
+                                                    color = GoldPrimary,
+                                                    fontWeight = FontWeight.Black,
+                                                    letterSpacing = 2.5.sp
+                                                )
+                                            )
+                                        }
                                     },
                                     colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                                         containerColor = MaterialTheme.colorScheme.background,
@@ -637,7 +651,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                             // Insights precisa reagir imediatamente à carteira local.
                                             // O clique força a reconstrução da análise da carteira, enquanto
                                             // os rankings continuam usando TTL para não sobrecarregar o Proxy/Vercel Free.
-                                            viewModel.refreshPortfolioAnalytics(force = true)
+                                            viewModel.refreshPortfolioAnalytics(force = false)
                                             viewModel.refreshLiveMarketRankings(force = false, full = true)
                                             activePage = 3
                                         },
@@ -912,9 +926,11 @@ private fun ValoraeBrandLockup(
                 contentAlignment = Alignment.Center
             ) {
                 Image(
-                    painter = androidx.compose.ui.res.painterResource(id = R.drawable.valorae_premium_logo_1779327613624),
+                    painter = androidx.compose.ui.res.painterResource(id = R.drawable.valorae_logo_vector),
                     contentDescription = "Logotipo Valorae",
-                    modifier = Modifier.size(logoSize * 0.66f)
+                    modifier = Modifier
+                        .size(logoSize)
+                        .clip(CircleShape)
                 )
             }
         }
@@ -922,7 +938,7 @@ private fun ValoraeBrandLockup(
         Spacer(modifier = Modifier.height(18.dp))
 
         Text(
-            text = "Valorae",
+            text = "VALORAE",
             style = MaterialTheme.typography.headlineMedium.copy(
                 fontSize = titleSize,
                 letterSpacing = 0.5.sp,

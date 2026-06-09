@@ -3,6 +3,6 @@
     <item
         android:width="66dp"
         android:height="66dp"
-        android:drawable="@drawable/app_icon_foreground_1779471656384"
+        android:drawable="@drawable/valorae_logo_vector"
         android:gravity="center" />
 </layer-list>

@@ -21,13 +21,29 @@ private fun createDarkColorScheme(darkVariant: DarkVariant) = darkColorScheme(
     primary = GoldPrimary,
     secondary = GoldPrimary.copy(alpha = 0.8f),
     tertiary = GoldPrimary.copy(alpha = 0.6f),
-    background = if (darkVariant == DarkVariant.OLED) Color.Black else DarkBackground,
-    surface = if (darkVariant == DarkVariant.OLED) Color.Black else DarkSurface,
+    background = when (darkVariant) {
+        DarkVariant.OLED -> Color.Black
+        DarkVariant.DEEP_SEA -> Color(0xFF020914)
+        else -> DarkBackground
+    },
+    surface = when (darkVariant) {
+        DarkVariant.OLED -> Color.Black
+        DarkVariant.DEEP_SEA -> Color(0xFF061426)
+        else -> DarkSurface
+    },
     onBackground = TextPrimary,
     onSurface = TextPrimary,
     onSurfaceVariant = TextSecondary,
-    surfaceVariant = if (darkVariant == DarkVariant.OLED) Color(0xFF101010) else DarkSurfaceElevated,
-    primaryContainer = if (darkVariant == DarkVariant.OLED) Color(0xFF121212) else DarkSurfaceElevated,
+    surfaceVariant = when (darkVariant) {
+        DarkVariant.OLED -> Color(0xFF101010)
+        DarkVariant.DEEP_SEA -> Color(0xFF0C2038)
+        else -> DarkSurfaceElevated
+    },
+    primaryContainer = when (darkVariant) {
+        DarkVariant.OLED -> Color(0xFF121212)
+        DarkVariant.DEEP_SEA -> Color(0xFF0C2038)
+        else -> DarkSurfaceElevated
+    },
     onPrimaryContainer = TextPrimary,
     outline = GoldPrimary.copy(alpha = 0.2f),
     error = DangerRed
@@ -38,12 +54,12 @@ private fun createLightColorScheme(lightVariant: LightVariant) = lightColorSchem
     secondary = GoldPrimary.copy(alpha = 0.8f),
     tertiary = GoldPrimary.copy(alpha = 0.6f),
     background = when(lightVariant) {
-        LightVariant.CLASSIC -> Color(0xFFF9FAFB)
+        LightVariant.CLASSIC -> LightBackground
         LightVariant.VALOR_GOLD -> Color(0xFFFFFDF5)
         LightVariant.IVORY_CREAM -> Color(0xFFFAF7F2)
     },
     surface = when(lightVariant) {
-        LightVariant.CLASSIC -> Color(0xFFFFFFFF)
+        LightVariant.CLASSIC -> LightSurface
         LightVariant.VALOR_GOLD -> Color(0xFFFFFBEA)
         LightVariant.IVORY_CREAM -> Color(0xFFFFFBF7)
     },
@@ -51,12 +67,12 @@ private fun createLightColorScheme(lightVariant: LightVariant) = lightColorSchem
     onSurface = TextPrimaryLight,
     onSurfaceVariant = TextSecondaryLight,
     surfaceVariant = when(lightVariant) {
-        LightVariant.CLASSIC -> Color(0xFFF3F4F6)
+        LightVariant.CLASSIC -> LightSurfaceElevated
         LightVariant.VALOR_GOLD -> Color(0xFFFEF3C7)
         LightVariant.IVORY_CREAM -> Color(0xFFEFECE6)
     },
     primaryContainer = when(lightVariant) {
-        LightVariant.CLASSIC -> Color(0xFFF3F4F6)
+        LightVariant.CLASSIC -> LightSurfaceElevated
         LightVariant.VALOR_GOLD -> Color(0xFFFEF3C7)
         LightVariant.IVORY_CREAM -> Color(0xFFEFECE6)
     },
@@ -75,6 +91,7 @@ fun MyApplicationTheme(
     content: @Composable () -> Unit,
 ) {
     isDarkThemeGlobal = darkTheme
+    activeDarkVariantGlobal = darkVariant
     val colorScheme = if (darkTheme) createDarkColorScheme(darkVariant) else createLightColorScheme(lightVariant)
 
     val scaledTypography = Typography(

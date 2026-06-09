@@ -114,17 +114,12 @@ fun NewsScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        if (isLoadingNews) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-            }
-        } else {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 16.dp, bottom = 100.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 16.dp, bottom = 100.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
                 item {
                     Column(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
                         Column(
@@ -184,6 +179,18 @@ fun NewsScreen(
                         }
 
                         Spacer(modifier = Modifier.height(10.dp))
+
+                        if (isLoadingNews) {
+                            LinearProgressIndicator(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(3.dp)
+                                    .clip(RoundedCornerShape(999.dp)),
+                                color = GoldPrimary,
+                                trackColor = BorderColor.copy(alpha = 0.12f)
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                        }
 
                         // 2. Horizontal auto-scroll Category Chips
                         LazyRow(
@@ -260,14 +267,14 @@ fun NewsScreen(
                                 )
                                 Spacer(modifier = Modifier.height(10.dp))
                                 Text(
-                                    text = "Nenhuma notícia nesta categoria",
+                                    text = if (isLoadingNews) "Sincronizando notícias" else "Nenhuma notícia nesta categoria",
                                     color = MaterialTheme.colorScheme.onBackground,
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "Tente outra aba ou remova os filtros de pesquisa.",
+                                    text = if (isLoadingNews) "A página já está pronta; o feed será preenchido automaticamente assim que o Proxy responder." else "Tente outra aba ou remova os filtros de pesquisa.",
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 12.sp,
                                     textAlign = TextAlign.Center
@@ -311,7 +318,6 @@ fun NewsScreen(
                 }
             }
         }
-    }
 }
 
 @Composable
@@ -352,6 +358,16 @@ fun NewsCardItem(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // Modern Category Badge based on classification
+                    val cleanSource = remember(item.source) {
+                        var cleaned = item.source.lowercase().trim()
+                        if (cleaned.startsWith("https://")) cleaned = cleaned.substring(8)
+                        else if (cleaned.startsWith("http://")) cleaned = cleaned.substring(7)
+                        if (cleaned.startsWith("www.")) cleaned = cleaned.substring(4)
+                        val slashIdx = cleaned.indexOf('/')
+                        if (slashIdx != -1) cleaned = cleaned.substring(0, slashIdx)
+                        cleaned = cleaned.removeSuffix(".br").removeSuffix(".com").removeSuffix(".net").removeSuffix(".org")
+                        cleaned.uppercase(java.util.Locale.ROOT)
+                    }
                     Box(
                         modifier = Modifier
                             .background(GoldPrimary.copy(alpha = 0.1f), shape = RoundedCornerShape(6.dp))
@@ -359,7 +375,7 @@ fun NewsCardItem(
                             .padding(horizontal = 8.dp, vertical = 2.dp)
                     ) {
                         Text(
-                            text = item.source.uppercase(),
+                            text = cleanSource,
                             color = GoldPrimary,
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Black,
@@ -404,18 +420,6 @@ fun NewsCardItem(
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis
             )
-
-            if (item.description.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = item.description,
-                    color = TextSecondary.copy(alpha = contentAlpha * 0.8f),
-                    fontSize = 11.sp,
-                    lineHeight = 15.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
 
             Spacer(modifier = Modifier.height(14.dp))
 

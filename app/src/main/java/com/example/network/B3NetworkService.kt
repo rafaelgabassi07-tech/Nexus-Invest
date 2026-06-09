@@ -312,6 +312,18 @@ data class PortfolioProxyAnalysis(
     val source: String = "Serviço de dados VALORAE"
 )
 
+/**
+ * Pacote compacto de abertura mobile. O Proxy entrega ativos + notícias em uma única
+ * chamada curta; o APK usa isso como pré-aquecimento, preservando snapshots locais
+ * caso a resposta venha parcial ou demore.
+ */
+data class MobileBootstrapPayload(
+    val assets: Map<String, B3AssetData> = emptyMap(),
+    val news: List<NewsItem> = emptyList(),
+    val partial: Boolean = false,
+    val source: String = "mobile-bootstrap"
+)
+
 object B3NetworkService {
     private val httpDispatcher = OkHttpDispatcher().apply {
         // Limita rajadas simultâneas para preservar fluidez no app e reduzir pressão no Vercel Free.
@@ -481,6 +493,82 @@ object B3NetworkService {
             .getOrNull()
             ?.also { bestAssetSnapshots[clean] = it.copy(fromLocalSnapshot = false) }
             ?.copy(fromLocalSnapshot = true)
+    }
+
+    /**
+     * Snapshot público para o boot do APK.
+     *
+     * O ViewModel usa esta leitura antes de qualquer chamada de rede para renderizar a carteira
+     * com o último estado útil conhecido. Assim a abertura vira cache-first/stale-first: a UI
+     * não fica vazia enquanto o Proxy, Investidor10 ou Yahoo ainda estão respondendo.
+     */
+    fun loadCachedAssetSnapshots(tickers: List<String>): Map<String, B3AssetData> {
+        val out = linkedMapOf<String, B3AssetData>()
+        tickers
+            .map { it.trim().uppercase(Locale.ROOT) }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .forEach { ticker ->
+                loadBestSnapshot(ticker)?.let { out[ticker] = it.copy(ticker = ticker, fromLocalSnapshot = true) }
+            }
+        return out
+    }
+
+    private fun newsSnapshotKey(ticker: String, limit: Int) = "news_snapshot_${ticker.trim().uppercase(Locale.ROOT).ifBlank { "GERAL" }}_${limit.coerceIn(1, 40)}"
+
+    private fun newsToJson(item: NewsItem): JSONObject = JSONObject()
+        .put("title", item.title)
+        .put("link", item.link)
+        .put("pubDate", item.pubDate)
+        .put("source", item.source)
+        .put("description", item.description)
+        .put("timestamp", item.timestamp)
+
+    private fun newsFromJson(obj: JSONObject?): NewsItem? {
+        if (obj == null) return null
+        val title = obj.optString("title", "").trim()
+        val link = obj.optString("link", "").trim()
+        if (title.isBlank() || link.isBlank()) return null
+        return NewsItem(
+            title = title,
+            link = link,
+            pubDate = obj.optString("pubDate", ""),
+            source = obj.optString("source", ""),
+            description = obj.optString("description", ""),
+            timestamp = obj.optLong("timestamp", 0L)
+        )
+    }
+
+    private fun saveNewsSnapshot(ticker: String, items: List<NewsItem>, limit: Int) {
+        val clean = ticker.trim().uppercase(Locale.ROOT)
+        val distinct = items.filter { it.title.isNotBlank() && it.link.isNotBlank() }
+            .distinctBy { it.link }
+            .take(limit.coerceIn(1, 40))
+        if (distinct.isEmpty()) return
+        val arr = JSONArray()
+        distinct.forEach { arr.put(newsToJson(it)) }
+        runCatching {
+            appContext?.getSharedPreferences("valorae_proxy_snapshots", Context.MODE_PRIVATE)
+                ?.edit()
+                ?.putString(newsSnapshotKey(clean, limit), arr.toString())
+                ?.putLong("${newsSnapshotKey(clean, limit)}_updatedAt", System.currentTimeMillis())
+                ?.apply()
+        }
+    }
+
+    fun loadCachedNewsSnapshot(ticker: String = "", limit: Int = 25): List<NewsItem> {
+        val safeLimit = limit.coerceIn(1, 40)
+        val clean = ticker.trim().uppercase(Locale.ROOT)
+        val raw = runCatching {
+            appContext?.getSharedPreferences("valorae_proxy_snapshots", Context.MODE_PRIVATE)
+                ?.getString(newsSnapshotKey(clean, safeLimit), null)
+        }.getOrNull() ?: return emptyList()
+        return runCatching {
+            val arr = JSONArray(raw)
+            val out = mutableListOf<NewsItem>()
+            for (i in 0 until arr.length()) newsFromJson(arr.optJSONObject(i))?.let { out.add(it) }
+            out.distinctBy { it.link }.take(safeLimit)
+        }.getOrDefault(emptyList())
     }
 
     private fun assetToSnapshotJson(asset: B3AssetData): JSONObject = JSONObject()
@@ -2554,6 +2642,9 @@ object B3NetworkService {
             .put("type", assetType)
             .put("assetType", assetType)
             .put("limit", 500)
+            .put("timeoutMs", 6_500)
+            .put("agendaTimeoutMs", 6_500)
+            .put("routeDeadlineMs", 7_200)
             .put("mode", "complete")
             .put("complete", true)
             .put("includeHistory", true)
@@ -3441,11 +3532,50 @@ object B3NetworkService {
         return if (directFallbackEnabled()) fetchHistoricalChartDirect(ticker, range) else emptyList()
     }
 
-    fun fetchNews(ticker: String = ""): List<NewsItem> {
-        val cacheKey = "news_proxy_${ticker.trim().uppercase(Locale.ROOT).ifBlank { "GERAL" }}"
+    private fun parseNewsItemsFromArray(items: JSONArray?, fallbackSource: String = "", limit: Int = 25): List<NewsItem> {
+        if (items == null || items.length() <= 0) return emptyList()
+        val out = mutableListOf<NewsItem>()
+        for (i in 0 until items.length()) {
+            val item = items.optJSONObject(i) ?: continue
+            val sourceObj = item.optJSONObject("source")
+            val pubRaw = firstText(
+                item.optAny("pubDate"),
+                item.optAny("date"),
+                item.optAny("publishedAt"),
+                item.optAny("published"),
+                item.optAny("createdAt"),
+                item.optAny("timestamp")
+            )
+            val ts = parseFlexibleDateMillis(pubRaw).takeIf { it > 0L } ?: parseIsoDateMillis(pubRaw)
+            val formatted = if (ts > 0L) SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(ts)) else pubRaw
+            out.add(
+                NewsItem(
+                    title = firstText(item.optAny("title"), item.optAny("headline"), item.optAny("name")),
+                    link = firstText(item.optAny("link"), item.optAny("url"), item.optAny("href")),
+                    pubDate = formatted,
+                    source = firstText(item.optAny("sourceName"), sourceObj?.optAny("name"), item.optAny("provider"), fallbackSource),
+                    description = firstText(item.optAny("snippet"), item.optAny("summary"), item.optAny("description"), item.optAny("text")),
+                    timestamp = ts
+                )
+            )
+        }
+        return out.filter { it.title.isNotBlank() && it.link.isNotBlank() }
+            .distinctBy { it.link }
+            .sortedByDescending { it.timestamp }
+            .take(limit.coerceIn(1, 40))
+    }
+
+    fun fetchNews(ticker: String = "", timeoutMs: Int = 3_000, limit: Int = 25): List<NewsItem> {
+        val safeLimit = limit.coerceIn(1, 40)
+        val safeTimeout = timeoutMs.coerceIn(500, 12_000)
+        val cacheKey = "news_proxy_${ticker.trim().uppercase(Locale.ROOT).ifBlank { "GERAL" }}_${safeLimit}"
         getFromCache<List<NewsItem>>(cacheKey)?.let { return it }
         val queryTicker = ticker.trim().uppercase(Locale.ROOT)
-        val params = mutableMapOf<String, String?>("limit" to "40")
+        val params = mutableMapOf<String, String?>(
+            "limit" to safeLimit.toString(),
+            "timeoutMs" to safeTimeout.toString(),
+            "newsTimeoutMs" to safeTimeout.toString()
+        )
         if (queryTicker.isNotBlank()) params["ticker"] = queryTicker
         val json = getProxyJson("/api/v1/news", params)
         val root = unwrapValoraePayload(json)
@@ -3465,38 +3595,74 @@ object B3NetworkService {
             dataObj?.optJSONArray("articles")
         )
         if (items != null && items.length() > 0) {
-            val out = mutableListOf<NewsItem>()
-            for (i in 0 until items.length()) {
-                val item = items.optJSONObject(i) ?: continue
-                val sourceObj = item.optJSONObject("source")
-                val pubRaw = firstText(
-                    item.optAny("pubDate"),
-                    item.optAny("date"),
-                    item.optAny("publishedAt"),
-                    item.optAny("published"),
-                    item.optAny("createdAt"),
-                    item.optAny("timestamp")
-                )
-                val ts = parseFlexibleDateMillis(pubRaw).takeIf { it > 0L } ?: parseIsoDateMillis(pubRaw)
-                val formatted = if (ts > 0L) SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(ts)) else pubRaw
-                out.add(
-                    NewsItem(
-                        title = firstText(item.optAny("title"), item.optAny("headline"), item.optAny("name")),
-                        link = firstText(item.optAny("link"), item.optAny("url"), item.optAny("href")),
-                        pubDate = formatted,
-                        source = firstText(item.optAny("sourceName"), sourceObj?.optAny("name"), item.optAny("provider"), root?.optAny("source")),
-                        description = firstText(item.optAny("snippet"), item.optAny("summary"), item.optAny("description"), item.optAny("text")),
-                        timestamp = ts
-                    )
-                )
-            }
-            val sorted = out.filter { it.title.isNotBlank() && it.link.isNotBlank() }.sortedByDescending { it.timestamp }
+            val sorted = parseNewsItemsFromArray(items, firstText(root?.optAny("source")), safeLimit)
             if (sorted.isNotEmpty()) {
                 putInCache(cacheKey, sorted, 5)
+                saveNewsSnapshot(queryTicker, sorted, safeLimit)
                 return sorted
             }
         }
+        val stale = loadCachedNewsSnapshot(queryTicker, safeLimit)
+        if (stale.isNotEmpty()) {
+            putInCache(cacheKey, stale, 2)
+            return stale
+        }
         return if (directFallbackEnabled()) fetchNewsDirect(ticker) else emptyList()
+    }
+
+    fun fetchMobileBootstrap(tickers: List<String>, timeoutMs: Int = 3_200, newsLimit: Int = 12): MobileBootstrapPayload? {
+        val normalizedTickers = tickers.map { it.trim().uppercase(Locale.ROOT) }.filter { it.isNotBlank() }.distinct().take(20)
+        val safeTimeout = timeoutMs.coerceIn(1000, 8_000)
+        val safeNewsLimit = newsLimit.coerceIn(0, 20)
+        if (normalizedTickers.isEmpty() && safeNewsLimit <= 0) return null
+        val json = getProxyJson(
+            "/api/v1/mobile/bootstrap",
+            mapOf(
+                "tickers" to normalizedTickers.joinToString(","),
+                "deadlineMs" to safeTimeout.toString(),
+                "timeoutMs" to safeTimeout.toString(),
+                "assetTimeoutMs" to (safeTimeout - 600).coerceAtLeast(900).toString(),
+                "newsTimeoutMs" to (safeTimeout / 2).coerceAtLeast(700).toString(),
+                "newsLimit" to safeNewsLimit.toString(),
+                "includeNews" to if (safeNewsLimit > 0) "1" else "0"
+            )
+        ) ?: return null
+        val root = unwrapValoraePayload(json) ?: json
+        val assetArray = firstArray(
+            root.optJSONArray("assets"),
+            root.optObject("data")?.optJSONArray("assets"),
+            root.optObject("payload")?.optJSONArray("assets"),
+            root.optObject("result")?.optJSONArray("assets")
+        )
+        val mappedAssets = linkedMapOf<String, B3AssetData>()
+        if (assetArray != null) {
+            for (i in 0 until assetArray.length()) {
+                val mapped = mapProxyAsset(assetArray.optJSONObject(i)) ?: continue
+                val clean = mapped.ticker.trim().uppercase(Locale.ROOT)
+                if (clean.isBlank()) continue
+                mappedAssets[clean] = mapped
+                saveBestSnapshot(mapped.copy(ticker = clean, fromLocalSnapshot = false))
+                putInCache("asset_data_proxy_$clean", mapped, 3)
+            }
+        }
+        val newsArray = firstArray(
+            root.optJSONArray("news"),
+            root.optJSONArray("items"),
+            root.optObject("data")?.optJSONArray("news"),
+            root.optObject("payload")?.optJSONArray("news"),
+            root.optObject("result")?.optJSONArray("news")
+        )
+        val parsedNews = parseNewsItemsFromArray(newsArray, firstText(root.optAny("source")), safeNewsLimit)
+        if (parsedNews.isNotEmpty()) {
+            saveNewsSnapshot("", parsedNews, safeNewsLimit.coerceAtLeast(1))
+            putInCache("news_proxy_GERAL_${safeNewsLimit.coerceAtLeast(1)}", parsedNews, 5)
+        }
+        return MobileBootstrapPayload(
+            assets = mappedAssets,
+            news = parsedNews,
+            partial = root.optBoolean("partial", false),
+            source = firstText(root.optAny("source"), "mobile-bootstrap")
+        )
     }
 
     private fun positionsCacheSignature(positions: List<PortfolioProxyPosition>): String {
@@ -4398,7 +4564,10 @@ object B3NetworkService {
             "monthsForward" to "24",
             "monthsBack" to historyMonths.toString(),
             "startDate" to startDate,
-            "agendaConcurrency" to "4"
+            "agendaConcurrency" to "4",
+            "timeoutMs" to "6500",
+            "agendaTimeoutMs" to "6500",
+            "routeDeadlineMs" to "7200"
         )
         payload
             .put("futureMonths", 24)
@@ -4407,6 +4576,9 @@ object B3NetworkService {
             .put("monthsBack", historyMonths)
             .put("startDate", startDate)
             .put("agendaConcurrency", 4)
+            .put("timeoutMs", 6_500)
+            .put("agendaTimeoutMs", 6_500)
+            .put("routeDeadlineMs", 7_200)
         // Chamada principal consolidada: a versão nova do Proxy já devolve agenda futura e histórico
         // no mesmo contrato. Evita até quatro varreduras mensais completas no Investidor10.
         val primaryJson = postProxyJson("/api/v1/portfolio/dividends", payload)

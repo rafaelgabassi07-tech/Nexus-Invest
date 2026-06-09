@@ -4,9 +4,15 @@
     <external-cache-path
         name="valorae_update_external_cache"
         path="valorae_updates/" />
+    <external-cache-path
+        name="external_cache"
+        path="." />
 
     <!-- Fallback para aparelhos sem externalCacheDir disponível. -->
     <cache-path
         name="valorae_update_internal_cache"
         path="valorae_updates/" />
+    <cache-path
+        name="internal_cache"
+        path="." />
 </paths>

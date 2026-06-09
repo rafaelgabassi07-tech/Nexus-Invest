@@ -76,8 +76,8 @@ android {
     applicationId = "com.aistudio.valorae.nbqpyl"
     minSdk = 24
     targetSdk = 36
-    versionCode = 50
-    versionName = "2.0.40"
+    versionCode = 52
+    versionName = "2.0.42"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -177,6 +177,7 @@ dependencies {
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
   implementation(libs.converter.moshi)
+  implementation("androidx.fragment:fragment-ktx:1.8.6") // Fix for Can only use lower 16 bits requestCode
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
   implementation(libs.logging.interceptor)

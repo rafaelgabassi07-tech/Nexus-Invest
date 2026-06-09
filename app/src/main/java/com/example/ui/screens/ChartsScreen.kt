@@ -210,7 +210,7 @@ fun ChartsScreen(viewModel: PortfolioViewModel, modifier: Modifier = Modifier) {
     // e os fallbacks por ativo sejam consultados antes de declarar estado vazio.
     LaunchedEffect(activeDetailPage, summaries.size, allTransactions.size) {
         if ((activeDetailPage == "Agenda" || activeDetailPage == "Proventos") && summaries.isNotEmpty()) {
-            viewModel.refreshPortfolioAnalytics(force = true)
+            viewModel.refreshPortfolioAnalytics(force = false)
         }
     }
 
@@ -295,7 +295,7 @@ fun ChartsScreen(viewModel: PortfolioViewModel, modifier: Modifier = Modifier) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(150.dp)
+                            .height(160.dp)
                             .padding(vertical = 4.dp)
                     ) {
                         CustomLineChartCompare(
@@ -316,14 +316,21 @@ fun ChartsScreen(viewModel: PortfolioViewModel, modifier: Modifier = Modifier) {
                     icon = Icons.Outlined.AccountBalanceWallet,
                     onClick = { activeDetailPage = "Diversificação" }
                 ) {
-                    Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(160.dp)
+                            .padding(vertical = 4.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
                         val allocatedPercent = alocacaoData.sumOf { it.second.toDouble() }.coerceAtMost(100.0)
                         
                         PieChart(
                             data = alocacaoData,
                             colors = listOf(GoldPrimary, GoldPale, GoldSecondary, GoldBronze, GoldTertiary),
                             centerText = "Carteira",
-                            centerSubtext = "${allocatedPercent.toInt()}% Alocados"
+                            centerSubtext = "${allocatedPercent.toInt()}% Alocados",
+                            modifier = Modifier.fillMaxSize()
                         )
                     }
                 }
@@ -338,38 +345,60 @@ fun ChartsScreen(viewModel: PortfolioViewModel, modifier: Modifier = Modifier) {
                 val agendaPreviewAmount = remember(agendaPreviewEvents, allTransactions) {
                     agendaPreviewEvents.sumOf { eligibleDividendAmount(it, allTransactions).takeIf { amount -> amount > 0.0 } ?: safeDividendAmount(it) }
                 }
+                
                 ChartCard(
                     title = "Agenda de Dividendos",
-                    description = "Datas-com, pagamentos, JCP, eventos anunciados/provisionados e confirmados dos seus ativos.",
-                    subStats = "R$ ${String.format("%.2f", agendaPreviewAmount)} previsto",
-                    icon = Icons.AutoMirrored.Outlined.EventNote,
+                    description = "Próximos pagamentos previstos em agenda pública ou provisionados.",
+                    subStats = "Valor Confirmado: R$ ${String.format("%,.2f", agendaPreviewAmount)}",
+                    icon = Icons.Default.DateRange,
                     onClick = { activeDetailPage = "Agenda" }
                 ) {
-                    Column(
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                            .height(160.dp)
+                            .padding(vertical = 4.dp)
                     ) {
-                        val upcoming = agendaPreviewEvents.take(4)
+                        val upcoming = agendaPreviewEvents.take(3)
                         if (upcoming.isNotEmpty()) {
-                            upcoming.forEach { ev ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().background(DarkSurfaceElevated, RoundedCornerShape(8.dp)).padding(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Column {
-                                        Text(ev.ticker, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Text(if (ev.paymentDate.isNotBlank()) "Pgto: ${ev.paymentDate}" else "Com: ${ev.dateCom}", color = TextSecondary, fontSize = 10.sp)
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .fillMaxHeight()
+                                    .background(DarkBackground, RoundedCornerShape(12.dp))
+                                    .border(1.dp, BorderColor.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+                                    .padding(vertical = 6.dp)
+                            ) {
+                                upcoming.forEachIndexed { index, ev ->
+                                    val amountStr = String.format("R$ %.2f", eligibleDividendAmount(ev, allTransactions).takeIf { it > 0.0 } ?: safeDividendAmount(ev))
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 14.dp, vertical = 6.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(modifier = Modifier.size(6.dp).background(GoldPrimary, CircleShape))
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Text(ev.ticker, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                ev.paymentDate.takeIf { it.isNotBlank() } ?: ev.dateCom,
+                                                color = TextSecondary,
+                                                fontSize = 11.sp
+                                            )
+                                        }
+                                        Text(amountStr, color = SuccessGreen, fontSize = 13.sp, fontWeight = FontWeight.Black)
                                     }
-                                    Text("R$ ${String.format("%.2f", eligibleDividendAmount(ev, allTransactions))}", color = SuccessGreen, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    if (index < upcoming.lastIndex) {
+                                        HorizontalDivider(color = BorderColor.copy(alpha = 0.04f), modifier = Modifier.padding(horizontal = 14.dp, vertical = 2.dp))
+                                    }
                                 }
                             }
                         } else {
-                            Box(modifier = Modifier.fillMaxWidth().height(80.dp), contentAlignment = Alignment.Center) {
-                                Text("Sem eventos de dividendos disponíveis", color = TextSecondary, fontSize = 12.sp)
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text("Nenhum evento registrado", color = TextSecondary, fontSize = 12.sp)
                             }
                         }
                     }
@@ -776,9 +805,9 @@ fun DividendEventsList(
                             Spacer(modifier = Modifier.height(3.dp))
                             Text("Data COM: $comDate · ${event.source}", color = TextSecondary, fontSize = 10.sp)
                             if (eligibleShares > 0.0) {
-                                Text("Qtd. elegível: ${String.format("%.2f", eligibleShares)}", color = TextSecondary.copy(alpha = 0.85f), fontSize = 9.sp)
+                                Text("Calculado para ${String.format("%.2f", eligibleShares)} cotas", color = TextSecondary.copy(alpha = 0.85f), fontSize = 9.sp)
                             } else {
-                                Text("Valor estimado indisponível para sua carteira.", color = WarningOrange, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+                                Text("Cálculo indisponível para sua carteira.", color = WarningOrange, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
                             }
                         }
                         Column(horizontalAlignment = Alignment.End) {
@@ -1395,85 +1424,121 @@ fun ChartDetailPage(
                                 }
                             }
 
-                            // 2. Class Allocation (Linear Bars)
+                            // 2. Class Allocation (Clean Summary Cards)
                             Text(
-                                text = "POR CLASSE DE ATIVO",
+                                text = "ALOCAÇÃO POR CLASSE",
                                 color = GoldPrimary,
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Black,
                                 letterSpacing = 1.2.sp,
                                 modifier = Modifier.padding(bottom = 12.dp)
                             )
-                            alocacaoData.filter { it.first != "Sem Cotas" }.forEach { (label, percent) ->
-                                Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
-                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        Text(label, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                        Text("${String.format("%.1f", percent)}%", color = TextSecondary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                val alocList = alocacaoData.filter { it.first != "Sem Cotas" }
+                                if (alocList.isEmpty()) {
+                                    Text("Nenhum ativo alocado", color = TextSecondary, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
+                                } else {
+                                    alocList.forEach { (label, percent) ->
+                                        Surface(
+                                            color = DarkSurfaceElevated,
+                                            shape = RoundedCornerShape(12.dp),
+                                            border = BorderStroke(1.dp, BorderColor.copy(alpha = 0.05f)),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Column(
+                                                modifier = Modifier.padding(16.dp), 
+                                                horizontalAlignment = Alignment.CenterHorizontally
+                                            ) {
+                                                Text(label, color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text("${String.format("%,.1f", percent)}%", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                                            }
+                                        }
                                     }
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    val barColor = if (label == "Ações") GoldPrimary else GoldPale
-                                    LinearProgressIndicator(
-                                        progress = { (percent / 100f).coerceIn(0f, 1f) },
-                                        modifier = Modifier.fillMaxWidth().height(10.dp).clip(CircleShape),
-                                        color = barColor,
-                                        trackColor = BorderColor.copy(alpha = 0.05f)
-                                    )
                                 }
                             }
 
-                            Spacer(modifier = Modifier.height(16.dp))
-                            HorizontalDivider(color = BorderColor.copy(alpha = 0.05f), thickness = 1.dp)
-                            Spacer(modifier = Modifier.height(24.dp))
-
-                            // 3. Sector Breakdown (Table/List)
+                            // 3. Sector Breakdown (Clean List)
                             Text(
-                                text = "POR SETOR / SEGMENTO",
+                                text = "EXPOSIÇÃO SETORIAL",
                                 color = GoldPrimary,
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Black,
                                 letterSpacing = 1.2.sp,
                                 modifier = Modifier.padding(bottom = 12.dp)
                             )
-                            segmentosData.filter { it.first != "Sem Cotas" }.sortedByDescending { it.second }.forEach { (sector, percent) ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(
-                                        modifier = Modifier.size(8.dp).background(GoldSecondary, CircleShape)
-                                    )
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Text(sector, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                                    Text("${String.format("%.1f", percent)}%", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Black)
+                            Surface(
+                                color = DarkSurfaceElevated,
+                                shape = RoundedCornerShape(16.dp),
+                                border = BorderStroke(1.dp, BorderColor.copy(alpha = 0.05f)),
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                                    val sectorsList = segmentosData.filter { it.first != "Sem Cotas" }.sortedByDescending { it.second }
+                                    if (sectorsList.isEmpty()) {
+                                        Text("Sem dados de setor", color = TextSecondary, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
+                                    } else {
+                                        sectorsList.forEachIndexed { index, data ->
+                                            val (sector, percent) = data
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Box(modifier = Modifier.size(6.dp).background(GoldSecondary, CircleShape))
+                                                    Spacer(modifier = Modifier.width(10.dp))
+                                                    Text(sector, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                                }
+                                                Text("${String.format("%,.1f", percent)}%", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Black)
+                                            }
+                                            if (index < sectorsList.lastIndex) {
+                                                HorizontalDivider(color = BorderColor.copy(alpha = 0.03f))
+                                            }
+                                        }
+                                    }
                                 }
-                                HorizontalDivider(color = BorderColor.copy(alpha = 0.03f))
                             }
 
-                            Spacer(modifier = Modifier.height(32.dp))
-
-                            // 4. Detailed Asset Weights
+                            // 4. Detailed Asset Weights (Top Holdings Clean List)
                             Text(
-                                text = "DETALHAMENTO POR ATIVO",
+                                text = "CONCENTRAÇÃO POR ATIVO (TOP 10)",
                                 color = GoldPrimary,
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Black,
                                 letterSpacing = 1.2.sp,
                                 modifier = Modifier.padding(bottom = 12.dp)
                             )
-                            summaries.sortedByDescending { it.totalCurrentValue }.forEach { asset ->
-                                val weight = if (totalCurrent > 0) (asset.totalCurrentValue / totalCurrent * 100.0).toFloat() else 0f
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                            val topAssets = summaries.sortedByDescending { it.totalCurrentValue }.take(10)
+                            if (topAssets.isNotEmpty()) {
+                                Surface(
+                                    color = DarkSurfaceElevated,
+                                    shape = RoundedCornerShape(16.dp),
+                                    border = BorderStroke(1.dp, BorderColor.copy(alpha = 0.05f)),
+                                    modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text(asset.ticker, color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(70.dp))
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Box(modifier = Modifier.weight(1f).height(6.dp).clip(CircleShape).background(BorderColor.copy(alpha = 0.05f))) {
-                                        Box(modifier = Modifier.fillMaxHeight().fillMaxWidth((weight / 100f).coerceIn(0f, 1f)).background(GoldSecondary))
+                                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                                        topAssets.forEachIndexed { index, asset ->
+                                            val weight = if (totalCurrent > 0) (asset.totalCurrentValue / totalCurrent * 100.0).toFloat() else 0f
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(asset.ticker, color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                                Text("${String.format("%,.1f", weight)}%", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Black)
+                                            }
+                                            if (index < topAssets.lastIndex) {
+                                                HorizontalDivider(color = BorderColor.copy(alpha = 0.03f))
+                                            }
+                                        }
                                     }
-                                    Spacer(modifier = Modifier.width(16.dp))
-                                    Text("${String.format("%.1f", weight)}%", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Black)
                                 }
+                            } else {
+                                Text("Nenhum ativo alocado", color = TextSecondary, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
                             }
                         }
                     }
@@ -1888,91 +1953,23 @@ fun ChartDetailPage(
                 }
             }
             Spacer(modifier = Modifier.height(32.dp))
-            
-            HorizontalDivider(color = BorderColor.copy(alpha = 0.1f), modifier = Modifier.padding(vertical = 16.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 12.dp)) {
-                Icon(Icons.Default.DateRange, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "AGENDA DE DIVIDENDOS DETALHADA",
-                    color = TextPrimary,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.5.sp
-                )
-            }
-            val agendaEvents = remember(analytics.dividendEvents, allTransactions) { agendaDividendEvents(analytics.dividendEvents, allTransactions) }
-            if (agendaEvents.isNotEmpty()) {
-                DividendEventsList(agendaEvents, allTransactions)
-            } else if (analytics.dividendEvents.isNotEmpty()) {
-                Text("Nenhum pagamento futuro confirmado. Exibindo histórico recente e projeções disponíveis do VALORAE Proxy.", color = TextSecondary, fontSize = 12.sp)
-                Spacer(modifier = Modifier.height(8.dp))
-                DividendEventsList(analytics.dividendEvents, allTransactions, limit = 15)
-            } else {
-                if (analytics.isLoading) {
-                    Text("Consultando agenda no VALORAE Proxy...", color = TextSecondary, fontSize = 12.sp)
-                } else {
-                    Text("Nenhum evento registrado.", color = TextSecondary, fontSize = 12.sp)
-                }
-            }
-            Spacer(modifier = Modifier.height(32.dp))
         }
 
         // Reusable KPI Metrics summary row
-        if (pageName != "Proventos") {
+        if (pageName != "Proventos" && pageName != "Agenda") {
             val kpiData = remember(pageName, summaryModel, summaries, analytics, allTransactions) {
                 getKpiMetricsForPage(pageName, summaries, summaryModel, analytics, allTransactions)
             }
-            if (pageName == "Agenda") {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(DarkSurface, RoundedCornerShape(16.dp))
-                        .border(1.dp, BorderColor.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
-                        .padding(horizontal = 18.dp, vertical = 6.dp)
-                ) {
-                    kpiData.forEachIndexed { index, metric ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 14.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = metric.first,
-                                color = TextSecondary,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                text = metric.second,
-                                color = when (metric.third) {
-                                    "GREEN" -> SuccessGreen
-                                    "RED" -> DangerRed
-                                    else -> GoldPrimary
-                                },
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                        if (index < kpiData.lastIndex) {
-                            HorizontalDivider(color = BorderColor.copy(alpha = 0.06f))
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(24.dp))
-            } else {
-                KpiRow(metrics = kpiData)
-                Spacer(modifier = Modifier.height(24.dp))
-            }
+            KpiRow(metrics = kpiData)
+            Spacer(modifier = Modifier.height(24.dp))
         }
         
-        // Collapsible Tabular representation - highly polished modern accordion interface to declutter space
-        var isTableExpanded by remember { mutableStateOf(false) }
+        if (pageName != "Agenda") {
+            // Collapsible Tabular representation - highly polished modern accordion interface to declutter space
+            var isTableExpanded by remember { mutableStateOf(false) }
 
-        HorizontalDivider(color = BorderColor.copy(alpha = 0.1f), modifier = Modifier.padding(vertical = 16.dp))
-        Column(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+            HorizontalDivider(color = BorderColor.copy(alpha = 0.1f), modifier = Modifier.padding(vertical = 16.dp))
+            Column(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1988,7 +1985,7 @@ fun ChartDetailPage(
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(
-                            imageVector = if (pageName == "Agenda") Icons.Default.DateRange else Icons.AutoMirrored.Filled.ViewList,
+                            imageVector = Icons.AutoMirrored.Filled.ViewList,
                             contentDescription = null,
                             tint = TextPrimary,
                             modifier = Modifier.size(16.dp)
@@ -2034,21 +2031,6 @@ fun ChartDetailPage(
                                         data = divStackedDataValues,
                                         modifier = Modifier.fillMaxSize()
                                     )
-                                }
-                                Spacer(modifier = Modifier.height(32.dp))
-                                Text(
-                                    text = "PRÓXIMOS EVENTOS",
-                                    color = TextPrimary,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    letterSpacing = 0.5.sp
-                                )
-                                Spacer(modifier = Modifier.height(16.dp))
-                                val agendaEvents = agendaDividendEvents(analytics.dividendEvents, allTransactions)
-                                if (agendaEvents.isNotEmpty()) {
-                                    DividendEventsList(agendaEvents, allTransactions, limit = 5)
-                                } else {
-                                    Text("Nenhum evento mapeado", color = TextSecondary, fontSize = 12.sp)
                                 }
                                 Spacer(modifier = Modifier.height(32.dp))
                                 Text(
@@ -2137,18 +2119,6 @@ fun ChartDetailPage(
                                     }
                                 }
                             }
-                            "Agenda" -> {
-                                val agendaEvents = agendaDividendEvents(analytics.dividendEvents, allTransactions)
-                                if (agendaEvents.isNotEmpty()) {
-                                    DividendEventsList(agendaEvents, allTransactions)
-                                } else if (analytics.dividendEvents.isNotEmpty()) {
-                                    Text("Nenhum pagamento futuro encontrado. Exibindo histórico disponível do VALORAE Proxy.", color = TextSecondary, fontSize = 12.sp)
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    DividendEventsList(analytics.dividendEvents, allTransactions, limit = 30)
-                                } else {
-                                    Text("Nenhum pagamento encontrado.", color = TextSecondary, fontSize = 12.sp)
-                                }
-                            }
                             "Rankings" -> {
                                 val rows = analytics.portfolioRanking?.score.orEmpty()
                                     .ifEmpty { analytics.portfolioRanking?.dividendYield.orEmpty() }
@@ -2176,6 +2146,7 @@ fun ChartDetailPage(
                     }
                 }
             }
+        }
         
         Spacer(modifier = Modifier.height(24.dp))
         

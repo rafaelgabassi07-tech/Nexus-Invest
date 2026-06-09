@@ -114,51 +114,20 @@ fun DashboardScreen(
 
             // 1. Portfolio Value Summary Widget
             item(key = "portfolio_header") {
-                PortfolioHeaderCard(summary, hideValues, onClick = onPortfolioClick)
-            }
-
-            // 2. Diversification Ratio Widget
-            if (summary.totalInvested > 0.0) {
-                item(key = "portfolio_composition") {
-                    val assetClassCounts = remember(assets) {
-                        val stocks = assets.count { it.type.equals("ACAO", ignoreCase = true) }
-                        val fiis = assets.count { it.type.equals("FII", ignoreCase = true) }
-                        stocks to fiis
-                    }
-                    val stockAssetsCount = assetClassCounts.first
-                    val fiiAssetsCount = assetClassCounts.second
-
-                    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "COMPOSIÇÃO DA CARTEIRA",
-                                color = GoldPrimary,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Black,
-                                letterSpacing = 1.sp
-                            )
-
-                            Text(
-                                text = "${stockAssetsCount + fiiAssetsCount} ativos",
-                                color = TextSecondary,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        SegmentedAllocationBar(
-                            stockValue = if (summary.totalCurrentValue > 0) summary.totalStocksCurrent else summary.totalStocksInvested,
-                            fiiValue = if (summary.totalCurrentValue > 0) summary.totalFiisCurrent else summary.totalFiisInvested
-                        )
-                    }
+                val totalDividendsReceived = remember(analytics.dividendEvents, transactions) {
+                    analytics.dividendEvents
+                        .filter { isPaidDividendEvent(it) }
+                        .sumOf { eligibleDividendAmount(it, transactions) }
                 }
+                PortfolioHeaderCard(
+                    summary = summary,
+                    totalProventos = totalDividendsReceived,
+                    hideValues = hideValues,
+                    onClick = onPortfolioClick
+                )
             }
+
+            // Diversification Ratio Widget removed per user request
 
             item(key = "home_market_movers") {
                 HomeMarketMoversPreview(
@@ -275,21 +244,38 @@ fun MarketGlanceWidget() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PortfolioHeaderCard(summary: PortfolioSummary, hideValues: Boolean = false, onClick: () -> Unit = {}) {
+fun PortfolioHeaderCard(
+    summary: PortfolioSummary,
+    totalProventos: Double = 0.0,
+    hideValues: Boolean = false,
+    onClick: () -> Unit = {}
+) {
+    val gradientBrush = remember {
+        Brush.linearGradient(
+            colors = listOf(
+                DarkSurfaceElevated,
+                DarkSurface
+            )
+        )
+    }
+
     Card(
         onClick = onClick,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
         shape = RoundedCornerShape(24.dp),
-        border = BorderStroke(1.2.dp, BorderColor.copy(alpha = 0.15f)),
+        border = BorderStroke(1.2.dp, BorderColor.copy(alpha = 0.18f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 4.dp)
+            .background(gradientBrush, RoundedCornerShape(24.dp))
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(20.dp)
+                .padding(16.dp)
         ) {
+            // Header: Wallet indicator & Quick Analysis text
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -298,15 +284,15 @@ fun PortfolioHeaderCard(summary: PortfolioSummary, hideValues: Boolean = false, 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
-                            .size(32.dp)
-                            .background(GoldPrimary.copy(alpha = 0.1f), CircleShape),
+                            .size(36.dp)
+                            .background(GoldPrimary.copy(alpha = 0.12f), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.AccountBalanceWallet,
                             contentDescription = null,
                             tint = GoldPrimary,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                     Spacer(modifier = Modifier.width(12.dp))
@@ -314,113 +300,177 @@ fun PortfolioHeaderCard(summary: PortfolioSummary, hideValues: Boolean = false, 
                         Text(
                             text = "Patrimônio Consolidado",
                             color = TextPrimary,
-                            fontSize = 16.sp,
+                            fontSize = 15.sp,
                             fontWeight = FontWeight.Black
                         )
                         Text(
-                            text = "Toque para ver detalhes",
+                            text = "VALE ATUAL DA CARTEIRA",
                             color = TextSecondary,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Medium
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.5.sp
                         )
                     }
                 }
                 
-                // Pulsing indicator for "clickable" affordance
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .background(GoldPrimary.copy(alpha = 0.4f), CircleShape)
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(20.dp))
-            
-            Text(
-                text = if (hideValues) "R$ •••••" else "R$ ${String.format("%,.2f", summary.totalCurrentValue)}",
-                color = TextPrimary,
-                fontSize = 32.sp,
-                fontWeight = FontWeight.Black,
-                letterSpacing = (-1.5).sp
-            )
-            
-            Spacer(modifier = Modifier.height(4.dp))
-            
-            // Contrast Highlight for Total Invested
-            Surface(
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.03f),
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                // Click badge
+                Surface(
+                    color = GoldPrimary.copy(alpha = 0.1f),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.padding(start = 4.dp)
                 ) {
                     Text(
-                        text = "TOTAL INVESTIDO: ",
-                        color = TextSecondary,
+                        text = "Análise ➔",
+                        color = GoldPrimary,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.5.sp
-                    )
-                    Text(
-                        text = if (hideValues) "R$ •••••" else "R$ ${String.format("%,.2f", summary.totalInvested)}",
-                        color = TextPrimary,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Black
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                     )
                 }
             }
             
-            Spacer(modifier = Modifier.height(16.dp))
-            HorizontalDivider(color = BorderColor.copy(alpha = 0.1f), thickness = 1.dp)
-            Spacer(modifier = Modifier.height(16.dp))
-
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            // Total net worth and absolute return chip in one row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Return Stats
-                Column(horizontalAlignment = Alignment.Start) {
-                    Text("RENTABILIDADE", color = TextSecondary, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
-                    val retPct = summary.returnPercent
-                    val textClr = if (summary.totalInvested <= 0.0) TextSecondary else if (retPct >= 0) SuccessGreen else DangerRed
-                    Text(if (hideValues) "••%" else String.format("%+.2f%%", retPct), color = textClr, fontSize = 12.sp, fontWeight = FontWeight.Black)
+                Column {
+                    Text(
+                        text = if (hideValues) "R$ •••••" else "R$ ${String.format("%,.2f", summary.totalCurrentValue)}",
+                        color = TextPrimary,
+                        fontSize = 32.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = (-1.0).sp
+                    )
                 }
-
-                // Divider (Visual only)
-                Box(modifier = Modifier.width(1.dp).height(24.dp).background(BorderColor.copy(alpha = 0.1f)))
-
-                // Return Real
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("RETORNO TOTAL", color = TextSecondary, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
-                    val retTotal = summary.totalReturn
-                    val textClr = if (summary.totalInvested <= 0.0) TextSecondary else if (retTotal >= 0) SuccessGreen else DangerRed
-                    Text(if (hideValues) "R$ •••" else "R$ ${String.format("%,.2f", retTotal)}", color = textClr, fontSize = 12.sp, fontWeight = FontWeight.Black)
-                }
-
-                // Divider (Visual only)
-                Box(modifier = Modifier.width(1.dp).height(24.dp).background(BorderColor.copy(alpha = 0.1f)))
-
-                // Divisão
-                Column(horizontalAlignment = Alignment.End) {
-                    Text("DIVISÃO", color = TextSecondary, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(modifier = Modifier.size(6.dp).background(GoldPrimary, CircleShape))
+                
+                // Rentabilidade Chip (Pill shaped)
+                val retPct = summary.returnPercent
+                val isPos = retPct >= 0
+                val chipBg = if (summary.totalInvested <= 0.0) Color.White.copy(alpha = 0.05f) else if (isPos) SuccessGreen.copy(alpha = 0.12f) else DangerRed.copy(alpha = 0.12f)
+                val chipTxt = if (summary.totalInvested <= 0.0) TextSecondary else if (isPos) SuccessGreen else DangerRed
+                
+                Surface(
+                    color = chipBg,
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, chipTxt.copy(alpha = 0.18f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = if (isPos) Icons.AutoMirrored.Outlined.TrendingUp else Icons.AutoMirrored.Outlined.TrendingDown,
+                            contentDescription = null,
+                            tint = chipTxt,
+                            modifier = Modifier.size(12.dp)
+                        )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("${(summary.sharesRatioStock * 100).toInt()}%", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Black)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Box(modifier = Modifier.size(6.dp).background(SuccessGreen, CircleShape))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("${(summary.sharesRatioFii * 100).toInt()}%", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Black)
+                        Text(
+                            text = if (hideValues) "••%" else String.format("%+.2f%%", retPct),
+                            color = chipTxt,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Black
+                        )
                     }
                 }
             }
             
-            Spacer(modifier = Modifier.height(24.dp))
-            HorizontalDivider(color = BorderColor.copy(alpha = 0.12f), thickness = 1.5.dp)
             Spacer(modifier = Modifier.height(12.dp))
+            
+            // Micro-cards grid for extra details (Total Invested, Return Real, and Dividends)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Left Micro-Card: Aplicado
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .background(Color.White.copy(alpha = 0.03f), RoundedCornerShape(12.dp))
+                        .border(1.dp, BorderColor.copy(alpha = 0.06f), RoundedCornerShape(12.dp))
+                        .padding(10.dp)
+                ) {
+                    Text(
+                        text = "TOTAL INVESTIDO",
+                        color = TextSecondary,
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.3.sp
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = if (hideValues) "R$ •••••" else "R$ ${String.format("%,.2f", summary.totalInvested)}",
+                        color = TextPrimary,
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Black,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                
+                // Middle Micro-Card: Retorno Total Real
+                val retTotal = summary.totalReturn
+                val valueColor = if (summary.totalInvested <= 0.0) TextSecondary else if (retTotal >= 0) SuccessGreen else DangerRed
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .background(Color.White.copy(alpha = 0.03f), RoundedCornerShape(12.dp))
+                        .border(1.dp, BorderColor.copy(alpha = 0.06f), RoundedCornerShape(12.dp))
+                        .padding(10.dp)
+                ) {
+                    Text(
+                        text = "RETORNO TOTAL",
+                        color = TextSecondary,
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.3.sp
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = if (hideValues) "R$ •••••" else "R$ ${String.format("%,.2f", retTotal)}",
+                        color = valueColor,
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Black,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                // Right Micro-Card: Proventos Recebidos
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .background(Color.White.copy(alpha = 0.03f), RoundedCornerShape(12.dp))
+                        .border(1.dp, BorderColor.copy(alpha = 0.06f), RoundedCornerShape(12.dp))
+                        .padding(10.dp)
+                ) {
+                    Text(
+                        text = "PROVENTOS REC.",
+                        color = TextSecondary,
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.3.sp
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = if (hideValues) "R$ •••••" else "R$ ${String.format("%,.2f", totalProventos)}",
+                        color = GoldPrimary,
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Black,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(14.dp))
+            HorizontalDivider(color = BorderColor.copy(alpha = 0.08f), thickness = 1.dp)
+            Spacer(modifier = Modifier.height(10.dp))
+            
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -428,15 +478,15 @@ fun PortfolioHeaderCard(summary: PortfolioSummary, hideValues: Boolean = false, 
             ) {
                 Text(
                     text = "Atualizado em tempo real", 
-                    color = TextSecondary, 
+                    color = TextSecondary.copy(alpha = 0.8f), 
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Medium
                 )
                 Text(
-                    text = "Análise da Carteira ➔", 
+                    text = "Toque para ver detalhes", 
                     color = GoldPrimary, 
-                    fontSize = 11.sp, 
-                    fontWeight = FontWeight.Black
+                    fontSize = 10.sp, 
+                    fontWeight = FontWeight.Bold
                 )
             }
         }
@@ -747,11 +797,15 @@ fun AddTransactionDialog(
 
     androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismiss,
-        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        properties = androidx.compose.ui.window.DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .imePadding()
                 .background(Color.Black.copy(alpha = 0.55f))
                 .clickable(onClick = onDismiss),
             contentAlignment = Alignment.Center
@@ -761,7 +815,6 @@ fun AddTransactionDialog(
                     .fillMaxWidth(0.92f)
                     .widthIn(max = 480.dp)
                     .clickable(enabled = false) {} // Prevent close on card clicking
-                    .imePadding()
                     .animateContentSize(),
                 color = DarkSurfaceElevated,
                 shape = RoundedCornerShape(22.dp),
@@ -1580,7 +1633,7 @@ private fun homeMarketMoverChangeText(
             .replace("▼", "")
             .replace("+", "")
             .replace("-", "")
-            .replace(Regex("\s+"), "")
+            .replace(Regex("\\s+"), "")
             .trim()
         if (display.any { it.isDigit() }) {
             val normalized = if (display.contains("%")) display else "$display%"
@@ -1638,69 +1691,166 @@ fun HomeMarketMoversPreview(
     ) {
         Column(
             modifier = Modifier.padding(10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // Header Row: Authoritative Title & Info Badge
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 2.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    DoubleChevronIcon(
-                        isUp = isPositive,
-                        color = accentColor,
-                        modifier = Modifier.size(13.dp)
-                    )
-                    Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .background(accentColor.copy(alpha = 0.1f), CircleShape)
+                            .border(1.dp, accentColor.copy(alpha = 0.25f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (isPositive) Icons.AutoMirrored.Outlined.TrendingUp else Icons.AutoMirrored.Outlined.TrendingDown,
+                            contentDescription = null,
+                            tint = accentColor,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    Column {
                         Text(
-                            text = title,
+                            text = "Destaques do Mercado",
                             color = Color.White,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Black
                         )
                         Text(
-                            text = sourceLabel.take(42),
+                            text = sourceLabel.take(48),
                             color = TextSecondary,
-                            fontSize = 9.sp,
+                            fontSize = 8.5.sp,
+                            fontWeight = FontWeight.Medium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                
+                // Tech/Data badge
+                Surface(
+                    color = Color.White.copy(alpha = 0.04f),
+                    shape = RoundedCornerShape(6.dp),
+                    border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.08f))
                 ) {
-                    Surface(
-                        onClick = { if (highs.isNotEmpty()) activePage = 0 },
-                        color = if (activePage == 0) SuccessGreen.copy(alpha = 0.12f) else Color.Transparent,
-                        shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, if (activePage == 0) SuccessGreen.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.05f))
+                    Text(
+                        text = "B3",
+                        color = TextSecondary,
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                    )
+                }
+            }
+
+            // Segmented Switcher Pill Bar (Pill design)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(38.dp)
+                    .background(Color.White.copy(alpha = 0.03f), RoundedCornerShape(10.dp))
+                    .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(10.dp))
+                    .padding(2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // ALTAS Tab
+                val altasSelected = activePage == 0
+                val altasBgColor by animateColorAsState(
+                    targetValue = if (altasSelected) SuccessGreen.copy(alpha = 0.16f) else Color.Transparent,
+                    label = "altasBg"
+                )
+                val altasBorderColor by animateColorAsState(
+                    targetValue = if (altasSelected) SuccessGreen.copy(alpha = 0.35f) else Color.Transparent,
+                    label = "altasBorder"
+                )
+                val altasTxtColor by animateColorAsState(
+                    targetValue = if (altasSelected) SuccessGreen else TextSecondary,
+                    label = "altasTxt"
+                )
+                
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(altasBgColor)
+                        .border(1.dp, altasBorderColor, RoundedCornerShape(8.dp))
+                        .clickable(enabled = highs.isNotEmpty()) { activePage = 0 },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
                     ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.TrendingUp,
+                            contentDescription = null,
+                            tint = altasTxtColor,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "ALTAS ${highs.size}",
-                            color = if (highs.isNotEmpty()) { if (activePage == 0) SuccessGreen else TextSecondary } else TextSecondary.copy(alpha = 0.45f),
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            text = "Maiores Altas",
+                            color = altasTxtColor,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
                         )
                     }
-                    Surface(
-                        onClick = { if (lows.isNotEmpty()) activePage = 1 },
-                        color = if (activePage == 1) DangerRed.copy(alpha = 0.12f) else Color.Transparent,
-                        shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, if (activePage == 1) DangerRed.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.05f))
+                }
+
+                Spacer(modifier = Modifier.width(3.dp))
+
+                // BAIXAS Tab
+                val baixasSelected = activePage == 1
+                val baixasBgColor by animateColorAsState(
+                    targetValue = if (baixasSelected) DangerRed.copy(alpha = 0.16f) else Color.Transparent,
+                    label = "baixasBg"
+                )
+                val baixasBorderColor by animateColorAsState(
+                    targetValue = if (baixasSelected) DangerRed.copy(alpha = 0.35f) else Color.Transparent,
+                    label = "baixasBorder"
+                )
+                val baixasTxtColor by animateColorAsState(
+                    targetValue = if (baixasSelected) DangerRed else TextSecondary,
+                    label = "baixasTxt"
+                )
+
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(baixasBgColor)
+                        .border(1.dp, baixasBorderColor, RoundedCornerShape(8.dp))
+                        .clickable(enabled = lows.isNotEmpty()) { activePage = 1 },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
                     ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.TrendingDown,
+                            contentDescription = null,
+                            tint = baixasTxtColor,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "BAIXAS ${lows.size}",
-                            color = if (lows.isNotEmpty()) { if (activePage == 1) DangerRed else TextSecondary } else TextSecondary.copy(alpha = 0.45f),
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            text = "Maiores Baixas",
+                            color = baixasTxtColor,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
@@ -1714,92 +1864,55 @@ fun HomeMarketMoversPreview(
                     modifier = Modifier.padding(vertical = 10.dp)
                 )
             } else {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.Top
                 ) {
-                    currentItems.forEachIndexed { index, item ->
-                        val asset = homeMarketMoverAsset(assetData, item.ticker)
-                        val name = item.name.ifBlank { asset?.name.orEmpty() }
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(6.dp))
-                                .clickable { onAssetClick(item.ticker) }
-                                .padding(vertical = 6.dp, horizontal = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            val monogram = item.ticker.trim().take(2).uppercase()
-                            Box(
-                                modifier = Modifier
-                                    .size(26.dp)
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(getTickerBrandColor(item.ticker)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = monogram,
-                                    color = Color.White,
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
+                    val halfSize = (currentItems.size + 1) / 2
+                    val firstCol = currentItems.take(halfSize)
+                    val secondCol = currentItems.drop(halfSize)
 
-                            Spacer(modifier = Modifier.width(8.dp))
-
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = item.ticker,
-                                    color = Color.White,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                val changeLine = homeMarketMoverChangeText(item, asset, isPositive)
-                                if (changeLine.isNotBlank()) {
-                                    Text(
-                                        text = changeLine,
-                                        color = accentColor,
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                } else if (name.isNotBlank() && !name.contains("%") && !name.contains("+,") && !name.contains("-,")) {
-                                    Text(
-                                        text = name,
-                                        color = TextSecondary,
-                                        fontSize = 9.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-
-                            Text(
-                                text = homeMarketMoverPriceText(item, asset),
-                                color = Color.White,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1
-                            )
-
-                            Spacer(modifier = Modifier.width(12.dp))
-
-                            Text(
-                                text = "#${if (item.rank > 0) item.rank else index + 1}",
-                                color = accentColor,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1
+                    // First column (left)
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        firstCol.forEachIndexed { idx, item ->
+                            MarketMoverCompactRow(
+                                item = item,
+                                indexOffset = 0,
+                                index = idx,
+                                isPositive = isPositive,
+                                accentColor = accentColor,
+                                assetData = assetData,
+                                onAssetClick = onAssetClick
                             )
                         }
+                    }
 
-                        if (index < currentItems.lastIndex) {
-                            HorizontalDivider(
-                                color = Color(0xFF1F1F1F),
-                                thickness = 0.5.dp,
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
+                    // Divider line in between
+                    Box(
+                        modifier = Modifier
+                            .width(1.dp)
+                            .align(Alignment.CenterVertically)
+                            .background(Color.White.copy(alpha = 0.08f))
+                    )
+
+                    // Second column (right)
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        secondCol.forEachIndexed { idx, item ->
+                            MarketMoverCompactRow(
+                                item = item,
+                                indexOffset = halfSize,
+                                index = idx,
+                                isPositive = isPositive,
+                                accentColor = accentColor,
+                                assetData = assetData,
+                                onAssetClick = onAssetClick
                             )
                         }
                     }
@@ -1820,4 +1933,226 @@ fun HomeMarketMoversPreview(
             }
         }
     }
+}
+
+@Composable
+fun AsyncCompanyLogo(
+    ticker: String,
+    modifier: Modifier = Modifier,
+    contentDescription: String? = null
+) {
+    // Otimização definitiva de abertura: monograma local instantâneo, sem qualquer
+    // requisição externa durante composição da Dashboard/carteira. Isso evita jank,
+    // recomposições caras e dependência de Clearbit/domínios fora do Proxy.
+    val monogram = remember(ticker) { ticker.trim().take(2).uppercase() }
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(getTickerBrandColor(ticker)),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = monogram,
+            color = Color.White,
+            fontSize = 8.sp,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+
+@Composable
+private fun MarketMoverCompactRow(
+    item: com.example.network.MarketRankingItem,
+    indexOffset: Int,
+    index: Int,
+    isPositive: Boolean,
+    accentColor: Color,
+    assetData: Map<String, B3AssetData>,
+    onAssetClick: (String) -> Unit
+) {
+    val asset = homeMarketMoverAsset(assetData, item.ticker)
+    val displayRank = if (item.rank > 0) item.rank else indexOffset + index + 1
+    
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(6.dp))
+            .clickable { onAssetClick(item.ticker) }
+            .padding(vertical = 4.dp, horizontal = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Rank Indicator
+        Text(
+            text = "$displayRank",
+            color = Color.White.copy(alpha = 0.35f),
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.width(12.dp)
+        )
+
+        // Asynchronous Corporate Logo
+        AsyncCompanyLogo(
+            ticker = item.ticker,
+            modifier = Modifier.size(20.dp)
+        )
+
+        Spacer(modifier = Modifier.width(6.dp))
+
+        // Ticker next to logo
+        Text(
+            text = item.ticker,
+            color = Color.White,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+
+        Spacer(modifier = Modifier.width(4.dp))
+
+        // Price and percentage next to each other
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.End
+        ) {
+            Text(
+                text = homeMarketMoverPriceText(item, asset).replace("R$ ", ""),
+                color = Color.White,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                textAlign = TextAlign.End
+            )
+            
+            Spacer(modifier = Modifier.width(4.dp))
+            
+            val changeLine = homeMarketMoverChangeText(item, asset, isPositive)
+            Text(
+                text = if (changeLine.isNotBlank()) changeLine else "+0.00%",
+                color = accentColor,
+                fontSize = 8.5.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                textAlign = TextAlign.End
+            )
+        }
+    }
+}
+
+private fun parseInsightDateMillis(value: String): Long {
+    if (value.isBlank()) return 0L
+    val raw = value.trim()
+    raw.toLongOrNull()?.let { return if (it > 10_000_000_000L) it else it * 1000L }
+    val normalized = raw
+        .replace(Regex("\\s+"), " ")
+        .replace("às", " ", ignoreCase = true)
+        .trim()
+    val patterns = listOf(
+        "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+        "yyyy-MM-dd'T'HH:mm:ss'Z'",
+        "yyyy-MM-dd'T'HH:mm:ssXXX",
+        "yyyy-MM-dd HH:mm:ss",
+        "dd/MM/yyyy HH:mm:ss",
+        "dd/MM/yyyy HH:mm",
+        "dd/MM/yyyy",
+        "dd/MM/yy",
+        "yyyy-MM-dd"
+    )
+    for (p in patterns) {
+        try {
+            val sdf = java.text.SimpleDateFormat(p, java.util.Locale.US)
+            sdf.timeZone = java.util.TimeZone.getTimeZone("UTC")
+            return sdf.parse(normalized)?.time ?: 0L
+        } catch (e: Exception) {}
+    }
+    return 0L
+}
+
+private fun eventRelevantMillis(event: com.example.network.DividendEvent): Long {
+    return parseInsightDateMillis(event.paymentDate).takeIf { it > 0L }
+        ?: parseInsightDateMillis(event.dateCom).takeIf { it > 0L }
+        ?: 0L
+}
+
+private fun eventEligibilityMillis(event: com.example.network.DividendEvent): Long {
+    return parseInsightDateMillis(event.dateCom).takeIf { it > 0L }
+        ?: parseInsightDateMillis(event.paymentDate).takeIf { it > 0L }
+        ?: 0L
+}
+
+private fun startOfInsightDayMillis(millis: Long): Long {
+    val cal = java.util.Calendar.getInstance().apply {
+        timeInMillis = millis
+        set(java.util.Calendar.HOUR_OF_DAY, 0)
+        set(java.util.Calendar.MINUTE, 0)
+        set(java.util.Calendar.SECOND, 0)
+        set(java.util.Calendar.MILLISECOND, 0)
+    }
+    return cal.timeInMillis
+}
+
+private fun endOfInsightDayMillis(millis: Long): Long {
+    val cal = java.util.Calendar.getInstance().apply {
+        timeInMillis = millis
+        set(java.util.Calendar.HOUR_OF_DAY, 23)
+        set(java.util.Calendar.MINUTE, 59)
+        set(java.util.Calendar.SECOND, 59)
+        set(java.util.Calendar.MILLISECOND, 999)
+    }
+    return cal.timeInMillis
+}
+
+private fun isPaidDividendEvent(event: com.example.network.DividendEvent, nowMillis: Long = System.currentTimeMillis()): Boolean {
+    val status = event.status.lowercase(java.util.Locale.ROOT)
+    val ts = eventRelevantMillis(event)
+    val todayStart = startOfInsightDayMillis(nowMillis)
+    return status.contains("pago") || status.contains("recebido") || status.contains("último") || status.contains("ultimo") || (ts > 0L && ts < todayStart)
+}
+
+private fun safeDividendAmount(event: com.example.network.DividendEvent): Double {
+    return event.estimatedAmount.coerceAtLeast(0.0)
+}
+
+private fun sharesOwnedAtInsightDate(
+    transactions: List<com.example.data.Transaction>,
+    ticker: String,
+    millis: Long
+): Double {
+    if (transactions.isEmpty()) return 0.0
+    val key = ticker.trim().uppercase(java.util.Locale.ROOT)
+    return transactions.asSequence()
+        .filter { it.ticker.trim().uppercase(java.util.Locale.ROOT) == key && it.date <= millis }
+        .fold(0.0) { acc, tx -> if (tx.isSell) acc - tx.quantity else acc + tx.quantity }
+        .coerceAtLeast(0.0)
+}
+
+private fun eligibleDividendAmount(
+    event: com.example.network.DividendEvent,
+    transactions: List<com.example.data.Transaction>
+): Double {
+    if (transactions.isEmpty()) return safeDividendAmount(event)
+
+    val eligibilityTs = eventEligibilityMillis(event)
+    val relevantTs = eventRelevantMillis(event)
+    val todayStart = startOfInsightDayMillis(System.currentTimeMillis())
+    val isPastPayment = relevantTs > 0L && relevantTs < todayStart
+    val fallbackTs = if (eligibilityTs > 0L) eligibilityTs else if (relevantTs > 0L) relevantTs else System.currentTimeMillis()
+
+    val shares = sharesOwnedAtInsightDate(transactions, event.ticker, endOfInsightDayMillis(fallbackTs))
+
+    val finalShares = when {
+        shares > 0.0001 -> shares
+        !isPastPayment && event.quantity > 0.0 -> event.quantity
+        !isPastPayment -> 0.0
+        else -> 0.0
+    }
+
+    if (finalShares <= 0.0001) return 0.0
+
+    if (event.valuePerShare > 0.0) return event.valuePerShare * finalShares
+    if (event.estimatedAmount > 0.0 && event.quantity > 0.0) return event.estimatedAmount * (finalShares / event.quantity)
+
+    return event.estimatedAmount.coerceAtLeast(0.0)
 }

@@ -672,9 +672,10 @@ fun UpdateDetailsCard(
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp
                 )
-                if (!info.normalizedReleaseDate.isNullOrEmpty()) {
+                val releaseDate = info.normalizedReleaseDate
+                if (!releaseDate.isNullOrEmpty()) {
                     Text(
-                        text = "Data: ${info.normalizedReleaseDate.take(10)}", // Just show YYYY-MM-DD
+                        text = "Data: ${releaseDate.take(10)}", // Just show YYYY-MM-DD
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 11.sp
                     )

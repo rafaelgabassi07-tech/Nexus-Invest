@@ -39,6 +39,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.content.Intent
 import android.net.Uri
+import java.io.File
+import android.content.ContentValues
+import android.provider.MediaStore
+import android.os.Environment
 import java.util.UUID
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -1111,12 +1115,12 @@ private fun AboutSettingsPage() {
         Surface(
             modifier = Modifier
                 .size(90.dp)
-                .clip(RoundedCornerShape(24.dp)),
+                .clip(CircleShape),
             color = Color.Transparent,
             shadowElevation = 4.dp
         ) {
             Image(
-                painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.valorae_premium_logo_1779327613624),
+                painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.valorae_logo_vector),
                 contentDescription = "VALORAE Logo",
                 modifier = Modifier.fillMaxSize(),
                 contentScale = androidx.compose.ui.layout.ContentScale.Fit
@@ -1668,10 +1672,36 @@ private fun PinSetupDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
 
 @Composable
 private fun NotificationsSettingsPage() {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
     var alertsEnabled by remember { mutableStateOf(true) }
     var newsEnabled by remember { mutableStateOf(true) }
     var dividendsEnabled by remember { mutableStateOf(false) }
+
+    var isNotificationPermissionGranted by remember {
+        mutableStateOf(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                androidx.core.content.ContextCompat.checkSelfPermission(
+                    context,
+                    "android.permission.POST_NOTIFICATIONS"
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            } else {
+                true
+            }
+        )
+    }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        isNotificationPermissionGranted = isGranted
+    }
+
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !isNotificationPermissionGranted) {
+            notificationPermissionLauncher.launch("android.permission.POST_NOTIFICATIONS")
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -1680,6 +1710,54 @@ private fun NotificationsSettingsPage() {
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !isNotificationPermissionGranted) {
+            Surface(
+                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.2f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.NotificationsActive,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Notificações Desativadas",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Text(
+                            text = "Toque para autorizar avisos de proventos e cotações nas configurações ou diretamente no aparelho.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            notificationPermissionLauncher.launch("android.permission.POST_NOTIFICATIONS")
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error
+                        ),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("Ativar", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+        }
+
         Text(
             text = "ALERTAS E AVISOS DE PORTFÓLIO",
             style = MaterialTheme.typography.labelMedium,
@@ -2219,6 +2297,7 @@ private fun HelpItem(icon: ImageVector, title: String, description: String, onCl
 private fun DataBackupPage(viewModel: com.example.viewmodel.PortfolioViewModel) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
     
     val transactions by viewModel.transactions.collectAsStateWithLifecycle()
     
@@ -2230,6 +2309,7 @@ private fun DataBackupPage(viewModel: com.example.viewmodel.PortfolioViewModel) 
     
     var clearOnImport by remember { mutableStateOf(false) }
     var showConfirmDeleteDialog by remember { mutableStateOf(false) }
+    var showPasteImportDialog by remember { mutableStateOf(false) }
 
     // Backup Save Launchers
     val exportJsonLauncher = rememberLauncherForActivityResult(
@@ -2350,46 +2430,180 @@ private fun DataBackupPage(viewModel: com.example.viewmodel.PortfolioViewModel) 
         if (uri != null) processSelectedImportUri(uri)
     }
 
-    val openDocumentIntentLauncher = rememberLauncherForActivityResult(
+    val openDocumentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            processSelectedImportUri(uri)
+        }
+    }
+
+    val genericActivityLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
-            val selectedUri = result.data?.data
-            if (selectedUri != null) {
+            val uri = result.data?.data
+            if (uri != null) {
                 runCatching {
-                    val flags = (result.data?.flags ?: 0) and
-                        (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-                    if (flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0) {
-                        context.contentResolver.takePersistableUriPermission(selectedUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                }
+                processSelectedImportUri(uri)
+            }
+        }
+    }
+
+    fun processRawTextImport(rawText: String) {
+        val trimmed = rawText.trim()
+        if (trimmed.isEmpty()) {
+            errorMsg = "O texto inserido está vazio."
+            showErrorBanner = true
+            return
+        }
+        scope.launch {
+            try {
+                var countImported = 0
+                var isJson = false
+
+                withContext(Dispatchers.IO) {
+                    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+                        isJson = true
+                        viewModel.importTransactionsFromJson(trimmed, clearOnImport)
+                    } else {
+                        viewModel.importFromB3Spreadsheet(trimmed) { count -> countImported = count }
                     }
                 }
-                processSelectedImportUri(selectedUri)
-            } else {
-                errorMsg = "Nenhum arquivo foi retornado pelo seletor. Tente novamente ou escolha outro gerenciador."
+
+                kotlinx.coroutines.delay(650)
+                successMsg = if (isJson) {
+                    "Backup JSON importado com sucesso via texto colado!"
+                } else if (countImported > 0) {
+                    "Importado com sucesso! $countImported transações adicionadas via texto."
+                } else {
+                    "Dados de texto processados e importados!"
+                }
+                showSuccessBanner = true
+            } catch (e: Exception) {
+                errorMsg = "Falha ao processar texto: ${e.localizedMessage ?: "formato incorreto"}"
                 showErrorBanner = true
             }
         }
     }
 
-    fun buildOpenDocumentIntent(): Intent {
-        return Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
-            type = "*/*"
-            putExtra(Intent.EXTRA_MIME_TYPES, importMimeTypes)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+    fun launchImportPicker() {
+        try {
+            filePickerLauncher.launch("*/*")
+        } catch (e: Exception) {
+            try {
+                openDocumentLauncher.launch(arrayOf("*/*"))
+            } catch (fallback: Exception) {
+                try {
+                    val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                        type = "*/*"
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        // Adiciona os tipos específicos como extras para ajudar o seletor
+                        putExtra(Intent.EXTRA_MIME_TYPES, importMimeTypes)
+                    }
+                    genericActivityLauncher.launch(Intent.createChooser(intent, "Selecionar Arquivo"))
+                } catch (e3: Exception) {
+                    errorMsg = "Erro ao abrir seletor: ${e3.localizedMessage} | e=${e.message} f=${fallback.message}"
+                    showErrorBanner = true
+                }
+            }
         }
     }
 
-    fun launchImportPicker() {
-        try {
-            openDocumentIntentLauncher.launch(Intent.createChooser(buildOpenDocumentIntent(), "Selecionar arquivo VALORAE"))
-        } catch (primary: Exception) {
+    fun saveAndShareFile(filename: String, mimeType: String, content: String) {
+        scope.launch(Dispatchers.IO) {
             try {
-                filePickerLauncher.launch("*/*")
-            } catch (fallback: Exception) {
-                errorMsg = "Erro ao abrir o seletor de arquivos. No Android moderno, o acesso ao arquivo é concedido quando você escolhe o documento pelo seletor do sistema. Verifique se o app Arquivos/Files está habilitado."
-                showErrorBanner = true
+                // 1. Gravar no diretório interno associado ao FileProvider
+                val cacheFolder = File(context.cacheDir, "valorae_updates")
+                if (!cacheFolder.exists()) {
+                    cacheFolder.mkdirs()
+                }
+                val tempFile = File(cacheFolder, filename)
+                tempFile.writeText(content)
+
+                // 2. Tentar salvar cópia pública de forma direta em Downloads para o usuário abrir no Excel
+                var savedInDownloads = false
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        val resolver = context.contentResolver
+                        val contentValues = ContentValues().apply {
+                            put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+                            put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                        }
+                        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                        if (uri != null) {
+                            resolver.openOutputStream(uri)?.use { output ->
+                                output.write(content.toByteArray())
+                            }
+                            savedInDownloads = true
+                        }
+                    } else {
+                        val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                        if (downloadsDir != null) {
+                            if (!downloadsDir.exists()) downloadsDir.mkdirs()
+                            val publicFile = File(downloadsDir, filename)
+                            publicFile.writeText(content)
+                            savedInDownloads = true
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("VALORAE", "Erro ao salvar em Downloads pública: ${e.message}")
+                }
+
+                // 3. Obter Uri via FileProvider
+                val fileUri: Uri = androidx.core.content.FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    tempFile
+                )
+
+                // 4. Disparar Sheet de Compartilhamento do Sistema
+                withContext(Dispatchers.Main) {
+                    val sendIntent = Intent().apply {
+                        action = Intent.ACTION_SEND
+                        putExtra(Intent.EXTRA_STREAM, fileUri)
+                        type = mimeType
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    val shareIntent = Intent.createChooser(sendIntent, "Exportar $filename").apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    try {
+                        context.startActivity(shareIntent)
+                    } catch (e: Exception) {
+                        // Safe fallback using activity helper
+                        val activity = context.findActivity()
+                        if (activity != null) {
+                            activity.startActivity(shareIntent)
+                        } else {
+                            throw e
+                        }
+                    }
+
+                    successMsg = if (savedInDownloads) {
+                        "Arquivo '$filename' exportado para Downloads com sucesso e pronto para compartilhar!"
+                    } else {
+                        "Pronto para compartilhar/salvar o arquivo '$filename'!"
+                    }
+                    showSuccessBanner = true
+                }
+            } catch (e: java.lang.Exception) {
+                withContext(Dispatchers.Main) {
+                    errorMsg = "Erro ao exportar arquivo: ${e.localizedMessage}"
+                    showErrorBanner = true
+                }
             }
         }
     }
@@ -2629,7 +2843,89 @@ private fun DataBackupPage(viewModel: com.example.viewmodel.PortfolioViewModel) 
                         modifier = Modifier.clickable { clearOnImport = !clearOnImport }
                     )
                 }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), thickness = 1.dp)
+
+                OutlinedButton(
+                    onClick = { showPasteImportDialog = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.primary
+                    ),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ContentPaste,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Importar colando texto (JSON / CSV)",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
+        }
+
+        if (showPasteImportDialog) {
+            var pasteValue by remember { mutableStateOf("") }
+            AlertDialog(
+                onDismissRequest = { showPasteImportDialog = false },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.ContentPaste,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(text = "Importar via Texto")
+                    }
+                },
+                text = {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Cole abaixo o conteúdo do arquivo de backup (.json) ou dados tabulares (.csv) para importação manual direta:",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        
+                        OutlinedTextField(
+                            value = pasteValue,
+                            onValueChange = { pasteValue = it },
+                            placeholder = { Text("Cole o JSON ou CSV aqui...", fontSize = 13.sp) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(180.dp),
+                            textStyle = MaterialTheme.typography.bodySmall,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showPasteImportDialog = false
+                            processRawTextImport(pasteValue)
+                        },
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("Importar")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showPasteImportDialog = false }) {
+                        Text("Cancelar")
+                    }
+                }
+            )
         }
 
         // Card: Política de backup local. Sincronização externa direta foi removida da UI
@@ -2721,9 +3017,10 @@ private fun DataBackupPage(viewModel: com.example.viewmodel.PortfolioViewModel) 
                         shape = RoundedCornerShape(12.dp),
                         onClick = {
                             try {
-                                exportJsonLauncher.launch("valorae_backup.json")
+                                val json = viewModel.exportTransactionsToJson()
+                                saveAndShareFile("valorae_backup.json", "application/json", json)
                             } catch (e: Exception) {
-                                errorMsg = "Erro: Aplicativo de arquivos não encontrado."
+                                errorMsg = "Erro ao gerar arquivo de backup JSON: ${e.localizedMessage}"
                                 showErrorBanner = true
                             }
                         }
@@ -2738,9 +3035,10 @@ private fun DataBackupPage(viewModel: com.example.viewmodel.PortfolioViewModel) 
                         shape = RoundedCornerShape(12.dp),
                         onClick = {
                             try {
-                                exportCsvLauncher.launch("valorae_transacoes.csv")
+                                val csv = viewModel.exportTransactionsToCsv()
+                                saveAndShareFile("valorae_transacoes.csv", "text/csv", csv)
                             } catch (e: Exception) {
-                                errorMsg = "Erro: Aplicativo de arquivos não encontrado."
+                                errorMsg = "Erro ao exportar transações para CSV/Excel: ${e.localizedMessage}"
                                 showErrorBanner = true
                             }
                         }
@@ -2762,8 +3060,19 @@ private fun DataBackupPage(viewModel: com.example.viewmodel.PortfolioViewModel) 
                                         putExtra(Intent.EXTRA_TEXT, json)
                                         type = "application/json"
                                     }
-                                    val shareIntent = Intent.createChooser(sendIntent, "Cópia de Segurança VALORAE")
-                                    context.startActivity(shareIntent)
+                                    val shareIntent = Intent.createChooser(sendIntent, "Cópia de Segurança VALORAE").apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    try {
+                                        context.startActivity(shareIntent)
+                                    } catch (e: Exception) {
+                                        val activity = context.findActivity()
+                                        if (activity != null) {
+                                            activity.startActivity(shareIntent)
+                                        } else {
+                                            throw e
+                                        }
+                                    }
                                 } catch (e: Exception) {
                                     android.util.Log.e("VALORAE", "Erro ao compartilhar backup: ${e.message}")
                                 }
@@ -2773,6 +3082,26 @@ private fun DataBackupPage(viewModel: com.example.viewmodel.PortfolioViewModel) 
                         Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Compartilhar Cópia", style = MaterialTheme.typography.labelLarge)
+                    }
+
+                    OutlinedButton(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        onClick = {
+                            try {
+                                val json = viewModel.exportTransactionsToJson()
+                                clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(json))
+                                successMsg = "Código de backup copiado para a área de transferência! Você pode salvar em suas notas de forma segura."
+                                showSuccessBanner = true
+                            } catch (e: Exception) {
+                                errorMsg = "Erro ao copiar para área de transferência: ${e.localizedMessage}"
+                                showErrorBanner = true
+                            }
+                        }
+                    ) {
+                        Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Copiar Código de Backup", style = MaterialTheme.typography.labelLarge)
                     }
                 }
             }
@@ -2813,4 +3142,16 @@ private fun DataBackupPage(viewModel: com.example.viewmodel.PortfolioViewModel) 
         }
         Spacer(modifier = Modifier.height(80.dp))
     }
+}
+
+// Extension to find parent Activity safely in Compose environment
+private fun android.content.Context.findActivity(): android.app.Activity? {
+    var curContext = this
+    while (curContext is android.content.ContextWrapper) {
+        if (curContext is android.app.Activity) {
+            return curContext
+        }
+        curContext = curContext.baseContext
+    }
+    return null
 }
