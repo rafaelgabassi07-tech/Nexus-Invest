@@ -553,14 +553,14 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
             refreshLiveMarketRankings(force = false)
         }
 
-        // Dados avançados é carregado sob demanda ao abrir a página/ao tocar em Atualizar.
-        // Evita disparar dezenas de endpoints avançados na abertura do app, preservando
-        // fluidez, bateria e compatibilidade com Vercel Free.
+        // Insights passam a ser pré-aquecidos logo na abertura/primeiro ativo.
+        // Mantém timeouts curtos e cache do Proxy para não travar a UI, mas evita a experiência
+        // fraca de abrir a página Insights e só então começar a montar agenda/rankings/análise.
 
         viewModelScope.launch {
             @OptIn(kotlinx.coroutines.FlowPreview::class)
             combine(assetSummaries, transactions) { summaries, txs -> summaries to txs }
-                .debounce(1800)
+                .debounce(700)
                 .collect { (summaries, txs) ->
                     if (summaries.isNotEmpty()) {
                         refreshPortfolioAnalytics(summaries, txs)
@@ -930,23 +930,118 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
         fun <T> richer(a: List<T>, b: List<T>): List<T> = if (b.size > a.size) b else a
         fun <K, V> richerMap(a: Map<K, List<V>>, b: Map<K, List<V>>): Map<K, List<V>> =
             if (b.values.sumOf { it.size } > a.values.sumOf { it.size }) b else a
+
+        fun labelKey(label: String, year: String = "", quarter: String = ""): String {
+            val baseLabel = listOf(year, quarter, label).joinToString("|").trim('|')
+            return baseLabel.ifBlank { label }.uppercase(java.util.Locale.ROOT)
+        }
+
+        fun nz(primary: Double, fallback: Double): Double =
+            if (primary != 0.0 && primary.isFinite()) primary else if (fallback.isFinite()) fallback else 0.0
+
+        fun mergeFinancialPoint(a: FinancialStatementPoint, b: FinancialStatementPoint): FinancialStatementPoint {
+            val assets = nz(a.totalAssets, b.totalAssets)
+            val netWorth = nz(a.netWorth, b.netWorth)
+            val liabilitiesRaw = nz(a.totalLiabilities, b.totalLiabilities)
+            val liabilities = if (liabilitiesRaw != 0.0) liabilitiesRaw else if (assets != 0.0 && netWorth != 0.0) assets - netWorth else 0.0
+            return a.copy(
+                label = a.label.ifBlank { b.label },
+                year = a.year.ifBlank { b.year },
+                quarter = a.quarter.ifBlank { b.quarter },
+                netRevenue = nz(a.netRevenue, b.netRevenue),
+                cost = nz(a.cost, b.cost),
+                grossProfit = nz(a.grossProfit, b.grossProfit),
+                ebitda = nz(a.ebitda, b.ebitda),
+                ebit = nz(a.ebit, b.ebit),
+                netProfit = nz(a.netProfit, b.netProfit),
+                netWorth = netWorth,
+                totalAssets = assets,
+                totalLiabilities = liabilities
+            )
+        }
+
+        fun mergeFinancialSeries(vararg lists: List<FinancialStatementPoint>): List<FinancialStatementPoint> {
+            val out = linkedMapOf<String, FinancialStatementPoint>()
+            for (list in lists) {
+                for (point in list) {
+                    val key = labelKey(point.label, point.year, point.quarter)
+                    val existing = out[key]
+                    out[key] = if (existing == null) point else mergeFinancialPoint(existing, point)
+                }
+            }
+            return out.values.sortedWith(compareBy<FinancialStatementPoint> { it.year.ifBlank { it.label } }.thenBy { it.quarter })
+        }
+
+        fun mergePeriodReturns(a: List<AssetPeriodReturn>, b: List<AssetPeriodReturn>): List<AssetPeriodReturn> {
+            val out = linkedMapOf<String, AssetPeriodReturn>()
+            (a + b).forEach { item ->
+                val key = item.period.trim().uppercase(java.util.Locale.ROOT)
+                if (key.isNotBlank()) {
+                    val previous = out[key]
+                    if (previous == null || (previous.valuePercent == 0.0 && item.valuePercent != 0.0)) out[key] = item
+                }
+            }
+            return out.values.toList()
+        }
+
+        fun mergeIndicatorPoints(a: List<AssetIndicatorPoint>, b: List<AssetIndicatorPoint>): List<AssetIndicatorPoint> {
+            val out = linkedMapOf<String, AssetIndicatorPoint>()
+            (a + b).forEach { item ->
+                val key = listOf(item.year, item.period, item.label).joinToString("|").uppercase(java.util.Locale.ROOT)
+                val previous = out[key]
+                if (previous == null || (previous.value == 0.0 && item.value != 0.0)) out[key] = item
+            }
+            return out.values.toList()
+        }
+
+        fun mergeProfitVsQuote(a: List<AssetComparisonPoint>, b: List<AssetComparisonPoint>): List<AssetComparisonPoint> {
+            val out = linkedMapOf<String, AssetComparisonPoint>()
+            (a + b).forEach { item ->
+                val key = if (item.dateMillis > 0L) item.dateMillis.toString() else item.label.uppercase(java.util.Locale.ROOT)
+                val prev = out[key]
+                out[key] = if (prev == null) item else AssetComparisonPoint(
+                    label = prev.label.ifBlank { item.label },
+                    value = nz(prev.value, item.value),
+                    secondaryValue = nz(prev.secondaryValue, item.secondaryValue),
+                    dateMillis = if (prev.dateMillis > 0L) prev.dateMillis else item.dateMillis
+                )
+            }
+            return out.values
+                .filter { it.value.isFinite() && it.secondaryValue.isFinite() }
+                .sortedWith(compareBy<AssetComparisonPoint> { if (it.dateMillis > 0L) it.dateMillis else Long.MAX_VALUE }.thenBy { it.label })
+        }
+
+        fun mergeComparison(a: List<AssetComparisonSeries>, b: List<AssetComparisonSeries>): List<AssetComparisonSeries> {
+            val out = linkedMapOf<String, AssetComparisonSeries>()
+            (a + b).forEach { s ->
+                val key = s.name.trim().uppercase(java.util.Locale.ROOT)
+                val prev = out[key]
+                if (prev == null || s.points.size > prev.points.size) out[key] = s
+            }
+            return out.values.toList()
+        }
+
+        val mergedBalance = mergeFinancialSeries(base.balanceSheet, extra.balanceSheet, base.equityEvolution, extra.equityEvolution)
+        val mergedEquity = mergeFinancialSeries(base.equityEvolution, extra.equityEvolution, mergedBalance)
+
         return base.copy(
+            range = if (extra.range.equals("MAX", true)) extra.range else base.range,
             priceHistory = richer(base.priceHistory, extra.priceHistory),
-            profitability = richer(base.profitability, extra.profitability),
-            realProfitability = richer(base.realProfitability, extra.realProfitability),
+            profitability = mergePeriodReturns(base.profitability, extra.profitability),
+            realProfitability = mergePeriodReturns(base.realProfitability, extra.realProfitability),
             indicatorCards = richer(base.indicatorCards, extra.indicatorCards),
             indicatorHistory = if (extra.indicatorHistory.values.sumOf { it.size } > base.indicatorHistory.values.sumOf { it.size }) extra.indicatorHistory else base.indicatorHistory,
             dividendEvents = richer(base.dividendEvents, extra.dividendEvents),
             dividendMonthly = richer(base.dividendMonthly, extra.dividendMonthly),
             dividendYearly = richer(base.dividendYearly, extra.dividendYearly),
             dividendYieldHistory = richer(base.dividendYieldHistory, extra.dividendYieldHistory),
-            indexComparison = richer(base.indexComparison, extra.indexComparison),
-            commodityComparison = richer(base.commodityComparison, extra.commodityComparison),
-            revenueProfit = richer(base.revenueProfit, extra.revenueProfit),
-            profitVsQuote = richer(base.profitVsQuote, extra.profitVsQuote),
-            equityEvolution = richer(base.equityEvolution, extra.equityEvolution),
-            balanceSheet = richer(base.balanceSheet, extra.balanceSheet),
-            payoutHistory = richer(base.payoutHistory, extra.payoutHistory),
+            indexComparison = mergeComparison(base.indexComparison, extra.indexComparison),
+            commodityComparison = mergeComparison(base.commodityComparison, extra.commodityComparison),
+            revenueProfit = mergeFinancialSeries(base.revenueProfit, extra.revenueProfit),
+            profitVsQuote = mergeProfitVsQuote(base.profitVsQuote, extra.profitVsQuote),
+            equityEvolution = mergedEquity,
+            balanceSheet = mergedBalance,
+            payoutHistory = mergeIndicatorPoints(base.payoutHistory, extra.payoutHistory),
             revenueByRegion = richerMap(base.revenueByRegion, extra.revenueByRegion),
             revenueByBusiness = richerMap(base.revenueByBusiness, extra.revenueByBusiness),
             warnings = (base.warnings + extra.warnings).distinct(),
@@ -991,7 +1086,7 @@ class PortfolioViewModel(private val repository: TransactionRepository) : ViewMo
                 launch(Dispatchers.IO) {
                     try {
                         val deepBundle = withTimeoutOrNull(22_000) {
-                            B3NetworkService.fetchAssetChartBundle(clean, normalizedRange, deepFinancial = true)
+                            B3NetworkService.fetchAssetChartBundle(clean, if (normalizedRange.equals("MAX", true)) normalizedRange else "MAX", deepFinancial = true)
                         } ?: return@launch
                         withContext(Dispatchers.Main) {
                             val current = _assetChartBundles.value.toMutableMap()

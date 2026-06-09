@@ -4853,6 +4853,15 @@ object B3NetworkService {
             }
         }
 
+        if (bundle.indexComparison.count { it.points.size >= 2 } < 2) {
+            val comparisonFallback = runCatching {
+                fetchProxyComparisonSeries(clean, isFii, normalizedRange, priceHistory)
+            }.getOrDefault(emptyList())
+            if (comparisonFallback.isNotEmpty()) {
+                bundle = bundle.copy(indexComparison = mergeComparisonSeries(bundle.indexComparison, comparisonFallback, clean))
+            }
+        }
+
         val coverageWarnings = mutableListOf<String>()
         if (json == null) coverageWarnings.add("Proxy não respondeu dentro do orçamento mobile-fast; exibindo histórico/carteira quando disponível.")
         if (bundle.profitability.isEmpty() && bundle.indexComparison.isEmpty() && bundle.revenueProfit.isEmpty() && bundle.balanceSheet.isEmpty()) {

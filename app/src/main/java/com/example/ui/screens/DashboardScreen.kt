@@ -1767,7 +1767,7 @@ fun HomeMarketMoversPreview(
                             Spacer(modifier = Modifier.width(12.dp))
 
                             Text(
-                                text = homeMarketMoverChangeText(item, asset, isPositive),
+                                text = "#${if (item.rank > 0) item.rank else index + 1}",
                                 color = accentColor,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,

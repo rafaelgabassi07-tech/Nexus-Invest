@@ -354,7 +354,7 @@ fun StockDividendTab(bundle: AssetChartBundle) {
 @Composable
 fun StockComparisonTab(bundle: AssetChartBundle) {
     Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
-        FilteredChartCard(title = "Comparação com Índices (%)", filterOptions = listOf("1A", "3A", "5A", "MAX"), defaultFilter = "5A") { filter ->
+        FilteredChartCard(title = "Comparação com Índices (%)", filterOptions = listOf("2A", "5A", "10A", "MAX"), defaultFilter = "5A") { filter ->
             val filteredSeries = remember(bundle.indexComparison, filter) {
                 filterComparisonSeries(bundle.indexComparison, filter)
             }
@@ -369,7 +369,7 @@ fun StockComparisonTab(bundle: AssetChartBundle) {
         }
 
         if (bundle.commodityComparison.isNotEmpty()) {
-            FilteredChartCard(title = "Correlação com Commodities (Brent/Brent Oil)", filterOptions = listOf("1A", "3A", "5A", "MAX"), defaultFilter = "5A") { filter ->
+            FilteredChartCard(title = "Correlação com Commodities (Brent/Brent Oil)", filterOptions = listOf("2A", "5A", "10A", "MAX"), defaultFilter = "5A") { filter ->
                 val filteredSeries = remember(bundle.commodityComparison, filter) {
                     filterComparisonSeries(bundle.commodityComparison, filter)
                 }
@@ -400,7 +400,8 @@ fun StockDreTab(bundle: AssetChartBundle) {
 
         FilteredChartCard(title = "Evolução Lucro x Cotação", filterOptions = listOf("3A", "5A", "10A", "MAX"), defaultFilter = "10A") { filter ->
             val filterYears = filter.replace("A", "").toIntOrNull() ?: Int.MAX_VALUE
-            val filteredPoints = bundle.profitVsQuote.takeLast(filterYears)
+            val completePoints = bundle.profitVsQuote.filter { it.value != 0.0 && it.secondaryValue != 0.0 }
+            val filteredPoints = selectChartWindow(completePoints, filterYears, minPoints = 2)
             if (filteredPoints.isNotEmpty()) {
                 AssetProfitVsQuoteChart(
                     points = filteredPoints,
@@ -413,10 +414,10 @@ fun StockDreTab(bundle: AssetChartBundle) {
 
         FilteredChartCard(title = "Evolução Patrimonial", filterOptions = listOf("3A", "5A", "8A", "MAX"), defaultFilter = "8A") { filter ->
             val filterYears = filter.replace("A", "").toIntOrNull() ?: Int.MAX_VALUE
-            val filteredPoints = bundle.equityEvolution
+            val sourcePoints = mergeFinancialChartPoints(bundle.equityEvolution, bundle.balanceSheet)
                 .filter { it.totalAssets != 0.0 || it.netWorth != 0.0 }
-                .sortedBy { it.year }
-                .takeLast(filterYears)
+                .sortedBy { it.year.ifBlank { it.label } }
+            val filteredPoints = selectChartWindow(sourcePoints, filterYears, minPoints = 2)
             if (filteredPoints.size >= 2) {
                 AssetPatrimonyEvolutionChart(
                     points = filteredPoints,
@@ -429,10 +430,11 @@ fun StockDreTab(bundle: AssetChartBundle) {
 
         FilteredChartCard(title = "Balanço Patrimonial: Ativo/PL/Passivo", filterOptions = listOf("3A", "5A", "8A", "MAX"), defaultFilter = "8A") { filter ->
             val filterYears = filter.replace("A", "").toIntOrNull() ?: Int.MAX_VALUE
-            val filteredPoints = bundle.balanceSheet
-                .filter { listOf(it.totalAssets, it.netWorth, it.totalLiabilities).count { v -> v != 0.0 } >= 2 }
-                .sortedBy { it.year }
-                .takeLast(filterYears)
+            val sourcePoints = mergeFinancialChartPoints(bundle.balanceSheet, bundle.equityEvolution)
+                .map { p -> if (p.totalLiabilities == 0.0 && p.totalAssets != 0.0 && p.netWorth != 0.0) p.copy(totalLiabilities = p.totalAssets - p.netWorth) else p }
+                .filter { listOf(it.totalAssets, it.netWorth, it.totalLiabilities).count { v -> v != 0.0 && v.isFinite() } >= 2 }
+                .sortedBy { it.year.ifBlank { it.label } }
+            val filteredPoints = selectChartWindow(sourcePoints, filterYears, minPoints = 2)
             if (filteredPoints.size >= 2) {
                 AssetEquityEvolutionChart(
                     points = filteredPoints,
@@ -660,6 +662,7 @@ fun EmptyChartState(title: String, message: String) {
 private fun comparisonWindowLimit(filter: String): Int {
     return when (filter.trim().uppercase(Locale.ROOT)) {
         "1A", "1Y" -> 260
+        "2A", "2Y" -> 520
         "3A", "3Y" -> 780
         "5A", "5Y" -> 1300
         "10A", "10Y" -> 2600
@@ -710,6 +713,42 @@ private fun sanitizeFinancialPoints(points: List<FinancialStatementPoint>): List
         listOf(p.netRevenue, p.netProfit, p.netWorth, p.totalAssets, p.totalLiabilities, p.ebit, p.ebitda)
             .all { it.isFinite() }
     }
+}
+
+private fun <T> selectChartWindow(points: List<T>, years: Int, minPoints: Int = 2): List<T> {
+    if (points.isEmpty()) return emptyList()
+    val selected = if (years == Int.MAX_VALUE) points else points.takeLast(years.coerceAtLeast(1))
+    return if (selected.size >= minPoints || points.size < minPoints) selected else points
+}
+
+private fun mergeFinancialChartPoints(vararg lists: List<FinancialStatementPoint>): List<FinancialStatementPoint> {
+    fun keyOf(p: FinancialStatementPoint): String = listOf(p.year, p.quarter, p.label).joinToString("|").uppercase(Locale.ROOT)
+    fun nz(a: Double, b: Double): Double = if (a != 0.0 && a.isFinite()) a else if (b.isFinite()) b else 0.0
+    val out = linkedMapOf<String, FinancialStatementPoint>()
+    for (list in lists) {
+        for (p in list) {
+            val key = keyOf(p)
+            val current = out[key]
+            if (current == null) {
+                out[key] = p
+            } else {
+                val assets = nz(current.totalAssets, p.totalAssets)
+                val netWorth = nz(current.netWorth, p.netWorth)
+                val liabilitiesRaw = nz(current.totalLiabilities, p.totalLiabilities)
+                out[key] = current.copy(
+                    label = current.label.ifBlank { p.label },
+                    year = current.year.ifBlank { p.year },
+                    quarter = current.quarter.ifBlank { p.quarter },
+                    netRevenue = nz(current.netRevenue, p.netRevenue),
+                    netProfit = nz(current.netProfit, p.netProfit),
+                    netWorth = netWorth,
+                    totalAssets = assets,
+                    totalLiabilities = if (liabilitiesRaw != 0.0) liabilitiesRaw else if (assets != 0.0 && netWorth != 0.0) assets - netWorth else 0.0
+                )
+            }
+        }
+    }
+    return out.values.toList()
 }
 
 private fun normalizeBreakdownPoints(points: List<AssetBreakdownPoint>): List<AssetBreakdownPoint> {
@@ -932,17 +971,12 @@ fun AssetProfitabilityChart(
     }
     val alignedReal = orderedPeriods.map { period ->
         realProfitability.firstOrNull { it.period.equals(period, ignoreCase = true) }
-            ?: AssetPeriodReturn(period = period, valuePercent = 0.0, label = period, kind = "real")
     }
+    val realValues = alignedReal.mapNotNull { it?.valuePercent }
 
-    val maxVal = maxOf(
-        items.maxOf { it.valuePercent },
-        alignedReal.maxOfOrNull { it.valuePercent } ?: 0.0
-    ).coerceAtLeast(1.0).toFloat()
-    val minVal = minOf(
-        items.minOf { it.valuePercent },
-        alignedReal.minOfOrNull { it.valuePercent } ?: 0.0
-    ).coerceAtMost(0.0).toFloat()
+    val allValues = items.map { it.valuePercent } + realValues
+    val maxVal = (allValues.maxOrNull() ?: 0.0).coerceAtLeast(1.0).toFloat()
+    val minVal = (allValues.minOrNull() ?: 0.0).coerceAtMost(0.0).toFloat()
     val range = maxVal - minVal
     
     var activeIndex by remember(items) { mutableStateOf<Int?>(null) }
@@ -1018,12 +1052,9 @@ fun AssetProfitabilityChart(
                     val nHeight = (nNorm * h).coerceIn(0f, h)
                     val nY = h - nHeight
 
-                    // Real bar (SuccessGreen)
+                    // Real bar (SuccessGreen). Não desenhe barra falsa em 0% quando o Proxy
+                    // ainda não entregou a série real daquele período.
                     val realItem = alignedReal.getOrNull(idx)
-                    val rVal = realItem?.valuePercent?.toFloat() ?: 0f
-                    val rNorm = (rVal - minVal) / range
-                    val rHeight = (rNorm * h).coerceIn(0f, h)
-                    val rY = h - rHeight
 
                     // Draw Nominal
                     drawRoundRect(
@@ -1033,13 +1064,18 @@ fun AssetProfitabilityChart(
                         cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx())
                     )
 
-                    // Draw Real
-                    drawRoundRect(
-                        color = SuccessGreen.copy(alpha = alpha),
-                        topLeft = Offset(groupCenter, rY),
-                        size = Size(barWidth * 0.9f, rHeight),
-                        cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx())
-                    )
+                    realItem?.let { real ->
+                        val rVal = real.valuePercent.toFloat()
+                        val rNorm = (rVal - minVal) / range
+                        val rHeight = (rNorm * h).coerceIn(0f, h)
+                        val rY = h - rHeight
+                        drawRoundRect(
+                            color = SuccessGreen.copy(alpha = alpha),
+                            topLeft = Offset(groupCenter, rY),
+                            size = Size(barWidth * 0.9f, rHeight),
+                            cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx())
+                        )
+                    }
                 }
             }
 
@@ -1090,7 +1126,7 @@ fun AssetProfitabilityChart(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Box(modifier = Modifier.size(6.dp).background(SuccessGreen, CircleShape))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text(text = "Real: ${String.format("%.1f", realItem?.valuePercent ?: 0.0)}%", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text(text = realItem?.let { "Real: ${String.format("%.1f", it.valuePercent)}%" } ?: "Real: indisponível", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }

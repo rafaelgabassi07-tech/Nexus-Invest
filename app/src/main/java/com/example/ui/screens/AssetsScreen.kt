@@ -128,7 +128,7 @@ fun AssetsScreen(
                                 hideValues = hideValues,
                                 onClick = {
                                     val tickerKey = asset.ticker.trim().uppercase()
-                                    onLoadAssetChartBundle(tickerKey, chartRange.ifBlank { "1Y" })
+                                    onLoadAssetChartBundle(tickerKey, "MAX")
                                     selectedAssetForDetail = asset
                                 }
                             )
@@ -151,7 +151,7 @@ fun AssetsScreen(
                                 hideValues = hideValues,
                                 onClick = {
                                     val tickerKey = asset.ticker.trim().uppercase()
-                                    onLoadAssetChartBundle(tickerKey, chartRange.ifBlank { "1Y" })
+                                    onLoadAssetChartBundle(tickerKey, "MAX")
                                     selectedAssetForDetail = asset
                                 }
                             )

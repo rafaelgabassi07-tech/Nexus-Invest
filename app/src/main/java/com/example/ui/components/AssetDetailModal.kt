@@ -152,7 +152,10 @@ fun AssetDetailModal(
         if (needsBundleRefresh) {
             // O ViewModel é o único responsável pelo bundle pesado. A modal não dispara mais
             // fetchAssetChartBundle local duplicado, evitando 2 chamadas completas ao Proxy.
-            onLoadChartBundle(tickerKey, localChartRange)
+            // Para as abas financeiras, o Investidor10 geralmente só fornece séries completas em
+            // horizonte longo; por isso Detalhes sempre pede o bundle canônico MAX. O histórico de
+            // preço local continua respeitando localChartRange para não prejudicar a interação.
+            onLoadChartBundle(tickerKey, "MAX")
         }
 
         val result = withContext(Dispatchers.IO) {
